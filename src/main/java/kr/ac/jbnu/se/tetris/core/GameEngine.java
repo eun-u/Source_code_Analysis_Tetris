@@ -1,0 +1,359 @@
+package kr.ac.jbnu.se.tetris.core;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+
+/** 순서 있는 명령 처리와 UI용 스냅샷 조회를 제공하는 동기화된 순수 게임 규칙 엔진 */
+public final class GameEngine implements GameActionSink {
+    private static final int MAX_PENDING_GARBAGE_LINES = 220;
+    private final String actorId;
+    private final PieceGenerator generator;
+    private final Board board = new Board();
+    private final ArrayDeque<PieceType> nextPieces = new ArrayDeque<PieceType>();
+    // 후속 보충 실패 시에도 미리 뽑은 블록 보존 및 공개 스냅샷 불변 유지
+    private final ArrayDeque<PieceType> reservedPieces = new ArrayDeque<PieceType>();
+    private final ArrayDeque<GameAction.Garbage> pendingGarbage = new ArrayDeque<GameAction.Garbage>();
+    private GameState.Status status = GameState.Status.READY;
+    private Piece activePiece;
+    private PieceType holdPiece = PieceType.EMPTY;
+    private int pieceX;
+    private int pieceY;
+    private int linesCleared;
+    private int combo = -1;
+    private int pendingGarbageLines;
+    private boolean awaitingSpawn;
+    private boolean holdUsed;
+    private boolean lastSuccessfulRotation;
+    private long version;
+    private long tick;
+    private long lastSequence = -1;
+    private long lastEventId;
+
+    public GameEngine(PieceGenerator generator) { this("local", generator); }
+
+    public GameEngine(String actorId, PieceGenerator generator) {
+        if (actorId == null || actorId.trim().isEmpty() || generator == null) {
+            throw new IllegalArgumentException("Engine needs an actor ID and piece generator");
+        }
+        this.actorId = actorId;
+        this.generator = generator;
+    }
+
+    /** 내부 가변 보드와 분리된 현재 상태를 반환하며 고스트 착지 위치도 함께 계산 */
+    public synchronized GameState getState() {
+        int ghostY = activePiece == null ? -1 : board.landingY(activePiece, pieceX, pieceY);
+        return new GameState(actorId, version, tick, status, board.snapshot(),
+                activePiece, pieceX, pieceY, linesCleared, awaitingSpawn,
+                holdPiece, status == GameState.Status.RUNNING && activePiece != null && !holdUsed,
+                new ArrayList<PieceType>(nextPieces), ghostY, combo, pendingGarbageLines);
+    }
+
+    /** 행위자와 순번을 확인한 뒤 명령 하나의 상태 변경과 이벤트 생성을 완료 */
+    public synchronized ActionResult dispatch(GameAction action) {
+        if (action == null) return reject("Action is null");
+        if (!actorId.equals(action.getActorId())) return reject("Wrong actor ID");
+        if (action.getSequence() < 0 || action.getSequence() <= lastSequence) {
+            return reject("Sequence must increase and be non-negative");
+        }
+        // 상태 전이 거절 시에도 새 입력 순번을 소모하여 재전송 우회 방지
+        lastSequence = action.getSequence();
+        GameAction.Type type = action.getType();
+        if (type == null) return reject("Action type is null");
+        if (type == GameAction.Type.USE_ITEM) return reject("USE_ITEM is not implemented in Phase 1");
+        if (type == GameAction.Type.START) {
+            if (status != GameState.Status.READY) return reject("START requires READY");
+            PreparedPiece next = prepareNextPiece();
+            if (next.reason != null) return reject(next.reason);
+            Piece first = consumePreparedPiece();
+            status = GameState.Status.RUNNING;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.GAME_STARTED, null, 0, 0, 0, null));
+            spawn(first, true, events);
+            return accepted(events);
+        }
+        if (type == GameAction.Type.PAUSE) {
+            if (status != GameState.Status.RUNNING) return reject("PAUSE requires RUNNING");
+            status = GameState.Status.PAUSED;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.PAUSED, null, 0, 0, 0, null));
+            return accepted(events);
+        }
+        if (type == GameAction.Type.RESUME) {
+            if (status != GameState.Status.PAUSED) return reject("RESUME requires PAUSED");
+            status = GameState.Status.RUNNING;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.RESUMED, null, 0, 0, 0, null));
+            return accepted(events);
+        }
+        if (status != GameState.Status.RUNNING) return reject(type + " requires RUNNING");
+        if (type == GameAction.Type.RECEIVE_GARBAGE) {
+            GameAction.Garbage payload = action.getGarbage();
+            if (payload == null) return reject("RECEIVE_GARBAGE requires a payload");
+            if (pendingGarbageLines > MAX_PENDING_GARBAGE_LINES - payload.getLines()) {
+                return reject("Too many pending garbage lines");
+            }
+            pendingGarbage.addLast(payload);
+            pendingGarbageLines += payload.getLines();
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.GARBAGE_QUEUED, null, 0, 0, payload.getLines(), null));
+            return accepted(events);
+        }
+        // 줄 제거 뒤에는 다음 중력 틱에서 새 블록을 생성해 입력 순서를 일정하게 유지
+        if (awaitingSpawn) {
+            if (type != GameAction.Type.GRAVITY_TICK) return reject("Waiting for next gravity tick to spawn");
+            PreparedPiece next = prepareNextPiece();
+            if (next.reason != null) return reject(next.reason);
+            Piece piece = consumePreparedPiece();
+            version++;
+            tick++;
+            awaitingSpawn = false;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            spawn(piece, true, events);
+            return accepted(events);
+        }
+        if (activePiece == null) return reject("No active piece");
+
+        // 현재 블록당 HOLD 한 번 허용 및 교체 블록 확보 후 상태 변경
+        if (type == GameAction.Type.HOLD) {
+            if (holdUsed) return reject("HOLD already used for this piece");
+            Piece previous = activePiece;
+            Piece replacement;
+            if (holdPiece == PieceType.EMPTY) {
+                PreparedPiece next = prepareNextPiece();
+                if (next.reason != null) return reject(next.reason);
+                replacement = consumePreparedPiece();
+            } else {
+                replacement = new Piece(holdPiece);
+            }
+            holdPiece = previous.getType();
+            holdUsed = true;
+            lastSuccessfulRotation = false;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.PIECE_HELD, previous, pieceX, pieceY, 0, null));
+            spawn(replacement, false, events);
+            return accepted(events);
+        }
+        if (type == GameAction.Type.MOVE_LEFT || type == GameAction.Type.MOVE_RIGHT) {
+            int nextX = pieceX + (type == GameAction.Type.MOVE_LEFT ? -1 : 1);
+            if (!board.canPlace(activePiece, nextX, pieceY)) return reject("Piece collision");
+            pieceX = nextX;
+            lastSuccessfulRotation = false;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.PIECE_MOVED, activePiece, pieceX, pieceY, 0, null));
+            return accepted(events);
+        }
+        if (type == GameAction.Type.ROTATE_LEFT || type == GameAction.Type.ROTATE_RIGHT) {
+            Piece rotated = type == GameAction.Type.ROTATE_LEFT
+                    ? activePiece.rotateLeft() : activePiece.rotateRight();
+            if (!board.canPlace(rotated, pieceX, pieceY)) return reject("Piece collision");
+            activePiece = rotated;
+            lastSuccessfulRotation = activePiece.getType() == PieceType.T;
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            events.add(event(GameEvent.Type.PIECE_ROTATED, activePiece, pieceX, pieceY, 0, null));
+            return accepted(events);
+        }
+        if (type == GameAction.Type.SOFT_DROP || type == GameAction.Type.GRAVITY_TICK) {
+            boolean canMove = board.canPlace(activePiece, pieceX, pieceY - 1);
+            LockPreview preview = null;
+            PreparedPiece next = null;
+            if (!canMove) {
+                preview = previewLock(pieceY, lastSuccessfulRotation);
+                if (preview.linesCleared == 0 && !preview.overflow) {
+                    next = prepareNextPiece();
+                    if (next.reason != null) return reject(next.reason);
+                }
+            }
+            version++;
+            if (type == GameAction.Type.GRAVITY_TICK) tick++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            if (canMove) {
+                pieceY--;
+                lastSuccessfulRotation = false;
+                events.add(event(GameEvent.Type.PIECE_MOVED, activePiece, pieceX, pieceY, 0, null));
+            } else {
+                lock(preview, next == null ? null : consumePreparedPiece(), events);
+            }
+            return accepted(events);
+        }
+        if (type == GameAction.Type.HARD_DROP) {
+            int landingY = board.landingY(activePiece, pieceX, pieceY);
+            LockPreview preview = previewLock(landingY, lastSuccessfulRotation && landingY == pieceY);
+            PreparedPiece next = null;
+            if (preview.linesCleared == 0 && !preview.overflow) {
+                next = prepareNextPiece();
+                if (next.reason != null) return reject(next.reason);
+            }
+            version++;
+            List<GameEvent> events = new ArrayList<GameEvent>();
+            pieceY = landingY;
+            lock(preview, next == null ? null : consumePreparedPiece(), events);
+            return accepted(events);
+        }
+        return reject("Unsupported action: " + type);
+    }
+
+    private void spawn(Piece next, boolean resetHold, List<GameEvent> events) {
+        BoardState snapshot = board.snapshot();
+        int nextX = PlacementSimulator.spawnX(snapshot);
+        int nextY = PlacementSimulator.spawnY(snapshot, next);
+        lastSuccessfulRotation = false;
+        if (resetHold) holdUsed = false;
+        if (!board.canPlace(next, nextX, nextY)) {
+            activePiece = null;
+            status = GameState.Status.GAME_OVER;
+            topOut(events, "TOP_OUT");
+            return;
+        }
+        activePiece = next;
+        pieceX = nextX;
+        pieceY = nextY;
+        events.add(event(GameEvent.Type.PIECE_SPAWNED, next, nextX, nextY, 0, null));
+    }
+
+    private LockPreview previewLock(int landingY, boolean rotatedAtLock) {
+        Board detached = new Board(board.snapshot());
+        detached.place(activePiece, pieceX, landingY);
+        boolean tSpin = rotatedAtLock && activePiece.getType() == PieceType.T
+                && occupiedCorners(detached, pieceX, landingY) >= 3;
+        int cleared = detached.removeFullLines();
+        boolean overflow = false;
+        for (GameAction.Garbage garbage : pendingGarbage) {
+            for (int i = 0; i < garbage.getLines() && !overflow; i++) {
+                overflow |= detached.addGarbageLine(garbage.getHoleColumn());
+            }
+        }
+        return new LockPreview(detached, cleared, tSpin, overflow);
+    }
+
+    private static int occupiedCorners(Board board, int x, int y) {
+        int occupied = 0;
+        int[] offsets = {-1, 1};
+        for (int dx : offsets) for (int dy : offsets) {
+            int cx = x + dx, cy = y + dy;
+            if (cx < 0 || cx >= Board.WIDTH || cy < 0 || cy >= Board.HEIGHT
+                    || board.getCell(cx, cy) != PieceType.EMPTY) occupied++;
+        }
+        return occupied;
+    }
+
+    private void lock(LockPreview preview, Piece next, List<GameEvent> events) {
+        Piece placed = activePiece;
+        int placedX = pieceX, placedY = pieceY;
+        board.copyFrom(preview.board);
+        activePiece = null;
+        lastSuccessfulRotation = false;
+        events.add(event(GameEvent.Type.PIECE_PLACED, placed, placedX, placedY, 0, null));
+        if (preview.tSpin) {
+            events.add(event(GameEvent.Type.T_SPIN, placed, placedX, placedY,
+                    preview.linesCleared, null, combo, true));
+        }
+        if (preview.linesCleared > 0) {
+            linesCleared += preview.linesCleared;
+            combo++;
+            events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
+                    preview.linesCleared, null, combo, preview.tSpin));
+            if (combo > 0) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
+                    preview.linesCleared, null, combo, preview.tSpin));
+        } else {
+            combo = -1;
+        }
+        if (pendingGarbageLines > 0) {
+            events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
+            pendingGarbage.clear();
+            pendingGarbageLines = 0;
+        }
+        if (preview.overflow) {
+            awaitingSpawn = false;
+            status = GameState.Status.GAME_OVER;
+            topOut(events, "GARBAGE_TOP_OUT");
+        } else if (preview.linesCleared > 0) {
+            awaitingSpawn = true;
+        } else {
+            spawn(next, true, events);
+        }
+    }
+
+    private void topOut(List<GameEvent> events, String reason) {
+        events.add(event(GameEvent.Type.TOP_OUT, null, 0, 0, 0, reason));
+        events.add(event(GameEvent.Type.GAME_OVER, null, 0, 0, 0, reason));
+    }
+
+    /** 공개 상태를 바꾸기 전에 다음 블록과 미리보기 세 개를 모두 준비 */
+    private PreparedPiece prepareNextPiece() {
+        int needed = nextPieces.isEmpty() ? 4 : 1;
+        while (reservedPieces.size() < needed) {
+            final PieceType type;
+            try {
+                type = generator.nextPiece();
+            } catch (RuntimeException failure) {
+                String detail = failure.getMessage();
+                return new PreparedPiece("Piece generator failed: "
+                        + failure.getClass().getSimpleName() + (detail == null ? "" : ": " + detail));
+            }
+            if (type == null || type == PieceType.EMPTY || type == PieceType.GARBAGE) {
+                return new PreparedPiece("Piece generator returned " + type);
+            }
+            reservedPieces.addLast(type);
+        }
+        return new PreparedPiece(null);
+    }
+
+    private Piece consumePreparedPiece() {
+        PieceType type;
+        if (nextPieces.isEmpty()) {
+            type = reservedPieces.removeFirst();
+            for (int i = 0; i < 3; i++) nextPieces.addLast(reservedPieces.removeFirst());
+        } else {
+            type = nextPieces.removeFirst();
+            nextPieces.addLast(reservedPieces.removeFirst());
+        }
+        return new Piece(type);
+    }
+
+    private static final class LockPreview {
+        private final Board board;
+        private final int linesCleared;
+        private final boolean tSpin;
+        private final boolean overflow;
+
+        private LockPreview(Board board, int linesCleared, boolean tSpin, boolean overflow) {
+            this.board = board;
+            this.linesCleared = linesCleared;
+            this.tSpin = tSpin;
+            this.overflow = overflow;
+        }
+    }
+
+    private static final class PreparedPiece {
+        private final String reason;
+        private PreparedPiece(String reason) { this.reason = reason; }
+    }
+
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount, String reason) {
+        return event(type, piece, x, y, lineCount, reason, -1, false);
+    }
+
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
+                            String reason, int eventCombo, boolean tSpin) {
+        return new GameEvent(type, ++lastEventId, version, tick, actorId,
+                piece, x, y, lineCount, reason, eventCombo, tSpin);
+    }
+
+    private ActionResult accepted(List<GameEvent> events) {
+        return new ActionResult(true, null, getState(), events);
+    }
+
+    private ActionResult reject(String reason) {
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event(GameEvent.Type.ACTION_REJECTED, null, 0, 0, 0, reason));
+        return new ActionResult(false, reason, getState(), events);
+    }
+}
