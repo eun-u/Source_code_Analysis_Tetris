@@ -12,6 +12,9 @@ import kr.ac.jbnu.se.tetris.core.GameEngine;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceGenerator;
 import kr.ac.jbnu.se.tetris.core.PieceType;
+import kr.ac.jbnu.se.tetris.app.MonsterStrategies;
+import kr.ac.jbnu.se.tetris.story.MonsterSpec;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 
 /** 공통 휴리스틱 프로필·정책 교체·관측 고정의 실행 계약 검증 */
 public final class MonsterStrategiesTest {
@@ -28,8 +31,8 @@ public final class MonsterStrategiesTest {
         AIProfile normal = catalog.get("normal_default");
         AIProfile elite = catalog.get("elite_default");
         AIProfile boss = catalog.get("boss_default");
-        check("FIXED".equals(normal.getPolicyId()) && "FIXED".equals(elite.getPolicyId())
-                && "FIXED".equals(boss.getPolicyId()), "All monsters use fixed heuristic baseline");
+        check("FIXED".equals(normal.getPolicyId()) && "ADAPTIVE".equals(elite.getPolicyId())
+                && "BOSS".equals(boss.getPolicyId()), "Story profiles select three implemented policies");
         check(normal.getDelayMillis() > elite.getDelayMillis()
                 && elite.getDelayMillis() > boss.getDelayMillis(), "Configured action intervals");
         reject(new Runnable() { public void run() { AIProfileCatalog.loadDefault().get("missing"); } });
@@ -42,7 +45,11 @@ public final class MonsterStrategiesTest {
                 + "test.wells=-0.25\n";
         check(load(valid).get("test").getMaxSearchStates() == 700, "Independent profile fixture");
         rejectLoad(valid.replace("profiles=test", "profiles=test,test"));
-        rejectLoad(valid.replace("test.policy=FIXED", "test.policy=BOSS"));
+        check("ADAPTIVE".equals(load(valid.replace("test.policy=FIXED", "test.policy=ADAPTIVE"))
+                .get("test").getPolicyId()), "Adaptive policy fixture accepted");
+        check("BOSS".equals(load(valid.replace("test.policy=FIXED", "test.policy=BOSS"))
+                .get("test").getPolicyId()), "Boss policy fixture accepted");
+        rejectLoad(valid.replace("test.policy=FIXED", "test.policy=UNKNOWN"));
         rejectLoad(valid.replace("test.delayMillis=1000", "test.delayMillis=99"));
         rejectLoad(valid.replace("test.budgetMillis=40", "test.budgetMillis=oops"));
         rejectLoad(valid.replace("test.maxWeightDeltaRatio=0.25", "test.maxWeightDeltaRatio=1.1"));
@@ -51,7 +58,7 @@ public final class MonsterStrategiesTest {
     }
 
     private static void fixedPolicyAndExecutablePlan() {
-        AIProfile selected = AIProfileCatalog.loadDefault().get("boss_default");
+        AIProfile selected = AIProfileCatalog.loadDefault().get("normal_default");
         GameEngine engine = fixedEngine();
         check(engine.dispatch(new GameAction(GameAction.Type.START, "local", 0)).isAccepted(), "Start");
         GameState state = engine.getState();
@@ -80,6 +87,18 @@ public final class MonsterStrategiesTest {
                                 null, 1, 3));
             }
         });
+        for (MonsterTier tier : MonsterTier.values()) {
+            String id = tier == MonsterTier.NORMAL ? "normal_default"
+                    : tier == MonsterTier.ELITE ? "elite_default" : "boss_default";
+            MonsterSpec spec = new MonsterSpec("policy_test", "Policy test", tier, 100, id);
+            AIPlan assembled = MonsterStrategies.create(spec).plan(context);
+            check(id.equals(AIProfileCatalog.loadDefault().get(id).getProfileId())
+                    && assembled.getPolicyDecision() != null
+                    && AIProfileCatalog.loadDefault().get(id).getPolicyId()
+                    .equals(assembled.getPolicyDecision().getPolicyId())
+                    && !assembled.getPolicyDecision().isFallback(),
+                    "Monster strategy assembles policy for " + tier);
+        }
         reject(new Runnable() {
             public void run() {
                 new AIContext("match-1", state, 101, 100,

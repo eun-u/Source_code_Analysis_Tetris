@@ -25,14 +25,23 @@ public final class OnlineLobbyPanel extends JPanel implements Screen {
 
     public OnlineLobbyPanel(Consumer<ConnectionOptions> connectAction,
             Consumer<RoomCommand> send, Runnable home) {
+        this(connectAction, send, home, () -> { }, () -> { }, false);
+    }
+    public OnlineLobbyPanel(Consumer<ConnectionOptions> connectAction,
+            Consumer<RoomCommand> send, Runnable home, Runnable account, Runnable cloudConnect, boolean configured) {
         super(new BorderLayout(12, 12));
         setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
-        JPanel top = new JPanel(new java.awt.GridLayout(3, 1, 0, 8));
+        JPanel top = new JPanel(new java.awt.GridLayout(4, 1, 0, 8));
+        JPanel online = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton ranked = new JButton("온라인 랭킹 접속"); ranked.setName("connectRanked"); ranked.setEnabled(configured);
+        ranked.addActionListener(event -> cloudConnect.run()); online.add(ranked);
+        JButton accounts = new JButton("계정 · 랭킹"); accounts.setName("openAccount"); accounts.addActionListener(event -> account.run()); online.add(accounts);
+        if (!configured) online.add(new JLabel("온라인 서비스 준비 중"));
         JPanel connection = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        connection.add(new JLabel("서버 127.0.0.1   포트")); connection.add(port); connection.add(connect);
+        connection.add(new JLabel("로컬 연습 · 127.0.0.1 포트")); connection.add(port); connection.add(connect);
         JPanel rooms = new JPanel(new FlowLayout(FlowLayout.LEFT));
         rooms.add(create); rooms.add(new JLabel("방 번호")); rooms.add(roomId); rooms.add(join);
-        top.add(connection); top.add(rooms); top.add(status); add(top, BorderLayout.NORTH);
+        top.add(online); top.add(connection); top.add(rooms); top.add(status); add(top, BorderLayout.NORTH);
         room = new RoomPanel(send); add(room, BorderLayout.CENTER);
         JButton back = new JButton("접속 종료 · 홈으로"); back.setName("onlineHome");
         back.addActionListener(event -> home.run()); add(back, BorderLayout.SOUTH);

@@ -28,3 +28,12 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Reproducible build and local configuration ###
+/target/
+/.tools/
+/.env
+/.env.*
+!/.env.example
+/tetris-client.properties
+*.log

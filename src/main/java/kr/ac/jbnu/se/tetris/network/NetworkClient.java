@@ -8,6 +8,9 @@ public interface NetworkClient extends AutoCloseable {
     long send(RoomCommand command);
     long send(PlayerIntent intent);
     long requestSnapshot();
+    default long refreshAuthentication(String accessToken) {
+        throw new UnsupportedOperationException("Authentication refresh is unavailable on this transport");
+    }
     NetworkSubscription subscribe(NetworkListener listener);
     @Override void close();
 }

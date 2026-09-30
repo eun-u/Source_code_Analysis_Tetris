@@ -1,5 +1,7 @@
 package kr.ac.jbnu.se.tetris.network.protocol;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,6 +23,43 @@ public final class WireCodec {
 
     private WireCodec() { }
 
+    /** WebSocket text message payload; TCP's four-byte length belongs only to TCP framing. */
+    public static byte[] encodeRequestPayload(WireRequest request) throws IOException {
+        ByteArrayOutputStream framed = new ByteArrayOutputStream();
+        writeRequest(framed, request);
+        byte[] bytes = framed.toByteArray();
+        return java.util.Arrays.copyOfRange(bytes, 4, bytes.length);
+    }
+
+    public static WireRequest decodeRequestPayload(byte[] payload) throws IOException {
+        return readRequest(new ByteArrayInputStream(framePayload(payload)));
+    }
+
+    public static byte[] encodeUpdatePayload(NetworkUpdate update) throws IOException {
+        ByteArrayOutputStream framed = new ByteArrayOutputStream();
+        writeUpdate(framed, update);
+        byte[] bytes = framed.toByteArray();
+        return java.util.Arrays.copyOfRange(bytes, 4, bytes.length);
+    }
+
+    public static NetworkUpdate decodeUpdatePayload(byte[] payload) throws IOException {
+        return readUpdate(new ByteArrayInputStream(framePayload(payload)));
+    }
+
+    private static byte[] framePayload(byte[] payload) throws IOException {
+        if (payload == null || payload.length < 1 || payload.length > MAX_FRAME_BYTES) {
+            throw new IOException("Invalid WebSocket message size");
+        }
+        byte[] framed = new byte[payload.length + 4];
+        int length = payload.length;
+        framed[0] = (byte) (length >>> 24);
+        framed[1] = (byte) (length >>> 16);
+        framed[2] = (byte) (length >>> 8);
+        framed[3] = (byte) length;
+        System.arraycopy(payload, 0, framed, 4, length);
+        return framed;
+    }
+
     public static void writeRequest(OutputStream output, WireRequest request) throws IOException {
         if (request == null) throw new IOException("Wire request is required");
         Map<String, Object> value = base("request");
@@ -36,6 +75,9 @@ public final class WireCodec {
                 break;
             case SNAPSHOT:
                 value.put("matchId", id(request.getMatchId()));
+                break;
+            case AUTH_REFRESH:
+                value.put("accessToken", text(request.getAccessToken(), 8192));
                 break;
             default:
                 throw new IOException("Unknown request kind");
@@ -64,6 +106,10 @@ public final class WireCodec {
                     keys(value, new String[] { "version", "message", "requestId", "kind", "matchId" },
                             new String[0]);
                     return WireRequest.snapshot(requestId, id(value.get("matchId")));
+                case AUTH_REFRESH:
+                    keys(value, new String[] { "version", "message", "requestId", "kind", "accessToken" },
+                            new String[0]);
+                    return WireRequest.authRefresh(requestId, text(value.get("accessToken"), 8192));
                 default:
                     throw new IOException("Unknown request kind");
             }
@@ -100,6 +146,11 @@ public final class WireCodec {
                 break;
             case REQUEST_OUTCOME:
                 value.put("outcome", encodeOutcome(update.getRequestOutcome()));
+                break;
+            case RANKED_SAVE_STATUS:
+                value.put("roomId", id(update.getRoomId()));
+                value.put("matchId", id(update.getMatchId()));
+                value.put("reasonCode", text(update.getReasonCode(), 256));
                 break;
             case EVENTS:
                 throw new IOException("EVENTS wire messages are unsupported in protocol v1");
@@ -144,6 +195,11 @@ public final class WireCodec {
                 case REQUEST_OUTCOME:
                     keys(value, new String[] { "version", "message", "type", "outcome" }, new String[0]);
                     return NetworkUpdate.requestOutcome(decodeOutcome(value.get("outcome")));
+                case RANKED_SAVE_STATUS:
+                    keys(value, new String[] { "version", "message", "type", "roomId", "matchId", "reasonCode" },
+                            new String[0]);
+                    return NetworkUpdate.rankedSaveStatus(id(value.get("roomId")), id(value.get("matchId")),
+                            text(value.get("reasonCode"), 256));
                 case EVENTS:
                     throw new IOException("EVENTS wire messages are unsupported in protocol v1");
                 default:

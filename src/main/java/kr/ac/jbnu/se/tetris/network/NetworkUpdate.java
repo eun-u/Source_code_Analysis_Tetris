@@ -11,7 +11,7 @@ import kr.ac.jbnu.se.tetris.battle.BattleState;
 public final class NetworkUpdate {
     public enum Type {
         CONNECTED, CONNECTION_FAILED, ROOM_STATE, MATCH_STARTED,
-        SNAPSHOT, EVENTS, REQUEST_OUTCOME, ERROR, CLOSED
+        SNAPSHOT, EVENTS, REQUEST_OUTCOME, RANKED_SAVE_STATUS, ERROR, CLOSED
     }
 
     private final Type type;
@@ -86,6 +86,13 @@ public final class NetworkUpdate {
     public static NetworkUpdate error(String reasonCode) {
         return of(Type.ERROR, null, null, -1, null, null, null, null,
                 required(reasonCode, "Error reason"));
+    }
+
+    /** Ranked result persistence state: SAVE_PENDING, SAVED, SAVE_FAILED or VOIDED. */
+    public static NetworkUpdate rankedSaveStatus(String roomId, String matchId, String statusCode) {
+        return of(Type.RANKED_SAVE_STATUS, null, required(roomId, "Room ID"), -1,
+                required(matchId, "Match ID"), null, null, null,
+                required(statusCode, "Ranked save status"));
     }
 
     public static NetworkUpdate closed(String reasonCode) {

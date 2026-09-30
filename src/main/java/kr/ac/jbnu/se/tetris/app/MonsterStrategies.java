@@ -3,6 +3,8 @@ package kr.ac.jbnu.se.tetris.app;
 import kr.ac.jbnu.se.tetris.ai.AIStrategy;
 import kr.ac.jbnu.se.tetris.ai.AIProfile;
 import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
+import kr.ac.jbnu.se.tetris.ai.AdaptiveWeightPolicy;
+import kr.ac.jbnu.se.tetris.ai.BossWeightPolicy;
 import kr.ac.jbnu.se.tetris.ai.FixedWeightPolicy;
 import kr.ac.jbnu.se.tetris.ai.PolicyDrivenStrategy;
 import kr.ac.jbnu.se.tetris.ai.PlacementLog;
@@ -22,6 +24,12 @@ public final class MonsterStrategies {
         AIProfile selected = AIProfileCatalog.loadDefault().get(spec.getAiProfileId());
         if ("FIXED".equals(selected.getPolicyId())) {
             return new PolicyDrivenStrategy(selected, new FixedWeightPolicy());
+        }
+        if ("ADAPTIVE".equals(selected.getPolicyId())) {
+            return new PolicyDrivenStrategy(selected, new AdaptiveWeightPolicy());
+        }
+        if ("BOSS".equals(selected.getPolicyId())) {
+            return new PolicyDrivenStrategy(selected, new BossWeightPolicy());
         }
         throw new IllegalArgumentException("Unsupported AI policy: " + selected.getPolicyId());
     }

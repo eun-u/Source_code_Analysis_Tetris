@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Build', 'Test', 'Run', 'Server', 'GuiTest', 'Preview', 'NetworkFixture')]
+    [ValidateSet('Build', 'Test', 'Run', 'Server', 'CloudServer', 'GuiTest', 'Preview', 'NetworkFixture')]
     [string]$Task = 'Build',
     [string]$JdkHome = '',
     [switch]$AllowVisibleDesktop,
@@ -38,89 +38,46 @@ function Find-Jdk {
     throw 'JDK 8+ required. Set JAVA_HOME or pass -JdkHome <path>. A JRE alone can run the JAR but cannot build it.'
 }
 
-function Reset-OutputDirectory([string]$path) {
-    $resolvedTarget = [IO.Path]::GetFullPath($path)
-    $allowedRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'out\g0'))
-    if (-not $resolvedTarget.StartsWith($allowedRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to clean output outside g0: $resolvedTarget"
-    }
-    foreach ($ancestor in @((Join-Path $projectRoot 'out'), $allowedRoot, $resolvedTarget)) {
-        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw "Refusing linked output directory: $ancestor"
-        }
-    }
-    if (Test-Path -LiteralPath $resolvedTarget) { Remove-Item -LiteralPath $resolvedTarget -Recurse -Force }
-    New-Item -ItemType Directory -Path $resolvedTarget -Force | Out-Null
-}
-
-function Compile-Sources([string]$sourceRoot, [string]$destination, [string]$classpath, [string]$listName) {
-    $files = @(Get-ChildItem -LiteralPath $sourceRoot -Recurse -Filter '*.java' | Sort-Object FullName)
-    if ($files.Count -eq 0) { throw "No Java sources: $sourceRoot" }
-    $argumentFile = Join-Path $projectRoot "out\g0\$listName"
-    $lines = @($files | ForEach-Object { '"' + $_.FullName.Replace('\', '/') + '"' })
-    [IO.File]::WriteAllLines($argumentFile, $lines, (New-Object Text.UTF8Encoding($false)))
-    $compilerArguments = @('-encoding', 'UTF-8', '-source', '8', '-target', '8', '-d', $destination)
-    if ($classpath) { $compilerArguments += @('-cp', $classpath) }
-    $compilerArguments += "@$argumentFile"
-    & $javac @compilerArguments
-    if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $sourceRoot (exit $LASTEXITCODE)" }
-    Write-Output "Compiled $($files.Count) sources: $sourceRoot"
-}
-
+# Maven Wrapper로 의존성과 별도 배포물을 재현하며 기존 명령 진입점 유지
 $selectedJdk = Find-Jdk
-$javac = Join-Path $selectedJdk 'bin\javac.exe'
 $java = Join-Path $selectedJdk 'bin\java.exe'
-$jar = Join-Path $selectedJdk 'bin\jar.exe'
-Write-Output "JDK: $selectedJdk"
-$classes = Join-Path $projectRoot 'out\g0\classes'
-$testClasses = Join-Path $projectRoot 'out\g0\test-classes'
-Reset-OutputDirectory $classes
-Compile-Sources (Join-Path $projectRoot 'src\main\java') $classes '' 'main-sources.txt'
-Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src\main\resources') | Copy-Item -Destination $classes -Recurse -Force
-$jarPath = Join-Path $projectRoot 'out\tetris.jar'
-& $jar cfe $jarPath kr.ac.jbnu.se.tetris.Tetris -C $classes .
-if ($LASTEXITCODE -ne 0) { throw "JAR creation failed (exit $LASTEXITCODE)" }
-Write-Output "JAR: $jarPath"
+$previousJavaHome = $env:JAVA_HOME
+try {
+    $env:JAVA_HOME = $selectedJdk
+    Write-Output "JDK: $selectedJdk"
+    $mavenArguments = @('-B', '-ntp', 'package')
+    if ($Task -notin @('Test', 'GuiTest')) { $mavenArguments += '-DskipTests=true' }
+    # Windows PowerShell 5는 리다이렉트된 정상 stderr 로그도 NativeCommandError로 취급하므로 종료 코드로 판정
+    $savedErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & (Join-Path $projectRoot 'mvnw.cmd') @mavenArguments
+        $mavenExitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $savedErrorPreference }
+    if ($mavenExitCode -ne 0) { throw "Maven build failed (exit $mavenExitCode)" }
+} finally { $env:JAVA_HOME = $previousJavaHome }
 
-if ($Task -in @('Test', 'GuiTest', 'Preview', 'NetworkFixture')) {
-    Reset-OutputDirectory $testClasses
-    Compile-Sources (Join-Path $projectRoot 'src\test\java') $testClasses $classes 'test-sources.txt'
-    $testResources = Join-Path $projectRoot 'src\test\resources'
-    if (Test-Path -LiteralPath $testResources) {
-        Get-ChildItem -LiteralPath $testResources | Copy-Item -Destination $testClasses -Recurse -Force
-    }
-    $testClasspath = "$classes;$testClasses"
-    if ($Task -eq 'Preview') {
-        & $java '-Djava.awt.headless=false' -cp $testClasspath kr.ac.jbnu.se.tetris.ui.UiPreviewMain
-        if ($LASTEXITCODE -ne 0) { throw 'UI preview failed' }
-        exit 0
-    }
-    if ($Task -eq 'NetworkFixture') {
-        & $java '-Djava.awt.headless=true' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.support.OnlinePreviewScenario
-        if ($LASTEXITCODE -ne 0) { throw 'Network fixture failed' }
-        exit 0
-    }
-    $testFiles = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src\test\java') -Recurse -Filter '*Test.java' | Sort-Object FullName)
-    if ($testFiles.Count -eq 0) { throw 'No test entrypoints were found' }
-    foreach ($test in $testFiles) {
-        $content = Get-Content -LiteralPath $test.FullName -Raw -Encoding UTF8
-        if ($content -notmatch '(?m)^package\s+([\w.]+)\s*;') { throw "Missing test package: $($test.FullName)" }
-        $className = $Matches[1] + '.' + $test.BaseName
-        & $java '-Djava.awt.headless=true' -ea -cp $testClasspath $className
-        if ($LASTEXITCODE -ne 0) { throw "Test failed: $className (exit $LASTEXITCODE)" }
-        Write-Output "PASS suite: $className"
-    }
-    Write-Output "PASS: $($testFiles.Count) headless test suites"
-    if ($Task -eq 'GuiTest') {
-        & $java '-Djava.awt.headless=false' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.ui.DesktopSmoke (Join-Path $projectRoot 'out\g0')
-        if ($LASTEXITCODE -ne 0) { throw "Desktop smoke failed (exit $LASTEXITCODE)" }
-    }
+New-Item -ItemType Directory -Path (Join-Path $projectRoot 'out') -Force | Out-Null
+$jarPath = Join-Path $projectRoot 'out\tetris.jar'
+$serverJar = Join-Path $projectRoot 'out\tetris-server.jar'
+Copy-Item -LiteralPath (Join-Path $projectRoot 'target\tetris-client.jar') -Destination $jarPath -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'target\tetris-server.jar') -Destination $serverJar -Force
+Write-Output "Client JAR: $jarPath"
+Write-Output "Server JAR: $serverJar"
+$dependencies = [IO.File]::ReadAllText((Join-Path $projectRoot 'target\runtime-classpath.txt')).Trim()
+$testClasspath = (Join-Path $projectRoot 'target\classes') + ';' + (Join-Path $projectRoot 'target\test-classes') + ';' + $dependencies
+
+if ($Task -eq 'Preview') {
+    & $java '-Djava.awt.headless=false' -cp $testClasspath kr.ac.jbnu.se.tetris.ui.UiPreviewMain
+} elseif ($Task -eq 'NetworkFixture') {
+    & $java '-Djava.awt.headless=true' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.support.OnlinePreviewScenario
+} elseif ($Task -eq 'GuiTest') {
+    & $java '-Djava.awt.headless=false' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.ui.DesktopSmoke (Join-Path $projectRoot 'out\g0')
+} elseif ($Task -eq 'Run') {
+    & (Join-Path $selectedJdk 'bin\javaw.exe') -jar $jarPath
+} elseif ($Task -eq 'Server') {
+    & $java '-Djava.awt.headless=true' -cp $serverJar kr.ac.jbnu.se.tetris.network.server.LocalGameServer $Port
+} elseif ($Task -eq 'CloudServer') {
+    & $java '-Djava.awt.headless=true' '-Xmx256m' -jar $serverJar
 }
-if ($Task -eq 'Run') {
-    & $java -jar $jarPath
-    if ($LASTEXITCODE -ne 0) { throw "Game failed (exit $LASTEXITCODE)" }
-}
-if ($Task -eq 'Server') {
-    & $java '-Djava.awt.headless=true' -cp $jarPath kr.ac.jbnu.se.tetris.network.server.LocalGameServer $Port
-    if ($LASTEXITCODE -ne 0) { throw "Local server failed (exit $LASTEXITCODE)" }
-}
+if ($LASTEXITCODE -ne 0) { throw "Task failed: $Task (exit $LASTEXITCODE)" }

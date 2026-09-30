@@ -50,7 +50,8 @@ public final class AIProfileCatalog {
             }
             String prefix = id + ".";
             String policyId = required(properties, prefix + "policy");
-            if (!"FIXED".equals(policyId)) {
+            if (!"FIXED".equals(policyId) && !"ADAPTIVE".equals(policyId)
+                    && !"BOSS".equals(policyId)) {
                 throw new IllegalArgumentException("Unsupported AI policy: " + policyId);
             }
             HeuristicWeights weights = new HeuristicWeights(

@@ -1,0 +1,4 @@
+# Copy to tetris-client.properties beside the launcher. Public settings only.
+server.url=wss://YOUR_SERVICE.onrender.com/ws
+supabase.url=https://YOUR_PROJECT.supabase.co
+supabase.publishableKey=sb_publishable_REPLACE_ME

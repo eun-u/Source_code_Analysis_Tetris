@@ -140,6 +140,9 @@ public final class OnlineMatchSession implements MatchSession {
             case REQUEST_OUTCOME:
                 onRequestOutcome(update.getRequestOutcome());
                 break;
+            case RANKED_SAVE_STATUS:
+                // 경기 상태와 별개인 저장 상태는 앱의 결과 표시 구독에서 처리
+                break;
             default:
                 throw new IllegalStateException("Unknown network update");
         }

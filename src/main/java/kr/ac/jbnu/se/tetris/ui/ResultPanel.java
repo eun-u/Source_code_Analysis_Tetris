@@ -15,6 +15,8 @@ public final class ResultPanel extends JPanel implements Screen {
     private final JLabel title = new JLabel("GAME OVER", JLabel.CENTER);
     private final JButton next = new JButton("다음 상대");
     private final JButton retry = new JButton("다시 하기");
+    private final JLabel saveStatus = new JLabel("", JLabel.CENTER);
+    private final JButton leaderboard = new JButton("랭킹 보기");
 
     public ResultPanel(Runnable again, Runnable home) {
         this(again, home, () -> { });
@@ -24,7 +26,9 @@ public final class ResultPanel extends JPanel implements Screen {
         setBorder(BorderFactory.createEmptyBorder(64, 32, 64, 32));
         title.setFont(title.getFont().deriveFont(28f));
         add(title, BorderLayout.NORTH);
-        add(result, BorderLayout.CENTER);
+        JPanel details = new JPanel(new BorderLayout(8, 8));
+        details.add(result, BorderLayout.CENTER); details.add(saveStatus, BorderLayout.SOUTH);
+        saveStatus.setName("rankedSaveStatus"); add(details, BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout());
         retry.setName("retry");
         retry.addActionListener(event -> again.run());
@@ -36,6 +40,7 @@ public final class ResultPanel extends JPanel implements Screen {
         next.addActionListener(event -> proceed.run());
         next.setVisible(false);
         buttons.add(next);
+        leaderboard.setName("resultLeaderboard"); leaderboard.setVisible(false); buttons.add(leaderboard);
         buttons.add(back);
         add(buttons, BorderLayout.SOUTH);
     }
@@ -84,7 +89,18 @@ public final class ResultPanel extends JPanel implements Screen {
         retry.setText(failed ? "다시 접속" : requested ? "상대 준비 대기" : "재대결 준비");
         retry.setEnabled(!requested || failed);
     }
-    private void resetRetry() { retry.setText("다시 하기"); retry.setEnabled(true); }
+    public void setLeaderboardAction(Runnable action) { leaderboard.addActionListener(event -> action.run()); }
+    public void setRankedSaveStatus(String value) {
+        leaderboard.setVisible(value != null);
+        if (value == null) { saveStatus.setText(""); return; }
+        boolean settled = "SAVED".equals(value) || "VOIDED".equals(value);
+        saveStatus.setText("SAVED".equals(value) ? "대전 기록과 랭킹이 저장되었습니다."
+                : "VOIDED".equals(value) ? "무효 경기 · 랭킹에 반영되지 않습니다."
+                : "SAVE_FAILED".equals(value) ? "결과 저장을 확인하지 못했습니다. 확인 전에는 재대결할 수 없습니다."
+                : "대전 결과 저장 중 · 완료되면 재대결할 수 있습니다.");
+        if (!settled) retry.setEnabled(false);
+    }
+    private void resetRetry() { retry.setText("다시 하기"); retry.setEnabled(true); saveStatus.setText(""); leaderboard.setVisible(false); }
     @Override public String getId() { return "result"; }
     @Override public JPanel getPanel() { return this; }
 }

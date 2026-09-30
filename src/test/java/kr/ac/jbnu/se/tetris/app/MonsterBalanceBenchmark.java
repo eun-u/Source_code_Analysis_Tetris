@@ -4,10 +4,12 @@ import java.util.Locale;
 import kr.ac.jbnu.se.tetris.ai.AIPlan;
 import kr.ac.jbnu.se.tetris.ai.AIProfile;
 import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
+import kr.ac.jbnu.se.tetris.ai.FixedWeightPolicy;
 import kr.ac.jbnu.se.tetris.ai.HeuristicStrategy;
 import kr.ac.jbnu.se.tetris.ai.HeuristicWeights;
 import kr.ac.jbnu.se.tetris.ai.PlacementLog;
 import kr.ac.jbnu.se.tetris.ai.PlayerProfile;
+import kr.ac.jbnu.se.tetris.ai.PolicyDrivenStrategy;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
@@ -29,63 +31,84 @@ public final class MonsterBalanceBenchmark {
     private MonsterBalanceBenchmark() { }
 
     public static void main(String[] args) throws Exception {
-        boolean smoke = args.length == 1 && "--smoke".equals(args[0]);
-        if (args.length > 0 && !smoke) {
-            throw new IllegalArgumentException("Usage: MonsterBalanceBenchmark [--smoke]");
+        boolean smoke = args.length == 1 && ("--smoke".equals(args[0])
+                || "--compare-smoke".equals(args[0]));
+        boolean compare = args.length == 1 && ("--compare".equals(args[0])
+                || "--compare-smoke".equals(args[0]));
+        if (args.length > 1 || (args.length == 1 && !smoke && !compare)) {
+            throw new IllegalArgumentException("Usage: MonsterBalanceBenchmark "
+                    + "[--smoke|--compare|--compare-smoke]");
         }
         StageCatalog catalog = StageCatalog.loadDefault();
         AIProfileCatalog profiles = AIProfileCatalog.loadDefault();
-        int[][] summary = new int[MonsterTier.values().length][3];
+        int[][][] summary = new int[2][MonsterTier.values().length][3];
         System.out.println("Synthetic benchmark: player = Heuristic SAFE surrogate, "
                 + "one placement opportunity every 1400ms; not real human-play validation.");
         System.out.println("Rules: actual MonsterSession/BattleManager, gravity 400ms, "
-                + "virtual limit 120s, wall limit 10s per duel. All monsters use fixed heuristic profiles.");
-        System.out.println("| Stage | Tier | AI profile | Seed | Outcome | Virtual s | "
+                + "virtual limit 120s, wall limit 10s per duel. "
+                + "Comparison pairs share profile limits, HP and seed; wall-clock budgets may vary.");
+        System.out.println("| Stage | Tier | AI profile | Mode | Seed | Outcome | Virtual s | "
                 + "HP player/monster | Placements player/monster | AI decisions | "
-                + "Candidates total | AI mean/max ms | Synthetic log |");
-        System.out.println("|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|");
+                + "Candidates total | Timeout/fallback | AI mean/max ms | Synthetic log |");
+        System.out.println("|---|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|");
 
         // 기본 실행 범위인 2개 장 × 3등급 × 2시드의 총 12회 대전
         for (int stageIndex : STAGE_INDEXES) {
             Stage stage = catalog.getStages().get(stageIndex);
             for (MonsterTier tier : MonsterTier.values()) {
+                if (compare && tier == MonsterTier.NORMAL) continue;
                 for (long seed : SEEDS) {
                     if (smoke && (stageIndex != STAGE_INDEXES[0]
-                            || tier != MonsterTier.NORMAL || seed != SEEDS[0])) continue;
+                            || tier != (compare ? MonsterTier.ELITE : MonsterTier.NORMAL)
+                            || seed != SEEDS[0])) continue;
                     MonsterSpec spec = stage.getEncounters().get(tier.ordinal());
                     AIProfile aiProfile = profiles.get(spec.getAiProfileId());
-                    Result result = run(spec, aiProfile, seed);
-                    int[] counts = summary[tier.ordinal()];
-                    if (result.outcome == Outcome.PLAYER) counts[0]++;
-                    else if (result.outcome == Outcome.MONSTER) counts[1]++;
-                    else counts[2]++;
-                    System.out.println("| " + stage.getId() + " | " + tier + " | "
-                            + aiProfile.getProfileId() + " | " + seed + " | " + result.outcome + " | "
-                            + oneDecimal(result.virtualMillis / 1000.0) + " | "
-                            + result.playerHp + "/" + result.monsterHp + " | "
-                            + result.playerPlacements + "/" + result.monsterPlacements + " | "
-                            + result.aiDecisions + " | " + result.aiCandidates + " | "
-                            + oneDecimal(result.aiDecisions == 0 ? 0
-                                    : result.aiTotalNanos / 1_000_000.0 / result.aiDecisions)
-                            + "/" + oneDecimal(result.aiMaxNanos / 1_000_000.0) + " | "
-                            + result.logSize + " |");
+                    for (int mode = compare ? 0 : 1; mode <= 1; mode++) {
+                        boolean fixedBaseline = compare && mode == 0;
+                        Result result = run(spec, aiProfile, seed, fixedBaseline);
+                        int[] counts = summary[mode][tier.ordinal()];
+                        if (result.outcome == Outcome.PLAYER) counts[0]++;
+                        else if (result.outcome == Outcome.MONSTER) counts[1]++;
+                        else counts[2]++;
+                        System.out.println("| " + stage.getId() + " | " + tier + " | "
+                                + aiProfile.getProfileId() + " | "
+                                + (fixedBaseline ? "FIXED baseline" : aiProfile.getPolicyId())
+                                + " | " + seed + " | " + result.outcome + " | "
+                                + oneDecimal(result.virtualMillis / 1000.0) + " | "
+                                + result.playerHp + "/" + result.monsterHp + " | "
+                                + result.playerPlacements + "/" + result.monsterPlacements + " | "
+                                + result.aiDecisions + " | " + result.aiCandidates + " | "
+                                + result.aiTimeouts + "/" + result.aiFallbacks + " | "
+                                + oneDecimal(result.aiDecisions == 0 ? 0
+                                        : result.aiTotalNanos / 1_000_000.0 / result.aiDecisions)
+                                + "/" + oneDecimal(result.aiMaxNanos / 1_000_000.0) + " | "
+                                + result.logSize + " |");
+                    }
                 }
             }
         }
-        System.out.println("\n| Tier | Player wins | Monster wins | Unresolved |\n"
-                + "|---|---:|---:|---:|");
-        for (MonsterTier tier : MonsterTier.values()) {
-            int[] counts = summary[tier.ordinal()];
-            System.out.println("| " + tier + " | " + counts[0]
-                    + " | " + counts[1] + " | " + counts[2] + " |");
+        System.out.println("\n| Mode | Tier | Player wins | Monster wins | Unresolved |\n"
+                + "|---|---|---:|---:|---:|");
+        for (int mode = compare ? 0 : 1; mode <= 1; mode++) {
+            for (MonsterTier tier : MonsterTier.values()) {
+                if (compare && tier == MonsterTier.NORMAL) continue;
+                if (smoke && tier != (compare ? MonsterTier.ELITE : MonsterTier.NORMAL)) continue;
+                int[] counts = summary[mode][tier.ordinal()];
+                System.out.println("| " + (mode == 0 ? "FIXED baseline" : "configured") + " | "
+                        + tier + " | " + counts[0]
+                        + " | " + counts[1] + " | " + counts[2] + " |");
+            }
         }
     }
 
-    private static Result run(MonsterSpec spec, AIProfile aiProfile, long seed) throws InterruptedException {
+    private static Result run(MonsterSpec spec, AIProfile aiProfile, long seed,
+                              boolean fixedBaseline) throws InterruptedException {
         PlayerProfile profile = new PlayerProfile();
         PlacementLog log = new PlacementLog();
         MonsterSession session = new MonsterSession(seed, spec.getName(), spec.getHp(),
-                aiProfile.getDelayMillis(), MonsterStrategies.create(spec),
+                aiProfile.getDelayMillis(), fixedBaseline
+                ? new PolicyDrivenStrategy(aiProfile, new FixedWeightPolicy())
+                : MonsterStrategies.create(spec),
                 profile, log);
         HeuristicStrategy surrogate = new HeuristicStrategy(HeuristicWeights.SAFE,
                 700, 40_000_000L);
@@ -117,6 +140,9 @@ public final class MonsterBalanceBenchmark {
                 if (ready != null && ready != previous) {
                     result.aiDecisions++;
                     result.aiCandidates += ready.getCandidateCount();
+                    if (ready.isTimedOut()) result.aiTimeouts++;
+                    if (ready.getPolicyDecision() != null
+                            && ready.getPolicyDecision().isFallback()) result.aiFallbacks++;
                     result.aiTotalNanos += ready.getElapsedNanos();
                     result.aiMaxNanos = Math.max(result.aiMaxNanos, ready.getElapsedNanos());
                     if (ready.getActions().contains(GameAction.Type.HARD_DROP)
@@ -179,6 +205,8 @@ public final class MonsterBalanceBenchmark {
         private int monsterPlacements;
         private int aiDecisions;
         private int aiCandidates;
+        private int aiTimeouts;
+        private int aiFallbacks;
         private int logSize;
         private long aiTotalNanos;
         private long aiMaxNanos;
