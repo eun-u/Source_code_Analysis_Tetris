@@ -1,9 +1,18 @@
 # Render 배포·운영 인수인계
 
+## 2026-09-30 배포 상태
+
+[Render 서비스](https://dashboard.render.com/web/srv-dau62g2d0e5s73ed59g0)와 [Supabase 프로젝트](https://supabase.com/dashboard/project/gadzyccwxnxzdmdgjptx)를 생성하고 연결했다. 서버 주소는 `https://tetris-ranked-pvp.onrender.com`, 게임 연결은 `wss://tetris-ranked-pvp.onrender.com/ws`이다. 실제 로그인·인터넷 대전·기권·랭킹 저장을 확인했고 테스트 계정과 경기 데이터는 정리했다. 근거는 [배포 검증 기록](render-verification.md)에 있다.
+
+주소가 설정된 클라이언트는 `out/tetris-online-client.zip`이다. 압축을 풀고 `play.cmd`를 실행한다. Java 8 이상이 필요하다. 일반 사용자 가입·비밀번호 복구 메일은 custom SMTP와 복구 코드 템플릿을 설정한 뒤 사용할 수 있다. SMTP는 사용자 요청에 따라 나중에 설정한다. 현재 메일 인증 설정은 켜져 있다.
+
+검증 직후 대전 접수를 열어두었다. 무료 서비스의 절전·재시작 후에는 아래 운영 절차에 따라 접수를 다시 열어야 하며, 주기적인 절전 방지 요청은 설정하지 않았다.
+
 ## 준비된 구성
 
 - Java 8 Swing 클라이언트와 headless Java WebSocket 서버. Render에는 서버만 배포한다.
 - Render Free Web Service 1개, Singapore. 예상 동시 접속은 약 4명이지만 사용자 수·방 수를 이 숫자에 고정하지 않는다. 각 방은 1:1이다.
+- 무료 요금제에서는 `maxShutdownDelaySeconds`를 지정하지 않는다. 실제 Blueprint 검증에서 이 설정을 거절하므로 기본 종료 유예시간을 사용한다. 재배포 전 경기 종료·저장 확인과 실행 복구 절차는 그대로 따른다.
 - Supabase Auth + PostgreSQL. 공식 랭킹은 온라인 PvP 결과만 반영한다.
 - 서버에는 HTTP `/healthz`, WSS `/ws`, 인증된 관리자 경로가 있다. 외부 주기 요청·절전 방지 예약 작업은 없다.
 - 로컬 TCP 연습 서버는 유지하며 랭킹에 반영되지 않는다.

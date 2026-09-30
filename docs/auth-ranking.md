@@ -24,6 +24,8 @@ Java 8 데스크톱은 Supabase publishable key로 Auth와 읽기 전용 랭킹 
 
 로컬 PostgreSQL 16/17 검증은 `TETRIS_TEST_POSTGRES_DSN`에 loopback PostgreSQL 관리용 연결 문자열을 지정하고 `python supabase/tests/run_postgres_tests.py`를 실행한다. Python에는 psycopg 3가 필요하다. 스크립트가 고유한 격리 DB를 만들고 `bootstrap.sql` → 마이그레이션 → `ranking.sql`을 적용한 뒤, 동시 중복 확정·중복 시작·계정 중복 시작·확정/무효화 경합과 시작/복구 양방향 순서 경합을 검사하고 해당 DB만 삭제한다. 실제 Supabase에는 `bootstrap.sql`을 적용하지 않는다. Java의 `SupabaseAuthTest`, `SupabaseRankingTest`는 로컬 HTTP 서버로 API 요청·오류·DTO를 검증한다.
 
-2026-09-29 검증: Java 8 + Gson 2.13.2에서 두 HTTP stub 테스트 통과. 로컬 PostgreSQL 17.6에서 SQL 스키마/권한/순차 결과, 공동 순위, 동시 중복 저장, 서버 실행 중단과 늦은 경기 시작의 경합, 여러 경기/계정의 잠금 순서가 통과했다. 실제 메일 전달과 클라우드의 API key 동작은 실제 프로젝트에서 별도 확인해야 한다.
+2026-09-29 검증: Java 8 + Gson 2.13.2에서 두 HTTP stub 테스트 통과. 로컬 PostgreSQL 17.6에서 SQL 스키마/권한/순차 결과, 공동 순위, 동시 중복 저장, 서버 실행 중단과 늦은 경기 시작의 경합, 여러 경기/계정의 잠금 순서가 통과했다.
+
+2026-09-30 실제 Supabase·Render 배포에서 공개 키로 로그인·랭킹 조회, 서버 비밀키로 경기 등록·결과 저장, 비인가 호출 거절을 확인했다. 인터넷 WSS 대전 1건의 FINALIZED 결과와 Elo·전적을 DB에서 대조한 뒤 해당 테스트 계정·기록을 삭제했다. custom SMTP와 복구 코드 메일 템플릿, 실제 메일 수신 검증은 남아 있다. 상세 근거는 [배포 검증 기록](render-verification.md)을 따른다.
 
 공식 자료: [Auth REST API](https://github.com/supabase/auth/blob/master/openapi.yaml), [API keys](https://supabase.com/docs/guides/getting-started/api-keys), [JWT 검증](https://supabase.com/docs/guides/auth/jwts), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).
