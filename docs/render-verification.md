@@ -1,6 +1,6 @@
-# Render 구현·로컬 검증 기록
+# Render 구현·배포 전 검증 기록
 
-작성일: 2026-09-29. 작업 기준: `eunjin` / 기존 HEAD `68b43f3`. 이 기록은 로컬 변경과 검증을 설명하며 실제 Render/Supabase 배포 완료 기록이 아니다.
+작성일: 2026-09-29, 갱신일: 2026-09-30. 작업 기준: `eunjin` / 변경 전 HEAD `68b43f3`, Linux 검증 커밋 `eec0f2b741f23392b75f71adb7cf118f1ff14ee4`. 이 기록은 구현과 로컬·CI 검증을 설명하며 실제 Render/Supabase 배포 완료 기록이 아니다.
 
 ## 구현
 
@@ -24,11 +24,16 @@
 | 실제 PostgreSQL | 임시 loopback PostgreSQL 17.6 + `supabase/tests/run_postgres_tests.py` | 8개 검증 항목 통과: 스키마·권한/RLS·Elo·공동 순위, 중복 시작/종료, 계정 중복 경합, 확정/무효화 경합, 종료 실행의 지연 등록 차단과 잠금 순서 |
 | 배포용 클라이언트 | 테스트를 `target/tetris-client.jar`에 대해 실행 | 로그인 서비스·화면 동작, 서버 구현 제외 후 공통 코드 참조 확인 |
 | 배포용 서버 | `out/tetris-server.jar`를 별도 Java 8 프로세스로 실행 | PORT 반영, `/healthz=200`, 접수 닫힘, 관리자 무인증 요청 401 |
+| Linux Docker | GitHub Actions Ubuntu 24.04, 운영 Dockerfile 빌드와 실제 컨테이너 실행 | 35개 headless suite 통과, `/healthz=200`, UID 10001, 접수 닫힘·미확정 기록 0건, 관리자 무인증 요청 401 |
 | 화면 | 최소 760×680 및 기본 960×820 크기 offscreen 렌더링 | 실제 창을 열지 않고 계정·로비 포함 8개 앱 화면과 기존 preview 확인 |
 | Render 설정 | 공식 Blueprint JSON Schema로 `render.yaml` 검증 | Free 1개·Singapore·자동 배포 꺼짐·health 경로·예약 작업 없음 |
 | 파일 검사 | `git diff --check`, PowerShell parser, JAR 내용 확인 | 공백 오류 없음, 운영/패키징 스크립트 구문 통과, 테스트·로컬 설정 파일 배포물 제외 |
 
 의존성은 Netty 4.2.18.Final, Gson 2.13.2로 고정했다. Maven Wrapper 배포 ZIP의 SHA-256 검증을 설정했다. 로컬 PostgreSQL은 저장소의 무시된 `.tools` 아래에만 준비했으며, 임시 테스트 DB를 정리하고 서버를 종료했다.
+
+2026-09-30 [Linux 컨테이너 검증 실행](https://github.com/eun-u/Source_code_Analysis_Tetris/actions/runs/36649879391)이 성공했다. Docker 빌드 이미지에 `unzip`을 추가하여 Maven Wrapper가 검증 대상 ZIP을 그대로 사용하도록 했고, 체크섬 검증은 유지했다. 컨테이너 기동 확인은 로컬 포트가 준비될 때까지 유한 횟수 재시도한다. Supabase에는 대역 설정만 사용하므로 이 결과가 실제 Auth·Data API 연결을 증명하지는 않는다. 실행 로그는 `out/render-linux-ci-36649879391.log`에도 보관했다.
+
+Linux 검증 중 발견한 `LocalGameServerTest`의 경기 종료 경합도 수정했다. 다음 입력 전에 중력 tick이 경기를 끝낸 경우 새 snapshot에서 `FINISHED`를 확인한다. 최소 한 번의 HARD_DROP 성공, 종료 후 입력 거절, 재대결 초기화와 이전 경기 ID 거절 검증은 유지했다. 수정된 테스트는 로컬에서 5회 연속 통과했고 독립 검토를 거쳤다.
 
 전체 Maven 로그는 재생성 가능한 `out/render-final-tests.log`, PostgreSQL 검증 로그는 `out/ranked-postgres-tests.log`, 화면 이미지는 `out/g0/ui`, 배포 서버 기동 로그는 `out/server-jar-smoke.log`에 있다. 로그와 빌드 산출물은 Git에서 제외한다.
 
@@ -48,7 +53,7 @@ AI 합성 비교는 [별도 기록](ai-policy-verification.md)을 따른다. 동
 
 - Render/Supabase 계정 연결과 프로젝트, custom SMTP, 실제 사용자 4명의 가입·인증·복구 메일.
 - Supabase 실제 Data API 키·Auth·RLS 연동 및 인터넷 WSS 대전.
-- 이 환경에는 Docker 실행 엔진이 없어 Linux 이미지의 실제 빌드·기동은 미검증. Render 배포 빌드 또는 Docker 환경에서 검증해야 한다.
+- Render 자체 빌드·배포와 외부 TLS/WSS 연결. GitHub Actions의 Linux Docker 빌드·기동은 위 실행으로 검증했다.
 - 서로 다른 PC에서 4명·2경기 동시 지연·메모리·방 간 간섭, 실제 무료 서비스 초기 기동과 재시작.
 - 사람의 체감 AI 난이도와 실제 창의 포커스·키 입력.
 
