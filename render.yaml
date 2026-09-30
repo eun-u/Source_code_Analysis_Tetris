@@ -8,7 +8,6 @@ services:
     dockerContext: .
     healthCheckPath: /healthz
     autoDeployTrigger: "off"
-    maxShutdownDelaySeconds: 60
     envVars:
       - key: SUPABASE_URL
         sync: false
