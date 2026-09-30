@@ -119,11 +119,13 @@ public final class LocalGameServerTest {
         try {
             String oldMatch = startTwoPlayerMatch(first, second);
             long requestId = 3;
+            int acceptedDrops = 0;
             BattleState finished = null;
             for (int attempt = 0; attempt < 40 && finished == null; attempt++) {
                 first.send(WireRequest.intent(requestId, oldMatch,
                         new PlayerIntent(GameAction.Type.HARD_DROP)));
                 RequestOutcome outcome = first.anyOutcome(requestId++);
+                if (outcome.isAccepted()) acceptedDrops++;
                 if (!outcome.isAccepted() && "Waiting for next gravity tick to spawn".equals(outcome.getReasonCode())) {
                     Thread.sleep(420);
                 } else if (outcome.isAccepted() && outcome.getBattleVersion() != null) {
@@ -141,7 +143,7 @@ public final class LocalGameServerTest {
                     throw new AssertionError("Unexpected hard drop rejection: " + outcome.getReasonCode());
                 }
             }
-            check(finished != null, "Real input reaches a finished match");
+            check(finished != null && acceptedDrops > 0, "Real input reaches a finished match");
             second.finished(oldMatch);
 
             first.send(WireRequest.intent(requestId, oldMatch,
