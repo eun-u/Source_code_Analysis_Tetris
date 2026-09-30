@@ -1,5 +1,6 @@
 FROM eclipse-temurin:8-jdk-jammy AS build
-RUN apt-get update && apt-get install -y --no-install-recommends curl fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+# Wrapper checksum pins the ZIP; unzip prevents its tar.gz fallback on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 ENV MAVEN_OPTS="-Xmx256m"
 WORKDIR /workspace
 COPY .mvn/ .mvn/
