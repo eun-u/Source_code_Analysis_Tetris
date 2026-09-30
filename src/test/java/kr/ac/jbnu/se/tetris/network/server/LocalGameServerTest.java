@@ -130,12 +130,23 @@ public final class LocalGameServerTest {
                     BattleState state = first.snapshot(oldMatch,
                             outcome.getBattleVersion().longValue()).getBattleState();
                     if (state.getStatus() == BattleState.Status.FINISHED) finished = state;
+                } else if (!outcome.isAccepted() && "MATCH_NOT_RUNNING".equals(outcome.getReasonCode())) {
+                    // 중력 tick이 다음 입력보다 먼저 종료한 경우 서버의 확정 상태 재조회
+                    first.send(WireRequest.snapshot(requestId, oldMatch));
+                    first.outcome(requestId++, true, null);
+                    finished = first.snapshot(oldMatch, -1).getBattleState();
+                    check(finished.getStatus() == BattleState.Status.FINISHED,
+                            "Gravity termination is confirmed by an authoritative snapshot");
                 } else if (!outcome.isAccepted()) {
                     throw new AssertionError("Unexpected hard drop rejection: " + outcome.getReasonCode());
                 }
             }
             check(finished != null, "Real input reaches a finished match");
             second.finished(oldMatch);
+
+            first.send(WireRequest.intent(requestId, oldMatch,
+                    new PlayerIntent(GameAction.Type.HARD_DROP)));
+            first.outcome(requestId++, false, "MATCH_NOT_RUNNING");
 
             first.send(WireRequest.room(requestId++, RoomCommand.requestRematch()));
             first.outcome(requestId - 1, true, null);
