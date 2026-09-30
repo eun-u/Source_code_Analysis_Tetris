@@ -2,6 +2,8 @@
 
 작성일: 2026-09-29, 갱신일: 2026-09-30. 작업 기준: `eunjin` / 변경 전 HEAD `68b43f3`, Linux 검증 커밋 `eec0f2b741f23392b75f71adb7cf118f1ff14ee4`. 이 기록은 구현과 로컬·CI 검증을 설명하며 실제 Render/Supabase 배포 완료 기록이 아니다.
 
+2026-09-30 업로드한 6개 커밋의 메시지를 한국어로 정리했다. 메시지 변경 전후 각 커밋의 파일 트리가 동일한 것을 확인했으며, Linux 검증 대상 `eec0f2b`는 동일한 코드의 `533dc7f`에 대응한다. 원격 브랜치는 명시적인 `force-with-lease`로 갱신했다.
+
 ## 구현
 
 - HTTP/WebSocket 게임 서버, WSS 클라이언트, Supabase 계정 검증과 같은 계정 토큰 갱신.
@@ -22,6 +24,8 @@
 | 앱 종단 | `RankedOnlineUiFlowTest` | 두 Swing 앱에서 로그인→방→대전→저장 대기→확정→랭킹 표시, EDT 응답성·종료 검증 |
 | 계정 수명주기 | `OnlineAccountControllerTest` 및 `SupabaseAuthTest` | 지연 중 EDT 응답, 토큰 갱신, 영구/일시 인증 실패 구분, 계정 전환·종료 후 응답 폐기 |
 | 실제 PostgreSQL | 임시 loopback PostgreSQL 17.6 + `supabase/tests/run_postgres_tests.py` | 8개 검증 항목 통과: 스키마·권한/RLS·Elo·공동 순위, 중복 시작/종료, 계정 중복 경합, 확정/무효화 경합, 종료 실행의 지연 등록 차단과 잠금 순서 |
+| 실제 Supabase DB | Free / Singapore 프로젝트 `gadzyccwxnxzdmdgjptx`, 공식 CA와 `verify-full`로 접속 | 운영 마이그레이션 적용, 5개 테이블 RLS 활성화와 함수별 anon/authenticated/service_role 실행 권한 확인 |
+| 실제 Supabase API | 배포 검사용 임시 계정 2개, HTTPS Auth/Data API | 이메일 확인 설정 유지, 비밀번호 로그인·로그아웃·인증된 빈 랭킹 조회 성공, 익명 랭킹 401·일반 계정의 서버 전용 RPC 403 확인. 관리자 생성 계정이므로 메일 전달 검증은 포함하지 않음 |
 | 배포용 클라이언트 | 테스트를 `target/tetris-client.jar`에 대해 실행 | 로그인 서비스·화면 동작, 서버 구현 제외 후 공통 코드 참조 확인 |
 | 배포용 서버 | `out/tetris-server.jar`를 별도 Java 8 프로세스로 실행 | PORT 반영, `/healthz=200`, 접수 닫힘, 관리자 무인증 요청 401 |
 | Linux Docker | GitHub Actions Ubuntu 24.04, 운영 Dockerfile 빌드와 실제 컨테이너 실행 | 35개 headless suite 통과, `/healthz=200`, UID 10001, 접수 닫힘·미확정 기록 0건, 관리자 무인증 요청 401 |
@@ -30,6 +34,8 @@
 | 파일 검사 | `git diff --check`, PowerShell parser, JAR 내용 확인 | 공백 오류 없음, 운영/패키징 스크립트 구문 통과, 테스트·로컬 설정 파일 배포물 제외 |
 
 의존성은 Netty 4.2.18.Final, Gson 2.13.2로 고정했다. Maven Wrapper 배포 ZIP의 SHA-256 검증을 설정했다. 로컬 PostgreSQL은 저장소의 무시된 `.tools` 아래에만 준비했으며, 임시 테스트 DB를 정리하고 서버를 종료했다.
+
+실제 Supabase API 검증에 사용한 임시 계정 2개는 검사 후 삭제했고 관리자 조회가 404를 반환하는 것을 확인했다. 이 검증에서 온라인 경기는 생성하지 않았다. 프로젝트 비밀키와 DB 비밀번호는 Git 제외 경로의 Windows DPAPI 암호화 파일로 보관하며, 클라이언트 배포물과 이 문서에는 포함하지 않는다.
 
 2026-09-30 [Linux 컨테이너 검증 실행](https://github.com/eun-u/Source_code_Analysis_Tetris/actions/runs/36649879391)이 성공했다. Docker 빌드 이미지에 `unzip`을 추가하여 Maven Wrapper가 검증 대상 ZIP을 그대로 사용하도록 했고, 체크섬 검증은 유지했다. 컨테이너 기동 확인은 로컬 포트가 준비될 때까지 유한 횟수 재시도한다. Supabase에는 대역 설정만 사용하므로 이 결과가 실제 Auth·Data API 연결을 증명하지는 않는다. 실행 로그는 `out/render-linux-ci-36649879391.log`에도 보관했다.
 
@@ -51,8 +57,9 @@ AI 합성 비교는 [별도 기록](ai-policy-verification.md)을 따른다. 동
 
 ## 실제 환경에서 남은 검증
 
-- Render/Supabase 계정 연결과 프로젝트, custom SMTP, 실제 사용자 4명의 가입·인증·복구 메일.
-- Supabase 실제 Data API 키·Auth·RLS 연동 및 인터넷 WSS 대전.
+- Render GitHub 저장소 연결과 서비스 생성. 현재 GitHub가 Render 앱의 저장소 접근 변경 전에 추가 본인 인증을 요구한다.
+- custom SMTP, 실제 사용자의 가입·인증·복구 메일. Supabase 프로젝트 생성과 실제 Auth/Data API 기본 연동은 위 결과로 확인했다.
+- 인터넷 WSS 대전과 실제 서버가 저장한 경기의 랭킹 반영.
 - Render 자체 빌드·배포와 외부 TLS/WSS 연결. GitHub Actions의 Linux Docker 빌드·기동은 위 실행으로 검증했다.
 - 서로 다른 PC에서 4명·2경기 동시 지연·메모리·방 간 간섭, 실제 무료 서비스 초기 기동과 재시작.
 - 사람의 체감 AI 난이도와 실제 창의 포커스·키 입력.
