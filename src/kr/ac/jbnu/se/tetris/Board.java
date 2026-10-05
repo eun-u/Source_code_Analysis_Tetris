@@ -7,7 +7,6 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
-
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.Timer;
@@ -28,17 +27,9 @@ public class Board extends JPanel implements ActionListener {
 	Shape curPiece;
 	Tetrominoes[] board;
 
+	// Battle Board를 나타내기 위한 코드로 변경
 	public Board(Tetris parent) {
-
-		setFocusable(true);
-		curPiece = new Shape();
-		timer = new Timer(400, this);
-		timer.start();
-
-		statusbar = parent.getStatusBar();
-		board = new Tetrominoes[BoardWidth * BoardHeight];
-		addKeyListener(new TAdapter());
-		clearBoard();
+		this(parent.getStatusBar(), true);
 	}
 
 	public void actionPerformed(ActionEvent e) {
@@ -269,5 +260,23 @@ public class Board extends JPanel implements ActionListener {
 			}
 
 		}
+	}
+
+	// Battle Board에서 두 화면이 나타나기 위한 생성자
+	public Board(JLabel statusbar, boolean keyboardEnable) {
+		setFocusable(true);
+
+		curPiece = new Shape();
+
+		timer = new Timer(400, this);
+
+		this.statusbar = statusbar;
+		board = new Tetrominoes[BoardWidth * BoardHeight];
+
+		if(keyboardEnable) {
+			addKeyListener(new TAdapter());
+		}
+		clearBoard();
+
 	}
 }
