@@ -38,7 +38,7 @@ public final class LocalGameServer implements AutoCloseable {
     private static final int MAX_CONNECTIONS = 16;
     private static final int MAX_PENDING_REQUESTS = 64;
     private static final int MAX_PENDING_UPDATES = 128;
-    private static final long TICK_MILLIS = 400;
+    private static final long TICK_MILLIS = 50;
 
     private final int requestedPort;
     private final ScheduledThreadPoolExecutor roomExecutor;
@@ -106,11 +106,26 @@ public final class LocalGameServer implements AutoCloseable {
         for (Room room : new ArrayList<Room>(rooms.values())) {
             if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
             try {
-                room.battle.tick();
+                advanceRoom(room);
                 broadcastSnapshot(room);
             } catch (RuntimeException failure) {
                 for (Peer peer : room.members.values()) peer.send(NetworkUpdate.error("SERVER_TICK_FAILED"));
             }
+        }
+    }
+
+    /** 참가자별 중력과 지속 효과는 서버의 단조 경과 시간을 공유한다. */
+    private void advanceRoom(Room room) {
+        long now = System.nanoTime();
+        long elapsedMillis = Math.max(0L, (now - room.lastAdvanceNanos) / 1_000_000L);
+        if (elapsedMillis == 0) return;
+        room.lastAdvanceNanos += elapsedMillis * 1_000_000L;
+        long remaining = elapsedMillis;
+        while (remaining > 0 && room.battle.getState().getStatus() == BattleState.Status.RUNNING) {
+            long step = Math.min(600000L, remaining);
+            BattleResult result = room.battle.advance(step);
+            if (!result.isAccepted()) throw new IllegalStateException(result.getReason());
+            remaining -= step;
         }
     }
 
@@ -220,13 +235,14 @@ public final class LocalGameServer implements AutoCloseable {
             specs.add(new ParticipantSpec(member.id, "학생 " + number++, 100));
             room.ready.put(member.id, Boolean.FALSE);
         }
-        BattleManager battle = new BattleManager(specs, System.nanoTime());
+        BattleManager battle = BattleManager.pvp(specs, System.nanoTime());
         BattleResult started = battle.start();
         if (!started.isAccepted()) {
             for (Peer member : room.members.values()) member.send(NetworkUpdate.error("MATCH_START_FAILED"));
             return;
         }
         room.battle = battle;
+        room.lastAdvanceNanos = System.nanoTime();
         room.matchId = UUID.randomUUID().toString();
         room.version++;
         broadcastRoomState(room);
@@ -247,6 +263,12 @@ public final class LocalGameServer implements AutoCloseable {
         }
         PlayerIntent intent = request.getIntent();
         if (intent == null) { outcome(peer, request.getRequestId(), false, "INVALID_INTENT"); return; }
+        advanceRoom(room);
+        if (room.battle.getState().getStatus() != BattleState.Status.RUNNING) {
+            outcome(peer, request.getRequestId(), false, "MATCH_NOT_RUNNING");
+            broadcastSnapshot(room);
+            return;
+        }
         long beforeVersion = room.battle.getState().getVersion();
         BattleResult result = intent.getType() == GameAction.Type.USE_ITEM
                 ? room.battle.submitItem(peer.id, intent.getItemUse())
@@ -377,6 +399,7 @@ public final class LocalGameServer implements AutoCloseable {
         private long version;
         private String matchId;
         private BattleManager battle;
+        private long lastAdvanceNanos;
     }
 
     private final class Peer {

@@ -56,8 +56,13 @@ public final class LocalGameServerTest {
                     && firstId.equals(firstStart.getLocalParticipantId())
                     && secondId.equals(secondStart.getLocalParticipantId()),
                     "Same match with each local identity");
-            check(first.snapshot(matchId, -1).getBattleState().getStatus() == BattleState.Status.RUNNING,
+            BattleState initial = first.snapshot(matchId, -1).getBattleState();
+            check(initial.getStatus() == BattleState.Status.RUNNING,
                     "First initial snapshot");
+            check("student".equals(initial.getParticipant(firstId).getCharacterId())
+                    && initial.getParticipant(firstId).getItemSlots() == 3
+                    && initial.getParticipant(firstId).getGravityMillis() == 500,
+                    "PvP 서버가 기본 캐릭터와 500ms 낙하를 강제");
             check(second.snapshot(matchId, -1).getBattleState().getStatus() == BattleState.Status.RUNNING,
                     "Second initial snapshot");
 
@@ -80,8 +85,13 @@ public final class LocalGameServerTest {
             first.outcome(6, true, null);
             first.snapshot(matchId, -1);
 
-            first.send(WireRequest.room(7, RoomCommand.leaveRoom()));
-            first.outcome(7, true, null);
+            first.send(WireRequest.intent(7, matchId, new PlayerIntent(GameAction.Type.USE_ITEM,
+                    new GameAction.ItemUse("heal", firstId))));
+            RequestOutcome forged = first.anyOutcome(7);
+            check(!forged.isAccepted() && !"ITEM_NOT_IMPLEMENTED".equals(forged.getReasonCode()),
+                    "아이템 명령이 서버에 도달하되 실제 보유하지 않은 아이템은 거절");
+            first.send(WireRequest.room(8, RoomCommand.leaveRoom()));
+            first.outcome(8, true, null);
             check(first.roomState().getPhase() == RoomState.Phase.CLOSED,
                     "Leaver receives a closed room state");
             BattleState finished = second.finished(matchId).getBattleState();

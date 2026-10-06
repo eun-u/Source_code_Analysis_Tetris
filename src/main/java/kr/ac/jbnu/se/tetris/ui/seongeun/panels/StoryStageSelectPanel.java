@@ -4,173 +4,104 @@ import java.awt.*;
 import java.awt.event.ActionListener;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
+import kr.ac.jbnu.se.tetris.story.*;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.StoryProgressData;
-import kr.ac.jbnu.se.tetris.story.CampaignProgress;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
-import kr.ac.jbnu.se.tetris.story.StageCatalog;
 
+/** 캠페인의 다섯 스테이지와 각 세 전투를 모두 선택하는 화면. */
 public class StoryStageSelectPanel extends JPanel {
-
-    private GameButton backButton;
-
-    private GameButton stage1NormalButton;
-    private GameButton stage1EliteButton;
-    private GameButton stage1BossButton;
-
-    private GameButton stage2NormalButton;
-    private GameButton stage2EliteButton;
-    private GameButton stage2BossButton;
-
-    private GameButton stage3NormalButton;
-    private GameButton stage3EliteButton;
-    private GameButton stage3BossButton;
+    private final JButton back = new PixelButton("로비로");
+    private final StageCatalog catalog = StageCatalog.loadDefault();
+    private final JButton[][] encounters = new JButton[catalog.getStages().size()][3];
+    private final JLabel[] headings = new JLabel[catalog.getStages().size()];
 
     public StoryStageSelectPanel() {
-        setLayout(new BorderLayout());
-
-        // 상단 영역
-        JLabel titleLabel = new JLabel("Story");
-        backButton = new GameButton("Back");
-
-        JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        topPanel.add(titleLabel, BorderLayout.WEST);
-        topPanel.add(backButton, BorderLayout.EAST);
-
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.add(topPanel, BorderLayout.CENTER);
-        headerPanel.add(new JSeparator(), BorderLayout.SOUTH);
-
-        add(headerPanel, BorderLayout.NORTH);
-
-        // Stage 전체 영역
-        JPanel stageContainer = new JPanel();
-        stageContainer.setLayout(new BoxLayout(stageContainer, BoxLayout.Y_AXIS));
-        stageContainer.setBorder(new EmptyBorder(10, 20, 10, 20));
-
-        // Stage 1
-        JPanel stage1Panel = createStagePanel(
-            "Stage 1",
-            stage1NormalButton = new GameButton("일반"),
-            stage1EliteButton = new GameButton("엘리트"),
-            stage1BossButton = new GameButton("보스")
-        );
-
-        // Stage 2
-        JPanel stage2Panel = createStagePanel(
-            "Stage 2",
-            stage2NormalButton = new GameButton("일반"),
-            stage2EliteButton = new GameButton("엘리트"),
-            stage2BossButton = new GameButton("보스")
-        );
-
-        // Stage 3
-        JPanel stage3Panel = createStagePanel(
-            "Stage 3",
-            stage3NormalButton = new GameButton("일반"),
-            stage3EliteButton = new GameButton("엘리트"),
-            stage3BossButton = new GameButton("보스")
-        );
-
-        stageContainer.add(stage1Panel);
-        stageContainer.add(Box.createVerticalStrut(15));
-        stageContainer.add(stage2Panel);
-        stageContainer.add(Box.createVerticalStrut(15));
-        stageContainer.add(stage3Panel);
-
-        add(stageContainer, BorderLayout.CENTER);
+        setLayout(new BorderLayout(0, 8));
+        setBackground(new Color(12, 22, 37));
+        setBorder(new EmptyBorder(16, 22, 16, 22));
+        JLabel title = new JLabel("STORY  /  MONSTER HUNT");
+        title.setFont(new Font(Font.MONOSPACED, Font.BOLD, 24));
+        title.setForeground(Color.WHITE);
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+        top.add(title, BorderLayout.WEST);
+        top.add(back, BorderLayout.EAST);
+        add(top, BorderLayout.NORTH);
+        JPanel list = new JPanel();
+        list.setOpaque(false);
+        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+        for (int index = 0; index < encounters.length; index++) {
+            Stage stage = catalog.getStages().get(index);
+            JPanel row = new JPanel(new BorderLayout(12, 8));
+            row.setBackground(new Color(26, 42, 62));
+            row.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(75, 109, 137), 2),
+                    new EmptyBorder(12, 14, 12, 14)));
+            headings[index] = new JLabel(String.format("%02d  %s", index + 1, stage.getName()));
+            headings[index].setForeground(new Color(229, 242, 246));
+            headings[index].setFont(new Font(Font.MONOSPACED, Font.BOLD, 17));
+            row.add(headings[index], BorderLayout.NORTH);
+            JPanel choices = new JPanel(new GridLayout(1, 3, 8, 0));
+            choices.setOpaque(false);
+            for (int tier = 0; tier < 3; tier++) {
+                JButton button = new PixelButton(tierName(tier));
+                button.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+                button.setPreferredSize(new Dimension(150, 43));
+                encounters[index][tier] = button;
+                choices.add(button);
+            }
+            row.add(choices, BorderLayout.CENTER);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+            list.add(row);
+            list.add(Box.createVerticalStrut(10));
+        }
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(getBackground());
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        add(scroll, BorderLayout.CENTER);
+        JLabel foot = new JLabel("일반 → 엘리트 → 보스 순서로 해금됩니다.");
+        foot.setForeground(new Color(166, 193, 208));
+        add(foot, BorderLayout.SOUTH);
     }
 
-    private JPanel createStagePanel(String stageName, GameButton normalButton, GameButton eliteButton, GameButton bossButton) {
-        JLabel stageLabel = new JLabel(stageName);
-
-        JPanel buttonPanel = new JPanel(new GridLayout(1, 3, 30, 0));
-        buttonPanel.add(normalButton);
-        buttonPanel.add(eliteButton);
-        buttonPanel.add(bossButton);
-
-        JPanel stagePanel = new JPanel(new BorderLayout(0, 5));
-        stagePanel.add(stageLabel, BorderLayout.NORTH);
-        stagePanel.add(buttonPanel, BorderLayout.CENTER);
-
-        return stagePanel;
+    private static String tierName(int index) { return index == 0 ? "일반" : index == 1 ? "엘리트" : "보스"; }
+    public void updateProgress(CampaignProgress progress, StageCatalog stages) {
+        for (int i = 0; i < encounters.length; i++) {
+            String stageId = stages.getStages().get(i).getId();
+            boolean stageUnlocked = progress.isStageUnlocked(stageId);
+            headings[i].setText(String.format("%02d  %s%s", i + 1, stages.getStages().get(i).getName(),
+                    stageUnlocked ? "" : "  [잠김]"));
+            for (int tier = 0; tier < 3; tier++) {
+                MonsterSpec monster = stages.getStages().get(i).getEncounters().get(tier);
+                boolean unlocked = progress.isEncounterUnlocked(stageId, monster.getTier());
+                boolean cleared = progress.isEncounterCleared(monster.getId());
+                encounters[i][tier].setEnabled(unlocked);
+                encounters[i][tier].setText(tierName(tier) + (cleared ? "  ✓" : unlocked ? "" : "  🔒"));
+                encounters[i][tier].setToolTipText(monster.getName() + " / HP " + monster.getHp());
+            }
+        }
     }
-
+    /** 원본 미리보기 데이터 API 호환. */
     public void updateProgress(StoryProgressData progress) {
-        updateButton(stage1NormalButton, "일반", progress.isUnlocked(1, StoryProgressData.NORMAL));
-        updateButton(stage1EliteButton, "엘리트", progress.isUnlocked(1, StoryProgressData.ELITE));
-        updateButton(stage1BossButton, "보스", progress.isUnlocked(1, StoryProgressData.BOSS));
-
-        updateButton(stage2NormalButton, "일반", progress.isUnlocked(2, StoryProgressData.NORMAL));
-        updateButton(stage2EliteButton, "엘리트", progress.isUnlocked(2, StoryProgressData.ELITE));
-        updateButton(stage2BossButton, "보스", progress.isUnlocked(2, StoryProgressData.BOSS));
-
-        updateButton(stage3NormalButton, "일반", progress.isUnlocked(3, StoryProgressData.NORMAL));
-        updateButton(stage3EliteButton, "엘리트", progress.isUnlocked(3, StoryProgressData.ELITE));
-        updateButton(stage3BossButton, "보스", progress.isUnlocked(3, StoryProgressData.BOSS));
+        for (int i = 0; i < Math.min(3, encounters.length); i++)
+            for (int tier = 0; tier < 3; tier++) {
+                boolean unlocked = progress.isUnlocked(i + 1, tier);
+                encounters[i][tier].setEnabled(unlocked);
+                encounters[i][tier].setText(unlocked ? tierName(tier) : "잠김");
+            }
     }
-
-    /** 원본의 Stage 1~3 버튼을 현재 캠페인 진행 상태에 연결한다. */
-    public void updateProgress(CampaignProgress progress, StageCatalog catalog) {
-        if (progress == null || catalog == null || catalog.getStages().size() < 3)
-            throw new IllegalArgumentException("Three stages and progress are required");
-        String first = catalog.getStages().get(0).getId();
-        String second = catalog.getStages().get(1).getId();
-        String third = catalog.getStages().get(2).getId();
-        updateButton(stage1NormalButton, "일반", progress.isEncounterUnlocked(first, MonsterTier.NORMAL));
-        updateButton(stage1EliteButton, "엘리트", progress.isEncounterUnlocked(first, MonsterTier.ELITE));
-        updateButton(stage1BossButton, "보스", progress.isEncounterUnlocked(first, MonsterTier.BOSS));
-        updateButton(stage2NormalButton, "일반", progress.isEncounterUnlocked(second, MonsterTier.NORMAL));
-        updateButton(stage2EliteButton, "엘리트", progress.isEncounterUnlocked(second, MonsterTier.ELITE));
-        updateButton(stage2BossButton, "보스", progress.isEncounterUnlocked(second, MonsterTier.BOSS));
-        updateButton(stage3NormalButton, "일반", progress.isEncounterUnlocked(third, MonsterTier.NORMAL));
-        updateButton(stage3EliteButton, "엘리트", progress.isEncounterUnlocked(third, MonsterTier.ELITE));
-        updateButton(stage3BossButton, "보스", progress.isEncounterUnlocked(third, MonsterTier.BOSS));
+    public void setBackAction(ActionListener listener) { back.addActionListener(listener); }
+    public void setStageAction(int stageIndex, MonsterTier tier, ActionListener listener) {
+        encounters[stageIndex][tier.ordinal()].addActionListener(listener);
     }
-
-    private void updateButton(GameButton button, String difficultyName, boolean unlocked) {
-        button.setEnabled(unlocked);
-        button.setText(unlocked ? difficultyName : "Locked");
-    }
-
-    public void setBackAction(ActionListener listener) {
-        backButton.addActionListener(listener);
-    }
-
-    public void setStage1NormalAction(ActionListener listener) {
-        stage1NormalButton.addActionListener(listener);
-    }
-
-    public void setStage1EliteAction(ActionListener listener) {
-        stage1EliteButton.addActionListener(listener);
-    }
-
-    public void setStage1BossAction(ActionListener listener) {
-        stage1BossButton.addActionListener(listener);
-    }
-
-    public void setStage2NormalAction(ActionListener listener) {
-        stage2NormalButton.addActionListener(listener);
-    }
-
-    public void setStage2EliteAction(ActionListener listener) {
-        stage2EliteButton.addActionListener(listener);
-    }
-
-    public void setStage2BossAction(ActionListener listener) {
-        stage2BossButton.addActionListener(listener);
-    }
-
-    public void setStage3NormalAction(ActionListener listener) {
-        stage3NormalButton.addActionListener(listener);
-    }
-
-    public void setStage3EliteAction(ActionListener listener) {
-        stage3EliteButton.addActionListener(listener);
-    }
-
-    public void setStage3BossAction(ActionListener listener) {
-        stage3BossButton.addActionListener(listener);
-    }
+    public void setStage1NormalAction(ActionListener l) { setStageAction(0, MonsterTier.NORMAL, l); }
+    public void setStage1EliteAction(ActionListener l) { setStageAction(0, MonsterTier.ELITE, l); }
+    public void setStage1BossAction(ActionListener l) { setStageAction(0, MonsterTier.BOSS, l); }
+    public void setStage2NormalAction(ActionListener l) { setStageAction(1, MonsterTier.NORMAL, l); }
+    public void setStage2EliteAction(ActionListener l) { setStageAction(1, MonsterTier.ELITE, l); }
+    public void setStage2BossAction(ActionListener l) { setStageAction(1, MonsterTier.BOSS, l); }
+    public void setStage3NormalAction(ActionListener l) { setStageAction(2, MonsterTier.NORMAL, l); }
+    public void setStage3EliteAction(ActionListener l) { setStageAction(2, MonsterTier.ELITE, l); }
+    public void setStage3BossAction(ActionListener l) { setStageAction(2, MonsterTier.BOSS, l); }
 }

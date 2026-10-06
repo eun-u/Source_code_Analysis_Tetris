@@ -2,8 +2,11 @@ package kr.ac.jbnu.se.tetris.app;
 
 import kr.ac.jbnu.se.tetris.ai.AIStrategy;
 import kr.ac.jbnu.se.tetris.ai.AIProfile;
-import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
 import kr.ac.jbnu.se.tetris.ai.FixedWeightPolicy;
+import kr.ac.jbnu.se.tetris.ai.AdaptiveWeightPolicy;
+import kr.ac.jbnu.se.tetris.ai.BossPhaseWeightPolicy;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfile;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.ai.PolicyDrivenStrategy;
 import kr.ac.jbnu.se.tetris.ai.PlacementLog;
 import kr.ac.jbnu.se.tetris.ai.PlayerProfile;
@@ -19,9 +22,20 @@ public final class MonsterStrategies {
     /** 등급과 무관한 명시적 AI 프로필 조립 */
     public static AIStrategy create(MonsterSpec spec) {
         if (spec == null) throw new IllegalArgumentException("Monster specification is required");
-        AIProfile selected = AIProfileCatalog.loadDefault().get(spec.getAiProfileId());
+        return create(DifficultyProfileCatalog.forEncounter(spec));
+    }
+
+    public static AIStrategy create(DifficultyProfile difficulty) {
+        if (difficulty == null) throw new IllegalArgumentException("Difficulty is required");
+        AIProfile selected = difficulty.toAiProfile();
         if ("FIXED".equals(selected.getPolicyId())) {
             return new PolicyDrivenStrategy(selected, new FixedWeightPolicy());
+        }
+        if ("ADAPTIVE".equals(selected.getPolicyId())) {
+            return new PolicyDrivenStrategy(selected, new AdaptiveWeightPolicy());
+        }
+        if ("BOSS_PHASE".equals(selected.getPolicyId())) {
+            return new PolicyDrivenStrategy(selected, new BossPhaseWeightPolicy());
         }
         throw new IllegalArgumentException("Unsupported AI policy: " + selected.getPolicyId());
     }

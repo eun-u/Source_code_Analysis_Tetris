@@ -28,6 +28,26 @@ public final class StoryProgressService {
         return new CampaignProgress(catalog, completedEncounterIds);
     }
 
+    /** 저장된 캠페인 완료 기록 복원. 순차 해금 경로만 허용한다. */
+    public synchronized void restoreCompletedEncounterIds(Set<String> completed) {
+        if (completed == null || activeRun != null) {
+            throw new IllegalArgumentException("Progress may only be restored before starting a run");
+        }
+        Set<String> expected = new LinkedHashSet<String>();
+        boolean gap = false;
+        for (Stage stage : catalog.getStages()) {
+            for (MonsterSpec monster : stage.getEncounters()) {
+                boolean present = completed.contains(monster.getId());
+                if (present && gap) throw new IllegalArgumentException("Campaign progress has a gap");
+                if (present) expected.add(monster.getId());
+                else gap = true;
+            }
+        }
+        if (expected.size() != completed.size()) throw new IllegalArgumentException("Unknown campaign encounter");
+        completedEncounterIds.clear();
+        completedEncounterIds.addAll(expected);
+    }
+
     public synchronized EncounterRun getActiveRun() { return activeRun; }
 
     /** 잠금 검사 후 첫 미완료 전투 시작, 완료된 스테이지는 일반 전투 재시작 */

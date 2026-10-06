@@ -5,9 +5,13 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.IOException;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
@@ -15,13 +19,15 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JPasswordField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
-import kr.ac.jbnu.se.tetris.ai.PlacementLog;
-import kr.ac.jbnu.se.tetris.ai.PlayerProfile;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
+import kr.ac.jbnu.se.tetris.character.CharacterCatalog;
+import kr.ac.jbnu.se.tetris.character.CharacterSpec;
 import kr.ac.jbnu.se.tetris.app.session.LocalMatchSession;
+import kr.ac.jbnu.se.tetris.app.session.CommandOutcome;
 import kr.ac.jbnu.se.tetris.app.session.MatchSession;
 import kr.ac.jbnu.se.tetris.app.session.OnlineMatchSession;
 import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
@@ -37,6 +43,7 @@ import kr.ac.jbnu.se.tetris.network.NetworkUpdate;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
 import kr.ac.jbnu.se.tetris.network.TcpNetworkClient;
+import kr.ac.jbnu.se.tetris.network.server.LocalGameServer;
 import kr.ac.jbnu.se.tetris.story.CampaignProgress;
 import kr.ac.jbnu.se.tetris.story.EncounterRun;
 import kr.ac.jbnu.se.tetris.story.MonsterSpec;
@@ -50,6 +57,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.BattlePanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.panels.CharacterShopPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LocalGamePanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LocalModePanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LoginPanel;
@@ -72,14 +80,17 @@ public final class SeongeunApplication implements AutoCloseable {
     private static final String RESULT = "RESULT";
     private static final String LOCAL_MODE = "LOCAL_MODE";
     private static final String LOCAL_GAME = "LOCAL_GAME";
+    private static final String CHARACTER_SHOP = "CHARACTER_SHOP";
 
     private final CardLayout cards = new CardLayout();
     private final JPanel screens = new JPanel(cards);
     private final JMenuBar menu = new JMenuBar();
+    private JMenuItem characterMenuItem;
     private final Random seeds;
     private final StageCatalog stages = StageCatalog.loadDefault();
     private final StoryProgressService progress = new StoryProgressService(stages);
-    private final AIProfileCatalog aiProfiles = AIProfileCatalog.loadDefault();
+    private final CharacterCatalog characters = CharacterCatalog.loadDefault();
+    private final Map<String, Integer> characterPrices = new LinkedHashMap<String, Integer>();
     private final LoginPanel login = new LoginPanel();
     private final SignUpPanel signUp = new SignUpPanel();
     private final MainLobbyPanel lobby = new MainLobbyPanel();
@@ -90,6 +101,11 @@ public final class SeongeunApplication implements AutoCloseable {
     private final ResultPanel result = new ResultPanel();
     private final LocalModePanel localMode = new LocalModePanel();
     private final LocalGamePanel localPanel = new LocalGamePanel();
+    private final CharacterShopPanel characterShop = new CharacterShopPanel();
+    private final PlayerSaveStore saveStore;
+    private PlayerSaveStore.Data saveData;
+    private boolean saveWritable = true;
+    private boolean saveDirty;
     private final Timer localGravity;
     private JFrame frame;
     private String currentScreen;
@@ -107,15 +123,30 @@ public final class SeongeunApplication implements AutoCloseable {
     private boolean storyBattle;
     private String displayedBattleMatchId;
     private boolean closed;
+    private LocalGameServer localServer;
+    private final Set<Long> itemRequests = new HashSet<Long>();
+    private int earnedReward;
 
-    public SeongeunApplication() { this(new Random()); }
+    public SeongeunApplication() { this(new Random(), PlayerSaveStore.defaultStore()); }
 
-    SeongeunApplication(Random seeds) {
+    SeongeunApplication(Random seeds) { this(seeds, null); }
+
+    SeongeunApplication(Random seeds, PlayerSaveStore saveStore) {
         ScreenRouter.requireEdt();
         if (seeds == null) throw new IllegalArgumentException("Seed generator is required");
         this.seeds = seeds;
-        for (Stage stage : stages.getStages()) {
-            for (MonsterSpec monster : stage.getEncounters()) aiProfiles.get(monster.getAiProfileId());
+        this.saveStore = saveStore;
+        characterPrices.put("student", 0);
+        characterPrices.put("attacker", 100);
+        characterPrices.put("defender", 100);
+        characterPrices.put("utility", 120);
+        try {
+            saveData = saveStore == null ? PlayerSaveStore.Data.initial() : saveStore.load();
+            progress.restoreCompletedEncounterIds(saveData.getCleared());
+        } catch (IOException | IllegalArgumentException invalid) {
+            saveData = PlayerSaveStore.Data.initial();
+            saveWritable = false;
+            lastMessage = "로컬 저장 데이터를 읽지 못해 임시 진행으로 시작합니다: " + invalid.getMessage();
         }
         localGravity = new Timer(400, event -> advanceGravity());
         localGravity.setCoalesce(true);
@@ -132,10 +163,14 @@ public final class SeongeunApplication implements AutoCloseable {
         screens.add(storySelect, STORY_STAGE);
         screens.add(roomList, ROOM_LIST);
         screens.add(waitingRoom, WAITING_ROOM);
-        screens.add(battle, BATTLE);
+        JScrollPane battleScroll = new JScrollPane(battle);
+        battleScroll.setBorder(null);
+        battleScroll.getVerticalScrollBar().setUnitIncrement(16);
+        screens.add(battleScroll, BATTLE);
         screens.add(result, RESULT);
         screens.add(localMode, LOCAL_MODE);
         screens.add(localPanel, LOCAL_GAME);
+        screens.add(characterShop, CHARACTER_SHOP);
     }
 
     private void bindActions() {
@@ -151,19 +186,23 @@ public final class SeongeunApplication implements AutoCloseable {
         lobby.setStoryAction(event -> showStories());
         lobby.setOnlineBattleAction(event -> openOnline());
         lobby.setLocalModeAction(event -> show(LOCAL_MODE));
+        lobby.setCharacterAction(event -> showCharacters());
+        lobby.setTutorialAction(event -> startTutorial());
+        lobby.setServerAction(event -> startLocalServer());
+        characterShop.setBackAction(event -> show(LOBBY));
+        characterShop.setSelectionAction(this::selectCharacter);
         storySelect.setBackAction(event -> show(LOBBY));
-        storySelect.setStage1NormalAction(event -> startStory(0, MonsterTier.NORMAL));
-        storySelect.setStage1EliteAction(event -> startStory(0, MonsterTier.ELITE));
-        storySelect.setStage1BossAction(event -> startStory(0, MonsterTier.BOSS));
-        storySelect.setStage2NormalAction(event -> startStory(1, MonsterTier.NORMAL));
-        storySelect.setStage2EliteAction(event -> startStory(1, MonsterTier.ELITE));
-        storySelect.setStage2BossAction(event -> startStory(1, MonsterTier.BOSS));
-        storySelect.setStage3NormalAction(event -> startStory(2, MonsterTier.NORMAL));
-        storySelect.setStage3EliteAction(event -> startStory(2, MonsterTier.ELITE));
-        storySelect.setStage3BossAction(event -> startStory(2, MonsterTier.BOSS));
+        for (int index = 0; index < stages.getStages().size(); index++) {
+            final int stageIndex = index;
+            for (MonsterTier tier : MonsterTier.values()) {
+                final MonsterTier selected = tier;
+                storySelect.setStageAction(stageIndex, tier, event -> startStory(stageIndex, selected));
+            }
+        }
         roomList.setBackAction(event -> { closeSession(); show(LOBBY); });
         roomList.setRooms(Collections.<RoomData>emptyList(), room -> joinRoom(room.getRoomName()));
         roomList.setCreateRoomAction(event -> createRoom());
+        roomList.setJoinByIdAction(event -> promptJoin());
         waitingRoom.setBackAction(event -> leaveRoom());
         waitingRoom.setReadyAction(event -> toggleReady());
         battle.setResultAction(event -> {
@@ -178,6 +217,8 @@ public final class SeongeunApplication implements AutoCloseable {
         localPanel.setBackAction(event -> { closeSession(); show(LOCAL_MODE); });
         localPanel.getPlayerBoard().setInputHandlers(this::submit, this::togglePause);
         battle.getPlayerBoard().setInputHandlers(this::submit, this::togglePause);
+        battle.getPlayerBoard().setItemHandler(this::useItem);
+        battle.setItemAction(this::useItem);
     }
 
     private void buildMenu() {
@@ -188,22 +229,16 @@ public final class SeongeunApplication implements AutoCloseable {
         addMenuItem(functions, "현재 게임 안내", this::showGameInformation);
         addMenuItem(functions, "일시정지 / 계속", this::togglePause);
         addMenuItem(functions, "대전 포기", this::forfeit);
-        JMenu extraStages = new JMenu("추가 스테이지");
-        for (int index = 3; index < stages.getStages().size(); index++) {
-            final int stageIndex = index;
-            JMenu stageMenu = new JMenu("Stage " + (index + 1));
-            for (MonsterTier tier : MonsterTier.values()) {
-                final MonsterTier selectedTier = tier;
-                addMenuItem(stageMenu, tierName(tier), () -> startStory(stageIndex, selectedTier));
-            }
-            extraStages.add(stageMenu);
-        }
-        if (extraStages.getItemCount() > 0) functions.add(extraStages);
+        characterMenuItem = new JMenuItem("캐릭터 / 상점");
+        characterMenuItem.addActionListener(event -> showCharacters());
+        characterMenuItem.setEnabled(false);
+        functions.add(characterMenuItem);
         menu.add(functions);
         JMenu online = new JMenu("온라인");
         addMenuItem(online, "서버 연결...", this::promptConnection);
         addMenuItem(online, "방 번호로 입장...", this::promptJoin);
         addMenuItem(online, "방 번호 보기", this::showRoomId);
+        addMenuItem(online, "로컬 서버 시작", this::startLocalServer);
         menu.add(online);
     }
 
@@ -226,6 +261,7 @@ public final class SeongeunApplication implements AutoCloseable {
         if (closed) return;
         cards.show(screens, id);
         currentScreen = id;
+        characterMenuItem.setEnabled(LOBBY.equals(id) || CHARACTER_SHOP.equals(id));
         if (LOCAL_GAME.equals(id)) SwingUtilities.invokeLater(() -> localPanel.getPlayerBoard().requestFocusInWindow());
         if (BATTLE.equals(id)) SwingUtilities.invokeLater(() -> battle.getPlayerBoard().requestFocusInWindow());
     }
@@ -233,6 +269,57 @@ public final class SeongeunApplication implements AutoCloseable {
     private void showStories() {
         storySelect.updateProgress(progress.getCampaignProgress(), stages);
         show(STORY_STAGE);
+    }
+
+    private void showCharacters() {
+        if (!LOBBY.equals(currentScreen) && !CHARACTER_SHOP.equals(currentScreen)) return;
+        characterShop.setData(saveData.getCoins(), saveData.getOwned(),
+                saveData.getSelected(), characterPrices);
+        show(CHARACTER_SHOP);
+    }
+
+    private void selectCharacter(String id) {
+        try {
+            PlayerSaveStore.Data next = saveData.getOwned().contains(id)
+                    ? saveData.withSelected(id)
+                    : saveData.withCharacter(id, characterPrices.get(id));
+            if (commitSave(next)) {
+                showCharacters();
+                message("선택한 캐릭터: " + selectedCharacter().getName());
+            }
+        } catch (IllegalArgumentException invalid) { message("캐릭터 구매 조건을 확인하세요."); }
+    }
+
+    private CharacterSpec selectedCharacter() {
+        for (CharacterSpec character : characters.all())
+            if (character.getId().equals(saveData.getSelected())) return character;
+        return characters.basic();
+    }
+
+    boolean commitSave(PlayerSaveStore.Data next) {
+        saveData = next;
+        if (saveStore != null && !saveWritable) {
+            saveDirty = true;
+            return true;
+        }
+        try {
+            if (saveStore != null) saveStore.save(next);
+            saveDirty = false;
+            return true;
+        } catch (IOException failed) {
+            saveDirty = true;
+            message("진행은 현재 실행 중에 보관 중입니다. 저장 실패: " + failed.getMessage()
+                    + "\n다음 변경 때 모든 진행을 다시 저장합니다.");
+            return true;
+        }
+    }
+
+    private static int storyReward(MonsterTier tier) {
+        switch (tier) {
+            case NORMAL: return 30;
+            case ELITE: return 50;
+            default: return 80;
+        }
     }
 
     private void startStory(int stageIndex, MonsterTier tier) {
@@ -245,14 +332,12 @@ public final class SeongeunApplication implements AutoCloseable {
             return;
         }
         closeSession();
+        earnedReward = 0;
         EncounterRun run = progress.startEncounter(stageId, tier, newRunId(), "local", "monster");
         MonsterSpec spec = run.getMonster();
-        PlayerProfile profile = new PlayerProfile();
-        PlacementLog placements = new PlacementLog();
-        MonsterSession engine = new MonsterSession(seeds.nextLong(), spec.getName(), spec.getHp(),
-                aiProfiles.get(spec.getAiProfileId()).getDelayMillis(), MonsterStrategies.create(spec),
-                profile, placements, run.getRunId(), run.getLocalParticipantId(),
-                run.getMonsterParticipantId(), System::nanoTime);
+        MonsterSession engine = new MonsterSession(seeds.nextLong(), spec.getName(),
+                DifficultyProfileCatalog.forEncounter(spec), selectedCharacter(),
+                run.getRunId(), run.getLocalParticipantId(), run.getMonsterParticipantId());
         storyBattle = true;
         installMatch(new LocalMatchSession(engine));
         result.setReturnButtonText("Story로");
@@ -283,7 +368,7 @@ public final class SeongeunApplication implements AutoCloseable {
     void submit(GameAction.Type action) {
         ScreenRouter.requireEdt();
         if (closed || (!LOCAL_GAME.equals(currentScreen) && !BATTLE.equals(currentScreen))) return;
-        if (localGame != null) { localGame.submit(action); renderLocal(); }
+        if (localGame != null && !localGame.isFinished()) { localGame.submit(action); renderLocal(); }
         else if (tutorial != null) { tutorial.submit(action); renderLocal(); }
         else if (match != null && match.getSnapshot().getCapabilities().canSubmit()) {
             match.submit(new PlayerIntent(action));
@@ -306,7 +391,7 @@ public final class SeongeunApplication implements AutoCloseable {
         if (finished) {
             localGravity.stop();
             if (localGame != null) {
-                if (localGame.isCompleted()) localPanel.setStatusText("COMPLETE");
+                if (localGame.isCompleted()) localPanel.setCompleted(true);
                 return;
             }
             result.setResultDetails(tutorial.isCompleted() ? "COMPLETE" : "GAME OVER", "Player",
@@ -323,8 +408,18 @@ public final class SeongeunApplication implements AutoCloseable {
             if (closed || session != match) return;
             if (storyBattle && session instanceof LocalMatchSession) {
                 LocalMatchSession local = (LocalMatchSession) session;
-                progress.recordBattleResult(update.getSnapshot().getMatchId(), local.getLastBattleResult());
+                StoryProgressService.ResultDisposition disposition =
+                        progress.recordBattleResult(update.getSnapshot().getMatchId(), local.getLastBattleResult());
+                if (disposition == StoryProgressService.ResultDisposition.APPLIED_WIN) {
+                    EncounterRun won = progress.getActiveRun();
+                    boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
+                    int reward = firstClear ? storyReward(won.getMonster().getTier()) : 0;
+                    if (commitSave(saveData.withFirstClear(won.getEncounterId(), reward))) earnedReward = reward;
+                }
             }
+            CommandOutcome outcome = update.getOutcome();
+            if (outcome != null && itemRequests.remove(outcome.getRequestId()) && !outcome.isAccepted())
+                battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
             renderMatch();
         });
     }
@@ -344,6 +439,7 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         BattleState state = snapshot.getBattleState();
         if (state == null) return;
+        battle.setMode(match instanceof OnlineMatchSession);
         if (!snapshot.getMatchId().equals(displayedBattleMatchId)) {
             String localId = snapshot.getLocalParticipantId();
             String opponentId = null;
@@ -366,8 +462,11 @@ public final class SeongeunApplication implements AutoCloseable {
             boolean won = snapshot.getLocalParticipantId().equals(state.getWinnerId());
             int lines = state.getParticipant(snapshot.getLocalParticipantId()).getGameState().getLinesCleared();
             String outcome = state.getWinnerId() == null ? "DRAW" : won ? "VICTORY" : "DEFEAT";
-            result.setResultDetails(outcome, "Player", Integer.toString(lines),
-                    "—", "—", "—");
+            kr.ac.jbnu.se.tetris.battle.ParticipantState local =
+                    state.getParticipant(snapshot.getLocalParticipantId());
+            String reward = storyBattle && won ? Integer.toString(earnedReward) : "0";
+            result.setResultDetails(outcome, local.getName(), Integer.toString(lines),
+                    Integer.toString(local.getMaxCombo()), Integer.toString(local.getTotalDamage()), reward);
             result.setReturnButtonText(storyBattle ? "Story로" : "대기방으로");
             show(RESULT);
         } else if (match instanceof OnlineMatchSession) show(BATTLE);
@@ -384,7 +483,35 @@ public final class SeongeunApplication implements AutoCloseable {
         } else if (match != null && BATTLE.equals(currentScreen)
                 && match.getSnapshot().getCapabilities().canPause()) {
             match.requestPause(match.getSnapshot().getPhase() != SessionPhase.PAUSED);
+        } else if (match != null && BATTLE.equals(currentScreen)) {
+            battle.setFeedback("온라인 대전은 일시정지를 지원하지 않습니다.");
         }
+    }
+
+    private void useItem(int slot) {
+        ScreenRouter.requireEdt();
+        if (match == null || !BATTLE.equals(currentScreen)
+                || !match.getSnapshot().getCapabilities().canSubmit()) return;
+        SessionSnapshot snapshot = match.getSnapshot();
+        BattleState state = snapshot.getBattleState();
+        if (state == null) return;
+        kr.ac.jbnu.se.tetris.battle.ParticipantState participant =
+                state.getParticipant(snapshot.getLocalParticipantId());
+        if (participant == null || slot < 0 || slot >= participant.getItems().size()) return;
+        String item = participant.getItems().get(slot);
+        if (item == null) return;
+        if ("damage_boost".equals(item) || "shield".equals(item)) {
+            battle.setFeedback("이 아이템은 조건이 맞으면 자동으로 사용됩니다.");
+            return;
+        }
+        String target = participant.getId();
+        if ("garbage_bomb".equals(item) || "nullify".equals(item)) {
+            for (String candidate : state.getParticipants().keySet())
+                if (!candidate.equals(target)) { target = candidate; break; }
+        }
+        long requestId = match.submit(new PlayerIntent(GameAction.Type.USE_ITEM,
+                new GameAction.ItemUse(item, target)));
+        itemRequests.add(requestId);
     }
 
     private void forfeit() {
@@ -433,11 +560,16 @@ public final class SeongeunApplication implements AutoCloseable {
     void openOnline(ConnectionOptions options) {
         closeSession();
         roomList.setRooms(Collections.<RoomData>emptyList(), room -> joinRoom(room.getRoomName()));
+        roomList.setConnected(false);
         show(ROOM_LIST);
         connectOnline(options);
     }
 
     private void promptConnection() {
+        if (BATTLE.equals(currentScreen) || LOCAL_GAME.equals(currentScreen)) {
+            message("진행 중인 게임을 끝낸 뒤 서버에 연결하세요.");
+            return;
+        }
         String address = JOptionPane.showInputDialog(frame, "서버 주소 (host:port)", "127.0.0.1:28080");
         if (address == null) return;
         int separator = address.lastIndexOf(':');
@@ -474,6 +606,7 @@ public final class SeongeunApplication implements AutoCloseable {
         switch (update.getType()) {
             case CONNECTED:
                 onlineConnected = true;
+                roomList.setConnected(true);
                 break;
             case ROOM_STATE:
                 roomState = update.getRoomState();
@@ -496,11 +629,14 @@ public final class SeongeunApplication implements AutoCloseable {
             case ERROR:
             case CLOSED:
                 onlineConnected = false;
+                roomList.setConnected(false);
                 message("서버 연결을 확인하세요: " + update.getReasonCode());
                 break;
             case REQUEST_OUTCOME:
                 if (!update.getRequestOutcome().isAccepted()) {
-                    message("요청 거절: " + update.getRequestOutcome().getReasonCode());
+                    if (BATTLE.equals(currentScreen))
+                        battle.setFeedback("요청 거절 · " + update.getRequestOutcome().getReasonCode());
+                    else message("요청 거절: " + update.getRequestOutcome().getReasonCode());
                 }
                 break;
             default: break;
@@ -522,6 +658,7 @@ public final class SeongeunApplication implements AutoCloseable {
         waitingRoom.setRoom(new RoomData(requestedRoomName == null ? roomState.getRoomId() : requestedRoomName,
                 ready.size(), 2,
                 roomState.getPhase() == RoomState.Phase.WAITING ? "Waiting" : "Playing"));
+        waitingRoom.setRoomId(roomState.getRoomId());
         waitingRoom.setPlayers(local, opponent);
     }
 
@@ -544,6 +681,10 @@ public final class SeongeunApplication implements AutoCloseable {
     }
 
     private void promptJoin() {
+        if (BATTLE.equals(currentScreen) || LOCAL_GAME.equals(currentScreen)) {
+            message("진행 중인 게임을 끝낸 뒤 방에 입장하세요.");
+            return;
+        }
         String roomId = JOptionPane.showInputDialog(frame, "입장할 방 번호를 입력하세요.");
         if (roomId != null) joinRoom(roomId);
     }
@@ -557,6 +698,19 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void showRoomId() {
         message(roomState == null ? "아직 참가한 방이 없습니다." : "방 번호: " + roomState.getRoomId());
+    }
+
+    private void startLocalServer() {
+        if (localServer != null) { message("이 앱의 로컬 서버가 이미 실행 중입니다. 포트 28080"); return; }
+        LocalGameServer candidate = new LocalGameServer(28080);
+        try {
+            candidate.start();
+            localServer = candidate;
+            message("로컬 서버 시작됨 · 127.0.0.1:28080\n다른 게임 창에서 같은 주소로 접속할 수 있습니다.");
+        } catch (IOException failed) {
+            candidate.close();
+            message("포트 28080 사용 중이거나 서버를 시작하지 못했습니다.");
+        }
     }
 
     private void toggleReady() {
@@ -582,7 +736,43 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void message(String text) {
         lastMessage = text;
-        if (frame != null) JOptionPane.showMessageDialog(frame, text);
+        if (BATTLE.equals(currentScreen) && match instanceof OnlineMatchSession) {
+            battle.setFeedback(text);
+            return;
+        }
+        if (frame != null) withLocalGamePaused(() -> JOptionPane.showMessageDialog(frame, text));
+    }
+
+    /** 모달의 중첩 EDT 루프에서도 로컬 게임 시간이 흐르지 않도록 보호한다. */
+    void withLocalGamePaused(Runnable dialog) {
+        ScreenRouter.requireEdt();
+        LocalGameSession pausedGame = localGame != null && !localGame.isFinished()
+                && !localGame.isPaused() ? localGame : null;
+        TutorialSession pausedTutorial = tutorial != null && !tutorial.isFinished()
+                && !tutorial.isPaused() ? tutorial : null;
+        MatchSession pausedMatch = match instanceof LocalMatchSession
+                && match.getSnapshot().getPhase() == SessionPhase.RUNNING ? match : null;
+        if (pausedGame != null) pausedGame.pause();
+        if (pausedTutorial != null) pausedTutorial.pause();
+        if (pausedGame != null || pausedTutorial != null) localGravity.stop();
+        if (pausedMatch != null) pausedMatch.requestPause(true);
+        try {
+            dialog.run();
+        } finally {
+            if (!closed) {
+                if (pausedGame != null && pausedGame == localGame && !pausedGame.isFinished()) {
+                    pausedGame.resume();
+                    renderLocal();
+                }
+                if (pausedTutorial != null && pausedTutorial == tutorial && !pausedTutorial.isFinished()) {
+                    pausedTutorial.resume();
+                    renderLocal();
+                }
+                if (pausedMatch != null && pausedMatch == match
+                        && pausedMatch.getSnapshot().getPhase() == SessionPhase.PAUSED)
+                    pausedMatch.requestPause(false);
+            }
+        }
     }
 
     private static void clearSecrets(Container root) {
@@ -608,13 +798,19 @@ public final class SeongeunApplication implements AutoCloseable {
         onlineResultReturned = false;
         storyBattle = false;
         displayedBattleMatchId = null;
+        itemRequests.clear();
     }
 
     public void openWindow() {
         ScreenRouter.requireEdt();
         if (frame != null) throw new IllegalStateException("Window is already open");
-        frame = new JFrame("Tetris UI Preview");
-        frame.setSize(800, 600);
+        frame = new JFrame("Tetris Monster");
+        java.awt.Dimension screen = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
+        int usableWidth = Math.max(1, screen.width - 40);
+        int usableHeight = Math.max(1, screen.height - 70);
+        frame.setMinimumSize(new java.awt.Dimension(Math.min(960, usableWidth),
+                Math.min(760, usableHeight)));
+        frame.setSize(Math.min(1240, usableWidth), Math.min(900, usableHeight));
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLocationRelativeTo(null);
         frame.setJMenuBar(menu);
@@ -623,12 +819,14 @@ public final class SeongeunApplication implements AutoCloseable {
             @Override public void windowClosed(WindowEvent event) { close(); }
         });
         frame.setVisible(true);
+        if (lastMessage != null && !lastMessage.isEmpty()) message(lastMessage);
     }
 
     @Override public void close() {
         ScreenRouter.requireEdt();
         if (closed) return;
         closeSession();
+        if (localServer != null) { localServer.close(); localServer = null; }
         clearSecrets(login);
         clearSecrets(signUp);
         closed = true;
@@ -648,6 +846,8 @@ public final class SeongeunApplication implements AutoCloseable {
     CampaignProgress getCampaignProgress() { return progress.getCampaignProgress(); }
     JPanel getScreens() { return screens; }
     JMenuBar getMenu() { return menu; }
+    PlayerSaveStore.Data getSaveData() { return saveData; }
+    boolean isSaveDirty() { return saveDirty; }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new SeongeunApplication().openWindow());

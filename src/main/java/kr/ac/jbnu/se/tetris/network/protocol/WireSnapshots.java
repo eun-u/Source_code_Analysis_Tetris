@@ -22,6 +22,7 @@ final class WireSnapshots {
         Map<String, Object> value = new LinkedHashMap<String, Object>();
         value.put("status", battle.getStatus().name());
         value.put("version", battle.getVersion());
+        value.put("elapsedMillis", battle.getElapsedMillis());
         if (battle.getWinnerId() != null) value.put("winnerId", battle.getWinnerId());
         if (battle.getReason() != null) value.put("reason", battle.getReason());
         List<Object> participants = new ArrayList<Object>();
@@ -32,6 +33,17 @@ final class WireSnapshots {
             entry.put("hp", participant.getHp());
             entry.put("maxHp", participant.getMaxHp());
             entry.put("eliminated", participant.isEliminated());
+            entry.put("characterId", participant.getCharacterId());
+            entry.put("itemSlots", participant.getItemSlots());
+            entry.put("items", new ArrayList<String>(participant.getItems()));
+            entry.put("fever", participant.getFever());
+            entry.put("feverRemainingMillis", participant.getFeverRemainingMillis());
+            entry.put("timeWarpRemainingMillis", participant.getTimeWarpRemainingMillis());
+            entry.put("pendingGarbageLines", participant.getPendingGarbageLines());
+            entry.put("garbageWaitRemainingMillis", participant.getGarbageWaitRemainingMillis());
+            entry.put("gravityMillis", participant.getGravityMillis());
+            entry.put("maxCombo", participant.getMaxCombo());
+            entry.put("totalDamage", participant.getTotalDamage());
             entry.put("game", encodeGame(participant.getGameState()));
             participants.add(entry);
         }
@@ -42,7 +54,7 @@ final class WireSnapshots {
     static BattleState decode(Object raw) throws IOException {
         Map<String, Object> value = WireCodec.object(raw);
         WireCodec.keys(value, new String[] { "status", "version", "participants" },
-                new String[] { "winnerId", "reason" });
+                new String[] { "winnerId", "reason", "elapsedMillis" });
         BattleState.Status status = WireCodec.enumeration(BattleState.Status.class, value.get("status"));
         long version = WireCodec.nonnegative(value.get("version"));
         String winnerId = WireCodec.optionalId(value, "winnerId");
@@ -53,7 +65,9 @@ final class WireSnapshots {
         for (Object rawEntry : entries) {
             Map<String, Object> entry = WireCodec.object(rawEntry);
             WireCodec.keys(entry, new String[] { "id", "name", "hp", "maxHp", "eliminated", "game" },
-                    new String[0]);
+                    new String[] { "characterId", "itemSlots", "items", "fever", "feverRemainingMillis",
+                            "timeWarpRemainingMillis", "pendingGarbageLines", "garbageWaitRemainingMillis",
+                            "gravityMillis", "maxCombo", "totalDamage" });
             String id = WireCodec.id(entry.get("id"));
             String name = WireCodec.text(entry.get("name"), 128);
             int hp = WireCodec.integer(entry.get("hp"));
@@ -61,9 +75,22 @@ final class WireSnapshots {
             boolean eliminated = WireCodec.bool(entry.get("eliminated"));
             GameState game = decodeGame(entry.get("game"));
             if (participants.containsKey(id)) throw new IOException("Duplicate participant ID");
-            participants.put(id, BattleSnapshots.participant(id, name, hp, maxHp, game, eliminated));
+            List<String> items = new ArrayList<String>();
+            if (entry.containsKey("items")) {
+                List<Object> inventory = WireCodec.array(entry.get("items"));
+                if (inventory.size() > 4) throw new IOException("Too many inventory items");
+                for (Object item : inventory) items.add(itemId(item));
+            }
+            participants.put(id, BattleSnapshots.participant(id, name, hp, maxHp, game, eliminated,
+                    entry.containsKey("characterId") ? WireCodec.id(entry.get("characterId")) : "student",
+                    optionalInt(entry, "itemSlots", 3), items, optionalInt(entry, "fever", 0),
+                    optionalLong(entry, "feverRemainingMillis"), optionalLong(entry, "timeWarpRemainingMillis"),
+                    optionalInt(entry, "pendingGarbageLines", game.getPendingGarbageLines()),
+                    optionalLong(entry, "garbageWaitRemainingMillis"), optionalInt(entry, "gravityMillis", 400),
+                    optionalInt(entry, "maxCombo", 0), optionalInt(entry, "totalDamage", 0)));
         }
-        return BattleSnapshots.battle(status, version, participants, winnerId, reason);
+        return BattleSnapshots.battle(status, version, participants, winnerId, reason,
+                optionalLong(value, "elapsedMillis"));
     }
 
     private static Map<String, Object> encodeGame(GameState game) {
@@ -73,10 +100,22 @@ final class WireSnapshots {
         value.put("tick", game.getTick());
         value.put("status", game.getStatus().name());
         value.put("board", encodeBoard(game.getBoard()));
+        List<Object> boardItems = new ArrayList<Object>();
+        List<Object> boardOrigins = new ArrayList<Object>();
+        for (int y = 0; y < 22; y++) for (int x = 0; x < 10; x++) {
+            boardItems.add(game.getBoard().getItemId(x, y));
+            boardOrigins.add(game.getBoard().getOriginId(x, y));
+        }
+        value.put("boardItems", boardItems);
+        value.put("boardOrigins", boardOrigins);
         if (game.getActivePiece() != null) {
             Map<String, Object> piece = new LinkedHashMap<String, Object>();
             piece.put("type", game.getActivePiece().getType().name());
             piece.put("rotation", game.getActivePiece().getRotation());
+            if (game.getActivePiece().getItemId() != null) {
+                piece.put("itemId", game.getActivePiece().getItemId());
+                piece.put("identity", game.getActivePiece().getIdentity());
+            }
             value.put("activePiece", piece);
         }
         value.put("pieceX", game.getPieceX());
@@ -84,6 +123,7 @@ final class WireSnapshots {
         value.put("linesCleared", game.getLinesCleared());
         value.put("awaitingSpawn", game.isAwaitingSpawn());
         value.put("holdPiece", game.getHoldPiece().name());
+        if (game.getHoldItemId() != null) value.put("holdItemId", game.getHoldItemId());
         value.put("canHold", game.canHold());
         List<Object> next = new ArrayList<Object>();
         for (PieceType piece : game.getNextPieces()) next.add(piece.name());
@@ -99,20 +139,38 @@ final class WireSnapshots {
         WireCodec.keys(value, new String[] { "actorId", "version", "tick", "status", "board",
                 "pieceX", "pieceY", "linesCleared", "awaitingSpawn", "holdPiece", "canHold",
                 "nextPieces", "ghostY", "combo", "pendingGarbageLines" },
-                new String[] { "activePiece" });
+                new String[] { "activePiece", "boardItems", "boardOrigins", "holdItemId" });
         String actorId = WireCodec.id(value.get("actorId"));
         long version = WireCodec.nonnegative(value.get("version"));
         long tick = WireCodec.nonnegative(value.get("tick"));
         GameState.Status status = WireCodec.enumeration(GameState.Status.class, value.get("status"));
         BoardState board = decodeBoard(value.get("board"));
+        if (value.containsKey("boardItems")) {
+            List<Object> metadata = WireCodec.array(value.get("boardItems"));
+            if (metadata.size() != 220) throw new IOException("Board item metadata requires 220 cells");
+            String[] itemIds = new String[220];
+            long[] origins = new long[220];
+            List<Object> rawOrigins = value.containsKey("boardOrigins")
+                    ? WireCodec.array(value.get("boardOrigins")) : null;
+            if (rawOrigins != null && rawOrigins.size() != 220) throw new IOException("Invalid board provenance");
+            PieceType[] cells = new PieceType[220];
+            for (int index = 0; index < 220; index++) {
+                cells[index] = board.getCell(index % 10, index / 10);
+                if (metadata.get(index) != null) itemIds[index] = itemId(metadata.get(index));
+                if (rawOrigins != null) origins[index] = WireCodec.nonnegative(rawOrigins.get(index));
+            }
+            board = CoreSnapshots.board(10, 22, cells, origins, itemIds);
+        }
         Piece active = null;
         if (value.containsKey("activePiece")) {
             Map<String, Object> piece = WireCodec.object(value.get("activePiece"));
-            WireCodec.keys(piece, new String[] { "type", "rotation" }, new String[0]);
+            WireCodec.keys(piece, new String[] { "type", "rotation" }, new String[] { "itemId", "identity" });
             PieceType type = WireCodec.enumeration(PieceType.class, piece.get("type"));
             int rotation = WireCodec.integer(piece.get("rotation"));
             if (rotation < 0 || rotation > 3) throw new IOException("Invalid piece rotation");
             active = new Piece(type);
+            if (piece.containsKey("itemId")) active = Piece.withItem(type, itemId(piece.get("itemId")),
+                    piece.containsKey("identity") ? WireCodec.positive(piece.get("identity")) : 1L);
             for (int index = 0; index < rotation; index++) active = active.rotateRight();
             if (active.getRotation() != rotation) throw new IOException("Invalid piece rotation");
         }
@@ -125,7 +183,26 @@ final class WireSnapshots {
                 WireCodec.integer(value.get("linesCleared")), WireCodec.bool(value.get("awaitingSpawn")),
                 WireCodec.enumeration(PieceType.class, value.get("holdPiece")),
                 WireCodec.bool(value.get("canHold")), next, WireCodec.integer(value.get("ghostY")),
-                WireCodec.integer(value.get("combo")), WireCodec.integer(value.get("pendingGarbageLines")));
+                WireCodec.integer(value.get("combo")), WireCodec.integer(value.get("pendingGarbageLines")),
+                value.containsKey("holdItemId") ? itemId(value.get("holdItemId")) : null);
+    }
+
+    private static int optionalInt(Map<String, Object> value, String key, int fallback) throws IOException {
+        return value.containsKey(key) ? WireCodec.integer(value.get(key)) : fallback;
+    }
+
+    private static long optionalLong(Map<String, Object> value, String key) throws IOException {
+        return value.containsKey(key) ? WireCodec.nonnegative(value.get(key)) : 0L;
+    }
+
+    private static String itemId(Object value) throws IOException {
+        String id = WireCodec.id(value);
+        if (!id.equals("damage_boost") && !id.equals("garbage_bomb") && !id.equals("heal")
+                && !id.equals("shield") && !id.equals("line_cleaner") && !id.equals("fever_charge")
+                && !id.equals("time_warp") && !id.equals("nullify")) {
+            throw new IOException("Unknown item identifier");
+        }
+        return id;
     }
 
     private static String encodeBoard(BoardState board) {

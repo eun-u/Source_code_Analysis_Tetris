@@ -4,9 +4,9 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
 import java.awt.Dimension; // JButton 사용
-import javax.swing.JButton; // 가로·세로 크기를 설정하기 위해 Dimension 사용
+// 원본 화면의 버튼 크기를 유지하면서 공통 픽셀 외형을 사용한다.
 
-public class GameButton extends JButton {
+public class GameButton extends PixelButton {
     public GameButton(String text) {
         super(text);
 

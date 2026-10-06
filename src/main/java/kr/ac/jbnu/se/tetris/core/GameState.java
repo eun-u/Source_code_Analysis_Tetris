@@ -19,6 +19,7 @@ public final class GameState {
     private final int linesCleared;
     private final boolean awaitingSpawn;
     private final PieceType holdPiece;
+    private final String holdItemId;
     private final boolean canHold;
     private final List<PieceType> nextPieces;
     private final int ghostY;
@@ -36,6 +37,15 @@ public final class GameState {
               Piece activePiece, int pieceX, int pieceY, int linesCleared, boolean awaitingSpawn,
               PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
               int ghostY, int combo, int pendingGarbageLines) {
+        this(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
+                linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY,
+                combo, pendingGarbageLines, null);
+    }
+
+    GameState(String actorId, long version, long tick, Status status, BoardState board,
+              Piece activePiece, int pieceX, int pieceY, int linesCleared, boolean awaitingSpawn,
+              PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
+              int ghostY, int combo, int pendingGarbageLines, String holdItemId) {
         this.actorId = actorId;
         this.version = version;
         this.tick = tick;
@@ -47,6 +57,7 @@ public final class GameState {
         this.linesCleared = linesCleared;
         this.awaitingSpawn = awaitingSpawn;
         this.holdPiece = holdPiece;
+        this.holdItemId = holdItemId;
         this.canHold = canHold;
         this.nextPieces = Collections.unmodifiableList(new ArrayList<PieceType>(nextPieces));
         this.ghostY = ghostY;
@@ -65,6 +76,7 @@ public final class GameState {
     public int getLinesCleared() { return linesCleared; }
     public boolean isAwaitingSpawn() { return awaitingSpawn; }
     public PieceType getHoldPiece() { return holdPiece; }
+    public String getHoldItemId() { return holdItemId; }
     public boolean canHold() { return canHold; }
     public List<PieceType> getNextPieces() { return nextPieces; }
     public int getGhostY() { return ghostY; }

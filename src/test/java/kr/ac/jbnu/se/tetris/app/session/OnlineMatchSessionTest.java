@@ -65,6 +65,15 @@ public final class OnlineMatchSessionTest {
         fake.complete(fake.getLastRequestId(), true, null, "room", "match-a", 0L);
         fake.drain();
         check(findOutcome(updates, move).isAccepted(), "서버 확정 결과와 로컬 요청 연결");
+        long item = session.submit(new PlayerIntent(GameAction.Type.USE_ITEM,
+                new GameAction.ItemUse("heal", "p")));
+        check(findOutcome(updates, item) == null && fake.getSentIntents().size() == 2,
+                "아이템은 보유 여부를 서버에서 검증하도록 실제 송신");
+        fake.complete(fake.getLastRequestId(), false, "ITEM_NOT_OWNED", "room", "match-a", 0L);
+        fake.drain();
+        check(!findOutcome(updates, item).isAccepted()
+                && "ITEM_NOT_OWNED".equals(findOutcome(updates, item).getReasonCode()),
+                "아이템도 서버 확정 거절과 로컬 요청 연결");
         long pause = session.requestPause(true);
         check(findOutcome(updates, pause).getReasonCode().equals("PAUSE_NOT_ALLOWED"),
                 "온라인 일시정지 거절");

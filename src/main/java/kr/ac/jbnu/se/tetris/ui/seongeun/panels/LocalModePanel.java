@@ -13,12 +13,16 @@ public class LocalModePanel extends JPanel {
 
     public LocalModePanel() {
         setLayout(new BorderLayout());
+        setBackground(new Color(13, 23, 40));
 
         JLabel titleLabel = new JLabel("Local Mode", SwingConstants.CENTER);
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 22));
 
         backButton = new GameButton("Back");
 
         JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setOpaque(false);
         topPanel.add(titleLabel, BorderLayout.CENTER);
         topPanel.add(backButton, BorderLayout.EAST);
 
@@ -28,10 +32,12 @@ public class LocalModePanel extends JPanel {
         sprintButton = new GameButton("Sprint");
 
         JPanel buttonPanel = new JPanel();
+        buttonPanel.setOpaque(false);
         buttonPanel.add(infiniteButton);
         buttonPanel.add(sprintButton);
 
         JPanel centerPanel = new JPanel(new GridBagLayout());
+        centerPanel.setOpaque(false);
         centerPanel.add(buttonPanel);
 
         add(centerPanel, BorderLayout.CENTER);

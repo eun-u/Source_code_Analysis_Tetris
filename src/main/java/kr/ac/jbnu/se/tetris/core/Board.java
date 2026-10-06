@@ -1,12 +1,17 @@
 package kr.ac.jbnu.se.tetris.core;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 /** 정착한 블록의 가변 셀 보관 및 GameEngine 전용 변경 권한 */
 public final class Board {
     static final int WIDTH = 10;
     static final int HEIGHT = 22;
     private final PieceType[] cells = new PieceType[WIDTH * HEIGHT];
+    private final long[] origins = new long[WIDTH * HEIGHT];
+    private final String[] itemIds = new String[WIDTH * HEIGHT];
 
     Board() { Arrays.fill(cells, PieceType.EMPTY); }
 
@@ -19,6 +24,9 @@ public final class Board {
                 PieceType cell = snapshot.getCell(x, y);
                 if (cell == null) throw new IllegalArgumentException("Snapshot contains a null cell");
                 setCell(x, y, cell);
+                int index = y * WIDTH + x;
+                origins[index] = snapshot.getOriginId(x, y);
+                itemIds[index] = snapshot.getItemId(x, y);
             }
         }
     }
@@ -42,11 +50,30 @@ public final class Board {
         return true;
     }
 
-    void setCell(int x, int y, PieceType type) { cells[y * WIDTH + x] = type; }
+    void setCell(int x, int y, PieceType type) {
+        int index = y * WIDTH + x;
+        cells[index] = type;
+        origins[index] = 0;
+        itemIds[index] = null;
+    }
+
+    private void copyCell(int dx, int dy, int sx, int sy) {
+        int destination = dy * WIDTH + dx;
+        int source = sy * WIDTH + sx;
+        cells[destination] = cells[source];
+        origins[destination] = origins[source];
+        itemIds[destination] = itemIds[source];
+    }
 
     void place(Piece piece, int originX, int originY) {
         if (!canPlace(piece, originX, originY)) throw new IllegalStateException("Invalid piece placement");
-        for (int i = 0; i < 4; i++) setCell(originX + piece.x(i), originY - piece.y(i), piece.getType());
+        for (int i = 0; i < 4; i++) {
+            int x = originX + piece.x(i), y = originY - piece.y(i);
+            int index = y * WIDTH + x;
+            cells[index] = piece.getType();
+            origins[index] = piece.getIdentity();
+            itemIds[index] = piece.getItemId();
+        }
     }
 
     int landingY(Piece piece, int originX, int startY) {
@@ -60,6 +87,34 @@ public final class Board {
 
     void copyFrom(Board source) {
         System.arraycopy(source.cells, 0, cells, 0, cells.length);
+        System.arraycopy(source.origins, 0, origins, 0, origins.length);
+        System.arraycopy(source.itemIds, 0, itemIds, 0, itemIds.length);
+    }
+
+    /** 완성 행에 닿은 원본 미노별 아이템을 하나씩만 추출한다. */
+    Map<Long, String> itemsOnCompletedRows(Set<Long> previouslyCollected) {
+        Map<Long, String> found = new LinkedHashMap<Long, String>();
+        for (int y = 0; y < HEIGHT; y++) {
+            boolean full = true;
+            for (int x = 0; x < WIDTH; x++) {
+                if (getCell(x, y) == PieceType.EMPTY) { full = false; break; }
+            }
+            if (!full) continue;
+            for (int x = 0; x < WIDTH; x++) {
+                int index = y * WIDTH + x;
+                if (origins[index] > 0 && itemIds[index] != null
+                        && !previouslyCollected.contains(origins[index])) {
+                    found.put(origins[index], itemIds[index]);
+                }
+            }
+        }
+        return found;
+    }
+
+    void clearCollectedItemMarkers(Set<Long> collected) {
+        for (int i = 0; i < origins.length; i++) {
+            if (collected.contains(origins[i])) itemIds[i] = null;
+        }
     }
 
     int removeFullLines() {
@@ -71,7 +126,7 @@ public final class Board {
                 if (getCell(x, source) == PieceType.EMPTY) { full = false; break; }
             }
             if (!full) {
-                for (int x = 0; x < WIDTH; x++) setCell(x, destination, getCell(x, source));
+                for (int x = 0; x < WIDTH; x++) copyCell(x, destination, x, source);
                 destination++;
             }
         }
@@ -88,11 +143,27 @@ public final class Board {
         boolean overflow = false;
         for (int x = 0; x < WIDTH; x++) overflow |= getCell(x, HEIGHT - 1) != PieceType.EMPTY;
         for (int y = HEIGHT - 1; y > 0; y--) {
-            for (int x = 0; x < WIDTH; x++) setCell(x, y, getCell(x, y - 1));
+            for (int x = 0; x < WIDTH; x++) copyCell(x, y, x, y - 1);
         }
         for (int x = 0; x < WIDTH; x++) setCell(x, 0, x == holeColumn ? PieceType.EMPTY : PieceType.GARBAGE);
         return overflow;
     }
 
-    BoardState snapshot() { return new BoardState(WIDTH, HEIGHT, cells); }
+    /** 가장 아래에 가비지가 있는 행을 제거하고 위쪽 행을 한 줄 내린다. */
+    boolean clearBottomGarbageLine() {
+        int row = -1;
+        for (int y = 0; y < HEIGHT && row < 0; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                if (getCell(x, y) == PieceType.GARBAGE) { row = y; break; }
+            }
+        }
+        if (row < 0) return false;
+        for (int y = row; y < HEIGHT - 1; y++) {
+            for (int x = 0; x < WIDTH; x++) copyCell(x, y, x, y + 1);
+        }
+        for (int x = 0; x < WIDTH; x++) setCell(x, HEIGHT - 1, PieceType.EMPTY);
+        return true;
+    }
+
+    BoardState snapshot() { return new BoardState(WIDTH, HEIGHT, cells, origins, itemIds); }
 }

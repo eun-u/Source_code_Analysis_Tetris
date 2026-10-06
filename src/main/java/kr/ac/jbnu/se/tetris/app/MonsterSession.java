@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.LongSupplier;
 import kr.ac.jbnu.se.tetris.ai.AIContext;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfile;
 import kr.ac.jbnu.se.tetris.ai.HeuristicWeights;
 import kr.ac.jbnu.se.tetris.ai.PolicyDecision;
 import kr.ac.jbnu.se.tetris.character.CharacterSpec;
@@ -19,6 +20,7 @@ import kr.ac.jbnu.se.tetris.battle.BattleManager;
 import kr.ac.jbnu.se.tetris.battle.BattleResult;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.battle.ParticipantSpec;
+import kr.ac.jbnu.se.tetris.battle.ParticipantState;
 import kr.ac.jbnu.se.tetris.controller.AIController;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
@@ -52,6 +54,29 @@ public final class MonsterSession implements PlaySession {
         this(seed, "일반 몬스터", 100, 700, new HeuristicStrategy(), new PlayerProfile(), new PlacementLog());
     }
 
+    /** 스토리 전투에서 캐릭터와 여섯 난이도 축을 한 번에 주입한다. */
+    public MonsterSession(long seed, String name, DifficultyProfile difficulty,
+                          CharacterSpec playerCharacter) {
+        this(seed, name, difficulty, playerCharacter, UUID.randomUUID().toString(),
+                PLAYER_ID, MONSTER_ID);
+    }
+
+    /** 스토리 진행 서비스의 run ID를 그대로 전투 ID에 연결한다. */
+    public MonsterSession(long seed, String name, DifficultyProfile difficulty,
+                          CharacterSpec playerCharacter, String matchId,
+                          String localId, String opponentId) {
+        this(seed, name, requireDifficulty(difficulty).getMonsterHp(),
+                difficulty.getMonsterDelayMillis(), MonsterStrategies.create(difficulty),
+                new PlayerProfile(), new PlacementLog(), matchId,
+                localId, opponentId, System::nanoTime,
+                playerCharacter == null ? CharacterSpec.DEFAULT : playerCharacter, difficulty);
+    }
+
+    private static DifficultyProfile requireDifficulty(DifficultyProfile difficulty) {
+        if (difficulty == null) throw new IllegalArgumentException("Difficulty required");
+        return difficulty;
+    }
+
     /** 난이도 데이터와 전략을 주입하며 사람/몬스터의 전투 규칙은 같은 엔진을 사용 */
     public MonsterSession(long seed, String name, int hp, int delayMillis, AIStrategy strategy,
                           PlayerProfile profile, PlacementLog placementLog) {
@@ -62,6 +87,14 @@ public final class MonsterSession implements PlaySession {
     public MonsterSession(long seed, String name, int hp, int delayMillis, AIStrategy strategy,
             PlayerProfile profile, PlacementLog placementLog, String matchId, String localId,
             String opponentId, LongSupplier clock) {
+        this(seed, name, hp, delayMillis, strategy, profile, placementLog, matchId,
+                localId, opponentId, clock, CharacterSpec.DEFAULT, null);
+    }
+
+    private MonsterSession(long seed, String name, int hp, int delayMillis, AIStrategy strategy,
+            PlayerProfile profile, PlacementLog placementLog, String matchId, String localId,
+            String opponentId, LongSupplier clock, CharacterSpec playerCharacter,
+            DifficultyProfile difficulty) {
         if (delayMillis <= 0 || profile == null || placementLog == null || strategy == null) {
             throw new IllegalArgumentException("Invalid monster session settings");
         }
@@ -74,8 +107,12 @@ public final class MonsterSession implements PlaySession {
         this.matchId = matchId; this.localParticipantId = localId;
         this.opponentParticipantId = opponentId; this.clock = clock;
         placementLog.beginSession();
-        battle = new BattleManager(Arrays.asList(new ParticipantSpec(localId, "PLAYER", CharacterSpec.DEFAULT),
-                new ParticipantSpec(opponentId, name, hp)), seed);
+        List<ParticipantSpec> specs = Arrays.asList(new ParticipantSpec(localId, "PLAYER", playerCharacter),
+                new ParticipantSpec(opponentId, name, hp));
+        battle = difficulty == null ? new BattleManager(specs, seed) : BattleManager.pve(specs, seed,
+                difficulty.getPlayerGravityMillis(), 500,
+                difficulty.getAttackStrength().getDamageBuff(),
+                difficulty.getAttackStrength().getExtraGarbageLines());
         GameState before = getPlayerState();
         BattleResult start = battle.start();
         lastBattleResult = start;
@@ -94,6 +131,13 @@ public final class MonsterSession implements PlaySession {
         if (!closed) {
             GameState before = getPlayerState();
             observe(before, GameAction.Type.GRAVITY_TICK, battle.tick());
+        }
+        if (isFinished()) ai.cancelPending();
+    }
+    public void advance(long elapsedMillis) {
+        if (!closed) {
+            GameState before = getPlayerState();
+            observe(before, GameAction.Type.GRAVITY_TICK, battle.advance(elapsedMillis));
         }
         if (isFinished()) ai.cancelPending();
     }
@@ -140,6 +184,7 @@ public final class MonsterSession implements PlaySession {
             if (decision != null && accepted > 0 && accepted == ready.getActions().size()) {
                 previousWeights = decision.getWeights(); policyState = decision.getNextPolicyState();
             }
+            if (!isFinished() && accepted == ready.getActions().size()) useOneMonsterItem();
             nextDecisionNanos = nowNanos + actionDelayNanos;
         }
         opponent = getOpponentState();
@@ -148,6 +193,24 @@ public final class MonsterSession implements PlaySession {
             ai.request(new AIContext(matchId, opponent, battle.getState().getParticipant(opponentParticipantId).getHp(),
                     battle.getState().getParticipant(opponentParticipantId).getMaxHp(), profile.snapshot(),
                     nextDecisionId++, previousWeights, policyState));
+        }
+    }
+    /** AI 배치가 확정된 뒤 사용 가능한 수동 아이템 한 개만 사용한다. */
+    private void useOneMonsterItem() {
+        BattleState state = battle.getState();
+        ParticipantState self = state.getParticipant(opponentParticipantId);
+        ParticipantState player = state.getParticipant(localParticipantId);
+        for (String item : self.getItems()) {
+            String target = opponentParticipantId;
+            if ("heal".equals(item) && self.getHp() == self.getMaxHp()) continue;
+            if ("fever_charge".equals(item) && self.isFeverActive()) continue;
+            if ("time_warp".equals(item) && self.getTimeWarpRemainingMillis() > 0) continue;
+            if ("nullify".equals(item) && player.getItems().isEmpty()) continue;
+            if ("garbage_bomb".equals(item) || "nullify".equals(item)) target = localParticipantId;
+            if ("damage_boost".equals(item) || "shield".equals(item)) continue;
+            BattleResult used = battle.submitItem(opponentParticipantId,
+                    new GameAction.ItemUse(item, target));
+            if (used.isAccepted()) { lastBattleResult = used; break; }
         }
     }
     public BattleResult submitItem(GameAction.ItemUse item) {

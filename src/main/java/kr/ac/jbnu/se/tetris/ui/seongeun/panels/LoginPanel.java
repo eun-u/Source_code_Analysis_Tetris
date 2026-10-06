@@ -15,11 +15,15 @@ public class LoginPanel extends JPanel {
 
     public LoginPanel() {
         setLayout(new GridBagLayout());
+        setBackground(new Color(13, 23, 40));
 
         JPanel loginBox = new JPanel();
+        loginBox.setOpaque(false);
         loginBox.setLayout(new BoxLayout(loginBox, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel("로그인");
+        JLabel titleLabel = new JLabel("TETRIS MONSTER");
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 26));
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         idField = new JTextField(15);
@@ -28,7 +32,7 @@ public class LoginPanel extends JPanel {
         idField.setMaximumSize(idField.getPreferredSize());
         passwordField.setMaximumSize(passwordField.getPreferredSize());
 
-        loginButton = new GameButton("로그인");
+        loginButton = new GameButton("로컬 시작");
         signUpButton = new GameButton("회원가입");
 
         loginButton.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -36,20 +40,17 @@ public class LoginPanel extends JPanel {
 
         loginBox.add(titleLabel);
         loginBox.add(Box.createVerticalStrut(15));
-
-        loginBox.add(new JLabel("ID"));
-        loginBox.add(idField);
-
-        loginBox.add(Box.createVerticalStrut(10));
-
-        loginBox.add(new JLabel("Password"));
-        loginBox.add(passwordField);
+        JLabel localNotice = new JLabel("계정 연동 없이 이 PC의 저장 데이터를 사용합니다.");
+        localNotice.setForeground(new Color(174, 207, 221));
+        loginBox.add(localNotice);
 
         loginBox.add(Box.createVerticalStrut(15));
         loginBox.add(loginButton);
 
         loginBox.add(Box.createVerticalStrut(5));
         loginBox.add(signUpButton);
+        signUpButton.setEnabled(false);
+        signUpButton.setToolTipText("계정 서비스는 현재 제공하지 않습니다.");
 
         add(loginBox);
     }

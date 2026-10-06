@@ -19,13 +19,16 @@ public class ResultPanel extends JPanel {
 
     public ResultPanel() {
         setLayout(new BorderLayout());
+        setBackground(new Color(13, 23, 40));
 
         resultLabel = new JLabel("RESULT", SwingConstants.CENTER);
         resultLabel.setFont(new Font("Dialog", Font.BOLD, 28));
+        resultLabel.setForeground(Color.WHITE);
 
         add(resultLabel, BorderLayout.NORTH);
 
         JPanel resultInfoPanel = new JPanel();
+        resultInfoPanel.setOpaque(false);
         resultInfoPanel.setLayout(new BoxLayout(resultInfoPanel, BoxLayout.Y_AXIS));
 
         playerNameLabel = new JLabel("Player");
@@ -33,6 +36,8 @@ public class ResultPanel extends JPanel {
         comboLabel = new JLabel("Max Combo : 0");
         damageLabel = new JLabel("Damage : 0");
         rewardLabel = new JLabel("Reward : 0");
+        for (JLabel detail : new JLabel[] { playerNameLabel, lineLabel, comboLabel,
+                damageLabel, rewardLabel }) detail.setForeground(new Color(220, 235, 241));
 
         playerNameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         lineLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -58,6 +63,7 @@ public class ResultPanel extends JPanel {
         lobbyButton = new GameButton("로비로");
 
         JPanel buttonPanel = new JPanel();
+        buttonPanel.setOpaque(false);
         buttonPanel.add(returnButton);
         buttonPanel.add(lobbyButton);
 
@@ -66,6 +72,9 @@ public class ResultPanel extends JPanel {
 
     public void setResult(String result, String playerName, int line, int maxCombo, int damage, int reward) {
         resultLabel.setText(result);
+        resultLabel.setForeground("VICTORY".equals(result) || "COMPLETE".equals(result)
+                ? new Color(126, 226, 170) : "DEFEAT".equals(result)
+                ? new Color(255, 145, 133) : Color.WHITE);
         playerNameLabel.setText(playerName);
         lineLabel.setText("Line : " + line);
         comboLabel.setText("Max Combo : " + maxCombo);
@@ -77,6 +86,9 @@ public class ResultPanel extends JPanel {
     public void setResultDetails(String result, String playerName, String line,
                                  String maxCombo, String damage, String reward) {
         resultLabel.setText(result);
+        resultLabel.setForeground("VICTORY".equals(result) || "COMPLETE".equals(result)
+                ? new Color(126, 226, 170) : "DEFEAT".equals(result)
+                ? new Color(255, 145, 133) : Color.WHITE);
         playerNameLabel.setText(playerName);
         lineLabel.setText("Line : " + line);
         comboLabel.setText("Max Combo : " + maxCombo);

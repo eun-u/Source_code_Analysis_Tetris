@@ -53,8 +53,6 @@ public final class OnlineMatchSession implements MatchSession {
         long localId = ++nextLocalRequestId;
         if (phase != SessionPhase.RUNNING) {
             reject(localId, "SESSION_NOT_RUNNING");
-        } else if (intent.getItemUse() != null) {
-            reject(localId, "ITEM_NOT_IMPLEMENTED");
         } else {
             send(localId, intent);
         }

@@ -1,129 +1,179 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun;
 
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Graphics;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import kr.ac.jbnu.se.tetris.core.BoardState;
-import kr.ac.jbnu.se.tetris.core.GameAction;
-import kr.ac.jbnu.se.tetris.core.GameState;
-import kr.ac.jbnu.se.tetris.core.Piece;
-import kr.ac.jbnu.se.tetris.core.PieceType;
+import javax.swing.*;
+import kr.ac.jbnu.se.tetris.core.*;
 
-/** 성은 원본 Board의 색상과 좌표로 엔진 스냅샷만 표시하는 뷰. */
+/** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
-    private static final int BOARD_WIDTH = 10;
-    private static final int BOARD_HEIGHT = 22;
+    private static final int COLUMNS = 10, ROWS = 22;
+    private static final Color EMPTY = new Color(16, 23, 37);
+    private static final Color GRID = new Color(33, 47, 68);
     private static final Color[] COLORS = {
-        new Color(0, 0, 0), new Color(204, 102, 102), new Color(102, 204, 102),
-        new Color(102, 102, 204), new Color(204, 204, 102), new Color(204, 102, 204),
-        new Color(102, 204, 204), new Color(218, 170, 0), new Color(120, 120, 125)
+        EMPTY, new Color(255, 139, 113), new Color(112, 217, 155),
+        new Color(114, 157, 255), new Color(255, 221, 115),
+        new Color(201, 139, 255), new Color(104, 221, 235),
+        new Color(253, 183, 97), new Color(132, 146, 164)
     };
-
     private final JLabel statusbar;
     private GameState state;
     private Consumer<GameAction.Type> inputHandler;
     private Runnable pauseHandler;
+    private Consumer<Integer> itemHandler;
+    private String overlayText;
 
     public Board(JLabel statusbar, boolean keyboardEnable) {
         this.statusbar = statusbar;
+        setBackground(EMPTY);
+        setPreferredSize(new Dimension(260, 572));
+        setMinimumSize(new Dimension(120, 264));
         setFocusable(true);
-        if (keyboardEnable) addKeyListener(new TAdapter());
+        if (keyboardEnable) bindKeys();
     }
-
-    /** 원본 start 호출 흐름 유지. 게임 시작과 시간 흐름은 세션이 담당한다. */
-    public void start() {
-        requestFocusInWindow();
-    }
-
-    public void setState(GameState state) {
-        this.state = state;
-        if (statusbar != null && state != null) {
-            if (state.getStatus() == GameState.Status.PAUSED) statusbar.setText("paused");
-            else if (state.getStatus() == GameState.Status.GAME_OVER) statusbar.setText("game over");
-            else statusbar.setText(String.valueOf(state.getLinesCleared()));
+    public void start() { requestFocusInWindow(); }
+    public void setState(GameState next) {
+        state = next;
+        if (statusbar != null && next != null) {
+            if (next.getStatus() == GameState.Status.PAUSED) statusbar.setText("일시정지");
+            else if (next.getStatus() == GameState.Status.GAME_OVER) statusbar.setText("게임 종료");
+            else statusbar.setText("LINES  " + next.getLinesCleared() + "    COMBO  " + Math.max(0, next.getCombo()));
         }
         repaint();
     }
-
-    public void setInputHandlers(Consumer<GameAction.Type> inputHandler, Runnable pauseHandler) {
-        this.inputHandler = inputHandler;
-        this.pauseHandler = pauseHandler;
+    public void setInputHandlers(Consumer<GameAction.Type> input, Runnable pause) {
+        inputHandler = input;
+        pauseHandler = pause;
     }
-
-    private int squareWidth() { return getSize().width / BOARD_WIDTH; }
-    private int squareHeight() { return getSize().height / BOARD_HEIGHT; }
-
-    @Override public void paint(Graphics g) {
-        super.paint(g);
-        if (state == null || state.getBoard() == null) return;
-
-        Dimension size = getSize();
-        int boardTop = size.height - BOARD_HEIGHT * squareHeight();
-        BoardState board = state.getBoard();
-        for (int i = 0; i < BOARD_HEIGHT; i++) {
-            for (int j = 0; j < BOARD_WIDTH; j++) {
-                PieceType type = board.getCell(j, BOARD_HEIGHT - i - 1);
-                if (type != PieceType.EMPTY)
-                    drawSquare(g, j * squareWidth(), boardTop + i * squareHeight(), type);
-            }
+    public void setItemHandler(Consumer<Integer> handler) { itemHandler = handler; }
+    public void setOverlayText(String text) { overlayText = text; repaint(); }
+    private void bindKeys() {
+        bind(KeyEvent.VK_LEFT, "left", () -> submit(GameAction.Type.MOVE_LEFT));
+        bind(KeyEvent.VK_RIGHT, "right", () -> submit(GameAction.Type.MOVE_RIGHT));
+        bind(KeyEvent.VK_UP, "rotate-left", () -> submit(GameAction.Type.ROTATE_LEFT));
+        bind(KeyEvent.VK_DOWN, "rotate-right", () -> submit(GameAction.Type.ROTATE_RIGHT));
+        bind(KeyEvent.VK_SPACE, "drop", () -> submit(GameAction.Type.HARD_DROP));
+        bind(KeyEvent.VK_D, "soft-drop", () -> submit(GameAction.Type.SOFT_DROP));
+        bind(KeyEvent.VK_C, "hold", () -> submit(GameAction.Type.HOLD));
+        bind(KeyEvent.VK_P, "pause", () -> {
+            if (state != null && (state.getStatus() == GameState.Status.RUNNING
+                    || state.getStatus() == GameState.Status.PAUSED) && pauseHandler != null) pauseHandler.run();
+        });
+        for (int index = 0; index < 4; index++) {
+            final int slot = index;
+            bind(KeyEvent.VK_1 + index, "item-" + index, () -> {
+                if (state != null && state.getStatus() == GameState.Status.RUNNING && itemHandler != null)
+                    itemHandler.accept(slot);
+            });
         }
-
-        Piece piece = state.getActivePiece();
-        if (piece != null && piece.getType() != PieceType.EMPTY) {
-            for (int i = 0; i < 4; i++) {
-                int x = state.getPieceX() + piece.x(i);
-                int y = state.getPieceY() - piece.y(i);
-                if (x >= 0 && x < BOARD_WIDTH && y >= 0 && y < BOARD_HEIGHT) {
-                    drawSquare(g, x * squareWidth(), boardTop + (BOARD_HEIGHT - y - 1) * squareHeight(),
-                            piece.getType());
+    }
+    private void bind(int key, String name, Runnable action) {
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, 0), name);
+        getActionMap().put(name, new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent event) { if (isShowing()) action.run(); }
+        });
+    }
+    private void submit(GameAction.Type action) {
+        if (state != null && state.getStatus() == GameState.Status.RUNNING
+                && state.getActivePiece() != null && inputHandler != null) inputHandler.accept(action);
+    }
+    @Override protected void paintComponent(Graphics graphics) {
+        super.paintComponent(graphics);
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            int cell = Math.max(1, Math.min(getWidth() / COLUMNS, getHeight() / ROWS));
+            int width = cell * COLUMNS, height = cell * ROWS;
+            int left = (getWidth() - width) / 2, top = (getHeight() - height) / 2;
+            g.setColor(EMPTY);
+            g.fillRect(left, top, width, height);
+            g.setColor(GRID);
+            for (int x = 0; x <= COLUMNS; x++) g.drawLine(left + x * cell, top, left + x * cell, top + height);
+            for (int y = 0; y <= ROWS; y++) g.drawLine(left, top + y * cell, left + width, top + y * cell);
+            if (state != null && state.getBoard() != null) {
+                BoardState board = state.getBoard();
+                Map<Long, int[]> badges = new LinkedHashMap<Long, int[]>();
+                for (int y = 0; y < ROWS; y++) for (int x = 0; x < COLUMNS; x++) {
+                    PieceType type = board.getCell(x, y);
+                    if (type != PieceType.EMPTY) {
+                        drawCell(g, left, top, cell, x, y, type, false, null);
+                        String itemId = board.getItemId(x, y);
+                        if (itemId != null) {
+                            long origin = board.getOriginId(x, y);
+                            if (origin == 0) origin = -1L - itemId.hashCode();
+                            int[] center = badges.get(origin);
+                            if (center == null) { center = new int[3]; badges.put(origin, center); }
+                            center[0] += left + x * cell + cell / 2;
+                            center[1] += top + (ROWS - 1 - y) * cell + cell / 2;
+                            center[2]++;
+                        }
+                    }
+                }
+                for (int[] center : badges.values())
+                    drawBadge(g, center[0] / center[2], center[1] / center[2], cell);
+                Piece piece = state.getActivePiece();
+                if (piece != null) {
+                    for (int i = 0; i < 4; i++) {
+                        int x = state.getPieceX() + piece.x(i), y = state.getGhostY() - piece.y(i);
+                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS && board.getCell(x, y) == PieceType.EMPTY)
+                            drawCell(g, left, top, cell, x, y, piece.getType(), true, null);
+                    }
+                    int badgeX = 0, badgeY = 0, visible = 0;
+                    for (int i = 0; i < 4; i++) {
+                        int x = state.getPieceX() + piece.x(i), y = state.getPieceY() - piece.y(i);
+                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS) {
+                            drawCell(g, left, top, cell, x, y, piece.getType(), false, null);
+                            badgeX += left + x * cell + cell / 2;
+                            badgeY += top + (ROWS - 1 - y) * cell + cell / 2;
+                            visible++;
+                        }
+                    }
+                    if (piece.getItemId() != null && visible > 0)
+                        drawBadge(g, badgeX / visible, badgeY / visible, cell);
                 }
             }
-        }
+            g.setColor(new Color(102, 128, 160));
+            g.setStroke(new BasicStroke(2f));
+            g.drawRect(left, top, width, height);
+            if (overlayText != null || state != null && (state.getStatus() == GameState.Status.PAUSED
+                    || state.getStatus() == GameState.Status.GAME_OVER)) {
+                g.setColor(new Color(8, 14, 27, 198));
+                g.fillRect(left, top, width, height);
+                g.setColor(Color.WHITE);
+                g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(14, cell)));
+                String label = overlayText != null ? overlayText
+                        : state.getStatus() == GameState.Status.PAUSED ? "PAUSED" : "GAME OVER";
+                g.drawString(label, left + (width - g.getFontMetrics().stringWidth(label)) / 2, top + height / 2);
+            }
+        } finally { g.dispose(); }
     }
-
-    private void drawSquare(Graphics g, int x, int y, PieceType type) {
+    private static void drawCell(Graphics2D g, int left, int top, int size, int x, int y,
+                                 PieceType type, boolean ghost, String itemId) {
+        int px = left + x * size, py = top + (ROWS - 1 - y) * size;
         Color color = COLORS[type.ordinal()];
-        g.setColor(color);
-        g.fillRect(x + 1, y + 1, squareWidth() - 2, squareHeight() - 2);
-
-        g.setColor(color.brighter());
-        g.drawLine(x, y + squareHeight() - 1, x, y);
-        g.drawLine(x, y, x + squareWidth() - 1, y);
-
-        g.setColor(color.darker());
-        g.drawLine(x + 1, y + squareHeight() - 1, x + squareWidth() - 1, y + squareHeight() - 1);
-        g.drawLine(x + squareWidth() - 1, y + squareHeight() - 1, x + squareWidth() - 1, y + 1);
-    }
-
-    private final class TAdapter extends KeyAdapter {
-        @Override public void keyPressed(KeyEvent event) {
-            if (state == null) return;
-            int key = event.getKeyCode();
-            if (key == KeyEvent.VK_P) {
-                if (pauseHandler != null && (state.getStatus() == GameState.Status.RUNNING
-                        || state.getStatus() == GameState.Status.PAUSED)) pauseHandler.run();
-                return;
-            }
-            if (state.getStatus() != GameState.Status.RUNNING || state.getActivePiece() == null
-                    || inputHandler == null) return;
-
-            GameAction.Type action;
-            switch (key) {
-                case KeyEvent.VK_LEFT: action = GameAction.Type.MOVE_LEFT; break;
-                case KeyEvent.VK_RIGHT: action = GameAction.Type.MOVE_RIGHT; break;
-                case KeyEvent.VK_DOWN: action = GameAction.Type.ROTATE_RIGHT; break;
-                case KeyEvent.VK_UP: action = GameAction.Type.ROTATE_LEFT; break;
-                case KeyEvent.VK_SPACE: action = GameAction.Type.HARD_DROP; break;
-                case KeyEvent.VK_D: action = GameAction.Type.SOFT_DROP; break;
-                case KeyEvent.VK_C: action = GameAction.Type.HOLD; break;
-                default: return;
-            }
-            inputHandler.accept(action);
+        if (ghost) {
+            g.setColor(color.darker());
+            g.drawRect(px + 2, py + 2, Math.max(1, size - 5), Math.max(1, size - 5));
+            return;
         }
+        g.setColor(color.darker());
+        g.fillRect(px + 1, py + 1, size - 2, size - 2);
+        g.setColor(color);
+        g.fillRect(px + 2, py + 2, Math.max(1, size - 5), Math.max(1, size - 5));
+        g.setColor(color.brighter());
+        g.fillRect(px + 3, py + 3, Math.max(1, size - 8), Math.max(2, size / 5));
+    }
+    private static void drawBadge(Graphics2D g, int x, int y, int size) {
+        int badge = Math.max(7, size / 2);
+        g.setColor(new Color(27, 32, 48));
+        g.fillRect(x - badge / 2 - 1, y - badge / 2 - 1, badge + 2, badge + 2);
+        g.setColor(new Color(255, 233, 144));
+        g.fillRect(x - badge / 2, y - badge / 2, badge, badge);
+        g.setColor(new Color(148, 84, 62));
+        g.fillRect(x - 1, y - badge / 3, 2, badge * 2 / 3);
+        g.fillRect(x - badge / 3, y - 1, badge * 2 / 3, 2);
     }
 }

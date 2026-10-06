@@ -3,6 +3,8 @@ package kr.ac.jbnu.se.tetris.app;
 import java.awt.Component;
 import java.awt.Container;
 import java.util.Random;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import javax.swing.AbstractButton;
@@ -20,20 +22,37 @@ public final class SeongeunApplicationTest {
 
     public static void main(String[] args) throws Exception {
         SwingUtilities.invokeAndWait(() -> {
-            SeongeunApplication app = new SeongeunApplication(new Random(17));
+            SeongeunApplication app = newTestApp(17);
             try {
                 assert LOGIN.equals(app.getCurrentScreen());
-                button(app.getScreens(), "로그인").doClick();
+                button(app.getScreens(), "로컬 시작").doClick();
                 assert LOBBY.equals(app.getCurrentScreen());
+                assert menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
+                button(app.getScreens(), "캐릭터 / 상점").doClick();
+                assert "CHARACTER_SHOP".equals(app.getCurrentScreen());
+                assert app.getSaveData().getCoins() == 0;
+                button(app.getScreens(), "로비로").doClick();
 
                 button(app.getScreens(), "Local Mode").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 button(app.getScreens(), "Infinite").doClick();
                 assert LOCAL_GAME.equals(app.getCurrentScreen());
+                assert !menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
+                menuItem(app.getMenu(), "캐릭터 / 상점").doClick();
+                assert LOCAL_GAME.equals(app.getCurrentScreen());
                 long before = app.getLocalState().getVersion();
                 app.submit(GameAction.Type.HARD_DROP);
                 assert app.getLocalState().getVersion() > before;
                 assert app.isLocalGravityRunning();
+                app.withLocalGamePaused(() -> {
+                    assert app.getLocalState().getStatus() == kr.ac.jbnu.se.tetris.core.GameState.Status.PAUSED;
+                    assert !app.isLocalGravityRunning();
+                    long pausedVersion = app.getLocalState().getVersion();
+                    app.submit(GameAction.Type.HARD_DROP);
+                    assert app.getLocalState().getVersion() == pausedVersion;
+                });
+                assert app.isLocalGravityRunning();
+                assert app.getLocalState().getStatus() == kr.ac.jbnu.se.tetris.core.GameState.Status.RUNNING;
                 button(app.getScreens(), "Back").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 assert app.getLocalState() == null;
@@ -44,12 +63,24 @@ public final class SeongeunApplicationTest {
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 button(app.getScreens(), "일반").doClick();
                 assert BATTLE.equals(app.getCurrentScreen());
+                assert !menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
+                menuItem(app.getMenu(), "캐릭터 / 상점").doClick();
+                assert BATTLE.equals(app.getCurrentScreen());
                 assert app.getMatchSnapshot().getPhase() == SessionPhase.RUNNING;
                 long battleBefore = app.getMatchSnapshot().getBattleState().getVersion();
                 app.submit(GameAction.Type.HARD_DROP);
                 assert app.getMatchSnapshot().getBattleState().getVersion() > battleBefore;
                 assert app.isStoryClockRunning();
-                button(app.getScreens(), "Result Test").doClick();
+                app.withLocalGamePaused(() -> {
+                    assert app.getMatchSnapshot().getPhase() == SessionPhase.PAUSED;
+                    assert !app.isStoryClockRunning();
+                    long pausedVersion = app.getMatchSnapshot().getBattleState().getVersion();
+                    app.submit(GameAction.Type.HARD_DROP);
+                    assert app.getMatchSnapshot().getBattleState().getVersion() == pausedVersion;
+                });
+                assert app.isStoryClockRunning();
+                assert app.getMatchSnapshot().getPhase() == SessionPhase.RUNNING;
+                button(app.getScreens(), "전투 정보").doClick();
                 assert BATTLE.equals(app.getCurrentScreen());
                 assert !app.getCampaignProgress().isStageCleared(
                         kr.ac.jbnu.se.tetris.story.StageCatalog.loadDefault().getStages().get(0).getId());
@@ -77,7 +108,7 @@ public final class SeongeunApplicationTest {
         final SeongeunApplication[] holder = new SeongeunApplication[1];
         try {
             SwingUtilities.invokeAndWait(() -> {
-                holder[0] = new SeongeunApplication(new Random(30));
+                holder[0] = newTestApp(30);
                 holder[0].openOnline(new ConnectionOptions("127.0.0.1", unavailablePort));
             });
             awaitEdt(() -> holder[0].getMatchSnapshot().getPhase() == SessionPhase.FAILED
@@ -95,8 +126,8 @@ public final class SeongeunApplicationTest {
             try {
                 SwingUtilities.invokeAndWait(() -> {
                     for (int index = 0; index < apps.length; index++) {
-                        apps[index] = new SeongeunApplication(new Random(index + 21));
-                        button(apps[index].getScreens(), "로그인").doClick();
+                        apps[index] = newTestApp(index + 21);
+                        button(apps[index].getScreens(), "로컬 시작").doClick();
                         apps[index].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
                     }
                 });
@@ -154,6 +185,16 @@ public final class SeongeunApplicationTest {
         AtomicBoolean value = new AtomicBoolean();
         SwingUtilities.invokeAndWait(() -> value.set(condition.getAsBoolean()));
         return value.get();
+    }
+
+    private static SeongeunApplication newTestApp(long seed) {
+        try {
+            Path directory = Files.createTempDirectory("tetris-ui-test-");
+            directory.toFile().deleteOnExit();
+            Path save = directory.resolve("save.properties");
+            save.toFile().deleteOnExit();
+            return new SeongeunApplication(new Random(seed), new PlayerSaveStore(save));
+        } catch (java.io.IOException error) { throw new AssertionError(error); }
     }
 
     private static String onEdtString(java.util.function.Supplier<String> supplier) throws Exception {

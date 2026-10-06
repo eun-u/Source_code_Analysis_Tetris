@@ -10,14 +10,22 @@ public class MainLobbyPanel extends JPanel {
     private GameButton storyButton;
     private GameButton onlineButton;
     private GameButton localButton;
+    private final GameButton characterButton = new GameButton("캐릭터 / 상점");
+    private final GameButton tutorialButton = new GameButton("튜토리얼");
+    private final GameButton serverButton = new GameButton("로컬 서버 시작");
 
     public MainLobbyPanel() {
         setLayout(new BorderLayout());
+        setBackground(new Color(13, 23, 40));
 
-        JLabel titleLabel = new JLabel("Main Lobby", SwingConstants.CENTER);
+        JLabel titleLabel = new JLabel("TETRIS MONSTER  /  MAIN LOBBY", SwingConstants.CENTER);
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 24));
 
         JPanel menuPanel = new JPanel(new GridBagLayout());
-        JPanel buttonPanel = new JPanel();
+        menuPanel.setOpaque(false);
+        JPanel buttonPanel = new JPanel(new GridLayout(3, 2, 12, 12));
+        buttonPanel.setOpaque(false);
 
         storyButton = new GameButton("Story");
         onlineButton = new GameButton("Online Battle");
@@ -26,6 +34,9 @@ public class MainLobbyPanel extends JPanel {
         buttonPanel.add(storyButton);
         buttonPanel.add(onlineButton);
         buttonPanel.add(localButton);
+        buttonPanel.add(characterButton);
+        buttonPanel.add(tutorialButton);
+        buttonPanel.add(serverButton);
 
         menuPanel.add(buttonPanel);
 
@@ -44,4 +55,7 @@ public class MainLobbyPanel extends JPanel {
     public void setLocalModeAction(ActionListener listener) {
         localButton.addActionListener(listener);
     }
+    public void setCharacterAction(ActionListener listener) { characterButton.addActionListener(listener); }
+    public void setTutorialAction(ActionListener listener) { tutorialButton.addActionListener(listener); }
+    public void setServerAction(ActionListener listener) { serverButton.addActionListener(listener); }
 }

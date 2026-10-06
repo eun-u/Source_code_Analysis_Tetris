@@ -91,8 +91,8 @@ public final class DamageManagerTest {
         ParticipantState attackerTarget = doubleClearTarget(catalog.attacker());
         check(basicTarget.getHp() == 100 - 8, "basic double clear damage 8");
         check(attackerTarget.getHp() == 100 - 12, "attacker double clear damage 8 * 1.5 = 12");
-        check(basicTarget.getGameState().getPendingGarbageLines() == 1, "basic double sends one garbage line");
-        check(attackerTarget.getGameState().getPendingGarbageLines() == 1, "buff keeps battle garbage");
+        check(basicTarget.getPendingGarbageLines() == 1, "basic double sends one garbage line");
+        check(attackerTarget.getPendingGarbageLines() == 2, "attacker passive adds a normal garbage line");
     }
 
     /** 큰 유한 캐릭터 버프로 공격해도 실제 전투 경로에서 예외 없이 HP 소진 처리 확인 */

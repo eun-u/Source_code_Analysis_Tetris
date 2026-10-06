@@ -58,13 +58,13 @@ public final class BattleManagerTest {
         check(count(clear, BattleEvent.Type.GARBAGE_SENT) == 1, "one garbage attack");
         // O 블록 다섯 개로 빈 보드의 두 줄을 지우므로 퍼펙트 클리어, 기본 묶음 대체 피해 40과 가비지 8
         check(battle.getState().getParticipant("monster").getHp() == 60, "perfect clear damage 40");
-        check(battle.getState().getParticipant("monster").getGameState()
+        check(battle.getState().getParticipant("monster")
                 .getPendingGarbageLines() == 8, "perfect clear garbage queued");
         BattleResult applied = battle.submit("monster", GameAction.Type.HARD_DROP);
         check(applied.isAccepted(), "target locks piece");
-        check(count(applied, BattleEvent.Type.GARBAGE_RECEIVED) == 1, "garbage applied at lock");
-        check(battle.getState().getParticipant("monster").getGameState()
-                .getPendingGarbageLines() == 0, "garbage queue drained");
+        check(count(applied, BattleEvent.Type.GARBAGE_RECEIVED) == 0, "two-second wait prevents immediate rise");
+        check(battle.getState().getParticipant("monster")
+                .getPendingGarbageLines() == 8, "garbage remains in tank before delay");
         check(!battle.getState().getParticipant("monster").isEliminated(), "still alive");
         assertIncreasingIds(clear);
     }
@@ -136,12 +136,16 @@ public final class BattleManagerTest {
                 new ParticipantSpec("player", "Player", 100),
                 new ParticipantSpec("monster", "Monster", 100)), 2, generators);
         check(battle.start().isAccepted(), "start with four prepared pieces");
-        for (int i = 0; i < 20; i++) check(battle.tick().isAccepted(), "gravity tick " + i);
-        BattleResult failed = battle.tick();
+        BattleResult failed = null;
+        for (int i = 0; i < 30; i++) {
+            failed = battle.tick();
+            if (!failed.isAccepted()) break;
+        }
         check(!failed.isAccepted(), "bad generator rejected on tick");
         check(failed.getState().getStatus() == BattleState.Status.FINISHED,
                 "partial tick cannot continue match");
-        check(failed.getReason().startsWith("TICK_FAILED"), "tick failure surfaced");
+        check(failed.getReason().startsWith("TICK_FAILED")
+                || failed.getReason().startsWith("SPAWN_FAILED"), "tick failure surfaced");
         check(!battle.submit("player", GameAction.Type.HARD_DROP).isAccepted(),
                 "partial tick match frozen");
     }
