@@ -47,8 +47,10 @@ public final class DamageManager {
         // 피해 = round((기본피해[줄 수] * (T-Spin 배율 또는 1) + 콤보 보너스) * (1 + 공격 버프 합 - 방어 합)), 최소 0
         int baseDamage = balance.damageForLines(lines) * (tSpin ? balance.getTSpinDamageMultiplier() : 1)
                 + balance.comboDamage(combo);
-        double factor = 1.0 + attackBuff - defense;
-        int damage = (int) Math.max(0L, Math.round(baseDamage * factor));
+        double factor = 1.0 + (attackBuff - defense);
+        // 큰 유한 버프의 곱셈·정수 변환 오버플로 방지 및 HP 계산에 전달할 피해 범위 보장
+        long roundedDamage = Math.round(baseDamage * factor);
+        int damage = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, roundedDamage));
         // 가비지 = 기본가비지[줄 수] + 콤보 보너스 + (T-Spin 보너스), 버프와 방어는 적용하지 않음
         int garbage = balance.garbageForLines(lines) + balance.comboGarbage(combo)
                 + (tSpin ? balance.getTSpinGarbageBonus() : 0);

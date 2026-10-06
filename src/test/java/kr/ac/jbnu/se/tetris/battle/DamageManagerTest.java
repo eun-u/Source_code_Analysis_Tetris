@@ -14,9 +14,11 @@ public final class DamageManagerTest {
     public static void main(String[] args) {
         buffsAreSummedNotMultiplied();
         defenseRoundingAndFloor();
+        largeBuffDamageSaturates();
         garbageIgnoresBuffs();
         perfectClearIgnoresEverything();
         attackerCharacterBuffReachesBattle();
+        overwhelmingBuffEndsBattleWithoutFailure();
         participantSpecKeepsCharacter();
     }
 
@@ -43,6 +45,27 @@ public final class DamageManagerTest {
         check(manager.calculate(4, 4, false, false, 0.0, 3.0).getDamage() == 0, "damage floors at zero");
     }
 
+    /** int 경계와 double 곱셈 한도를 넘는 유한 버프의 피해 포화 및 HP 계산 호환성 확인 */
+    private static void largeBuffDamageSaturates() {
+        DamageManager manager = new DamageManager();
+        double boundaryBuff = Integer.MAX_VALUE / 4.0 - 1.0;
+        check(manager.calculate(1, 0, false, false, boundaryBuff - 0.25, 0.0).getDamage()
+                == Integer.MAX_VALUE - 1, "damage below int limit stays exact");
+        check(manager.calculate(1, 0, false, false, boundaryBuff, 0.0).getDamage()
+                == Integer.MAX_VALUE, "damage at int limit stays exact");
+        for (double buff : new double[] {536870911.0, Double.MAX_VALUE}) {
+            int damage = manager.calculate(1, 0, false, false, buff, 0.0).getDamage();
+            check(damage == Integer.MAX_VALUE, "overflowing damage saturates at int limit");
+            check(new HPManager().applyDamage(100, 100, damage) == 0, "saturated damage depletes HP");
+        }
+        check(manager.calculate(1, 0, false, false, 0.0, Double.MAX_VALUE).getDamage()
+                == 0, "large defense still floors damage at zero");
+        for (double buff : new double[] {Math.scalb(1.0, 53), Double.MAX_VALUE}) {
+            check(manager.calculate(1, 0, false, false, buff, buff).getDamage()
+                    == 4, "equal large buff and defense preserve base damage");
+        }
+    }
+
     /** 가비지 줄 수는 버프와 방어의 영향을 받지 않음 */
     private static void garbageIgnoresBuffs() {
         DamageManager manager = new DamageManager();
@@ -64,14 +87,23 @@ public final class DamageManagerTest {
     /** 공격형 캐릭터의 버프가 실제 전투 피해에 반영되고 가비지는 그대로인지 확인 */
     private static void attackerCharacterBuffReachesBattle() {
         CharacterCatalog catalog = CharacterCatalog.loadDefault();
-        int basicHp = doubleClearDamage(catalog.basic());
-        int attackerHp = doubleClearDamage(catalog.attacker());
-        check(basicHp == 100 - 8, "basic double clear damage 8");
-        check(attackerHp == 100 - 12, "attacker double clear damage 8 * 1.5 = 12");
+        ParticipantState basicTarget = doubleClearTarget(catalog.basic());
+        ParticipantState attackerTarget = doubleClearTarget(catalog.attacker());
+        check(basicTarget.getHp() == 100 - 8, "basic double clear damage 8");
+        check(attackerTarget.getHp() == 100 - 12, "attacker double clear damage 8 * 1.5 = 12");
+        check(basicTarget.getGameState().getPendingGarbageLines() == 1, "basic double sends one garbage line");
+        check(attackerTarget.getGameState().getPendingGarbageLines() == 1, "buff keeps battle garbage");
     }
 
-    /** 퍼펙트가 아닌 더블 클리어를 만들어 상대 HP를 읽음, 먼저 쌓은 블록 하나가 남아 보드가 비지 않음 */
-    private static int doubleClearDamage(CharacterSpec attacker) {
+    /** 큰 유한 캐릭터 버프로 공격해도 실제 전투 경로에서 예외 없이 HP 소진 처리 확인 */
+    private static void overwhelmingBuffEndsBattleWithoutFailure() {
+        CharacterSpec attacker = new CharacterSpec("overflow", "큰 버프", 100, 536870911.0, 3);
+        ParticipantState target = doubleClearTarget(attacker);
+        check(target.getHp() == 0 && target.isEliminated(), "large character buff eliminates target");
+    }
+
+    /** 퍼펙트가 아닌 더블 클리어의 대상 상태 조회, 먼저 쌓은 블록 하나가 남아 보드가 비지 않음 */
+    private static ParticipantState doubleClearTarget(CharacterSpec attacker) {
         Map<String, PieceGenerator> generators = new LinkedHashMap<String, PieceGenerator>();
         generators.put("a", constant(PieceType.O));
         generators.put("b", constant(PieceType.O));
@@ -87,9 +119,7 @@ public final class DamageManagerTest {
             }
             check(battle.submit("a", GameAction.Type.HARD_DROP).isAccepted(), "drop");
         }
-        ParticipantState target = battle.getState().getParticipant("b");
-        check(target.getGameState().getPendingGarbageLines() == 1, "double clear sends one garbage line");
-        return target.getHp();
+        return battle.getState().getParticipant("b");
     }
 
     private static void participantSpecKeepsCharacter() {
