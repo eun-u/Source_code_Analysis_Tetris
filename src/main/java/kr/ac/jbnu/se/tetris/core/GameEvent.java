@@ -20,6 +20,7 @@ public final class GameEvent {
     private final String reason;
     private final int combo;
     private final boolean tSpin;
+    private final boolean perfectClear;
 
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason) {
@@ -28,6 +29,12 @@ public final class GameEvent {
 
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin) {
+        this(type, eventId, stateVersion, tick, actorId, piece, x, y, lineCount, reason, combo, tSpin, false);
+    }
+
+    GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
+              Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
+              boolean perfectClear) {
         if (type == null || actorId == null || eventId <= 0 || stateVersion < 0 || tick < 0) {
             throw new IllegalArgumentException("Invalid event identity");
         }
@@ -53,6 +60,9 @@ public final class GameEvent {
             default:
                 break;
         }
+        if (perfectClear && type != Type.LINE_CLEAR) {
+            throw new IllegalArgumentException("Only LINE_CLEAR can be a perfect clear");
+        }
         this.type = type;
         this.eventId = eventId;
         this.stateVersion = stateVersion;
@@ -65,6 +75,7 @@ public final class GameEvent {
         this.reason = reason;
         this.combo = combo;
         this.tSpin = tSpin;
+        this.perfectClear = perfectClear;
     }
 
     public Type getType() { return type; }
@@ -79,4 +90,6 @@ public final class GameEvent {
     public String getReason() { return reason; }
     public int getCombo() { return combo; }
     public boolean isTSpin() { return tSpin; }
+    /** 줄 제거 직후 가비지 삽입 전 보드가 완전히 비었는지 여부, LINE_CLEAR에서만 true */
+    public boolean isPerfectClear() { return perfectClear; }
 }
