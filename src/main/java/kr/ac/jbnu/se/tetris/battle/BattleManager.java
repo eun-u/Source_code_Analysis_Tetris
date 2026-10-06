@@ -226,7 +226,9 @@ public final class BattleManager {
         if (source.eliminated) return;
         Participant target = nextLivingTarget(source.spec.getId());
         if (target == null) return;
-        DamageManager.Attack attack = damageManager.forLineClear(lineClear);
+        // 공격자 캐릭터의 공격 버프를 반영, 방어 합은 방어 아이템이 구현되면 대상 쪽에서 전달
+        DamageManager.Attack attack = damageManager.forLineClear(lineClear,
+                source.spec.getCharacter().getDamageBuff(), 0.0);
         int before = target.hp;
         target.hp = hpManager.applyDamage(before, target.spec.getMaxHp(), attack.getDamage());
         events.add(event(BattleEvent.Type.DAMAGE, source.spec.getId(), target.spec.getId(),
