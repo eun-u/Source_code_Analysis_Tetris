@@ -1,65 +1,95 @@
 package kr.ac.jbnu.se.tetris.ui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
+import java.awt.Insets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.battle.ParticipantState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.resource.AssetManager;
 import kr.ac.jbnu.se.tetris.ui.components.CharacterView;
+import kr.ac.jbnu.se.tetris.ui.components.FeverBar;
 import kr.ac.jbnu.se.tetris.ui.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.components.HPBar;
 import kr.ac.jbnu.se.tetris.ui.components.ItemSlot;
 
-/** 성은 브랜치 BattlePanel의 보드·HP·캐릭터·슬롯 구성을 실제 전투 상태에 연결 */
+/** 성은 브랜치 BattlePanel의 상대 왼쪽·사용자 오른쪽 세로 전투 구성 */
 public final class BattlePanel extends JPanel implements Screen {
     private final Map<String, ParticipantView> participantViewsById = new LinkedHashMap<String, ParticipantView>();
-    private final JPanel participants = new JPanel(new GridLayout(1, 0, 12, 0));
-    private final Icon participantIcon;
-    private String localParticipantId;
-    private final JLabel status = new JLabel("몬스터 대전");
-    private final JButton pause = new GameButton("일시정지 (P)");
-    private final JButton homeButton = new GameButton("홈 (Esc)");
-    private final JLabel controls = new JLabel("", JLabel.CENTER);
+    private final Map<String, ScaledParticipant> scaledViewsById = new LinkedHashMap<String, ScaledParticipant>();
+    private final JPanel battleArea = new JPanel(new GridBagLayout());
+    private final JLabel title = new JLabel("BATTLE", JLabel.CENTER);
+    private final JPanel bottom = new JPanel();
+    private final JScrollPane scroll;
+    private final JButton pause = new GameButton("일시정지");
+    private final JButton homeButton = new GameButton("홈");
     private final Runnable enter;
     private final Runnable exit;
+    private String localParticipantId;
     private String encounter = "몬스터 대전";
 
     public BattlePanel(AssetManager assets, Consumer<GameAction.Type> submit, Runnable togglePause,
                        Runnable home, Runnable enter, Runnable exit) {
-        super(new BorderLayout(10, 8));
+        super(new BorderLayout());
         this.enter = enter;
         this.exit = exit;
-        this.participantIcon = assets.getIcon("character.default", 48, 48);
-        setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        status.setFont(status.getFont().deriveFont(18f));
-        toolbar.add(status);
+        add(title, BorderLayout.NORTH);
+        scroll = new JScrollPane(battleArea,
+                JScrollPane.VERTICAL_SCROLLBAR_NEVER, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.setBorder(null);
+        scroll.getHorizontalScrollBar().setUnitIncrement(16);
+        add(scroll, BorderLayout.CENTER);
         pause.setName("battlePause");
         pause.setFocusable(false);
         pause.addActionListener(event -> togglePause.run());
-        toolbar.add(pause);
+        bottom.add(pause);
         homeButton.setName("battleHome");
         homeButton.setFocusable(false);
         homeButton.addActionListener(event -> home.run());
-        toolbar.add(homeButton);
-        add(toolbar, BorderLayout.NORTH);
-        add(participants, BorderLayout.CENTER);
-        controls.setText("← → 이동   ↑ ↓ 회전   D 한 칸 낙하   Space 즉시 낙하   C HOLD   P 일시정지");
-        add(controls, BorderLayout.SOUTH);
+        bottom.add(homeButton);
+        add(bottom, BorderLayout.SOUTH);
         setFocusable(true);
         GameKeyBindings.install(this, submit, togglePause, home);
+    }
+
+    @Override public void doLayout() {
+        if (!scaledViewsById.isEmpty() && getHeight() > 0) {
+            int logicalHeight = 0;
+            for (ScaledParticipant view : scaledViewsById.values()) {
+                logicalHeight = Math.max(logicalHeight, view.getLogicalHeight());
+            }
+            // 3~4인 가로 스크롤바가 생기는 경우에도 마지막 보드 행을 항상 확보
+            int available = Math.max(1, getHeight() - title.getPreferredSize().height
+                    - bottom.getPreferredSize().height - 22);
+            double scale = Math.min(1.0, (double) available / (logicalHeight + 40));
+            GridBagLayout layout = (GridBagLayout) battleArea.getLayout();
+            for (ScaledParticipant view : scaledViewsById.values()) {
+                view.setScale(scale);
+                GridBagConstraints constraints = layout.getConstraints(view);
+                constraints.insets = view.scaledInsets(scale);
+                layout.setConstraints(view, constraints);
+            }
+        }
+        super.doLayout();
     }
 
     public void setState(BattleState state, boolean thinking) {
@@ -77,27 +107,41 @@ public final class BattlePanel extends JPanel implements Screen {
         localParticipantId = localId;
         if (changed) {
             participantViewsById.clear();
-            participants.removeAll();
-            for (String id : state.getParticipants().keySet()) {
-                ParticipantView view = new ParticipantView(id,
-                        id.equals(localId) ? "playerBoard" : "board-" + id, participantIcon);
-                participantViewsById.put(id, view);
-                participants.add(view);
+            scaledViewsById.clear();
+            battleArea.removeAll();
+            int column = 0;
+            for (ParticipantState participant : state.getParticipants().values()) {
+                if (!participant.getId().equals(localId)) {
+                    addParticipant(participant.getId(), false, column++);
+                }
             }
-            participants.revalidate();
+            addParticipant(localId, true, column);
+            battleArea.revalidate();
         }
         for (ParticipantState participant : state.getParticipants().values()) {
-            participantViewsById.get(participant.getId()).setState(participant,
-                    participant.getId().equals(localId));
+            participantViewsById.get(participant.getId()).setState(participant);
+            scaledViewsById.get(participant.getId()).refreshLogicalSize();
         }
+        battleArea.revalidate();
         boolean paused = state.getStatus() == BattleState.Status.PAUSED;
         pause.setEnabled(canPause && state.getStatus() != BattleState.Status.FINISHED);
-        homeButton.setText(canPause ? "홈 (Esc)" : "대전 나가기 (Esc)");
-        homeButton.setPreferredSize(new Dimension(canPause ? 120 : 150, 35));
-        controls.setText("← → 이동   ↑ ↓ 회전   D 한 칸 낙하   Space 즉시 낙하   C HOLD"
-                + (canPause ? "   P 일시정지" : "   Esc 대전 나가기"));
-        pause.setText(paused ? "계속 (P)" : "일시정지 (P)");
-        status.setText(encounter + (paused ? " · 일시정지" : thinking ? " · 판단 중" : ""));
+        pause.setText(paused ? "계속" : "일시정지");
+        homeButton.setText(canPause ? "홈" : "대전 나가기");
+        title.setToolTipText(encounter + (paused ? " · 일시정지" : thinking ? " · 판단 중" : ""));
+    }
+
+    private void addParticipant(String id, boolean local, int column) {
+        ParticipantView view = new ParticipantView(id, local);
+        Insets originalInsets = local ? new Insets(20, 40, 20, 20)
+                : new Insets(20, 20, 20, column == 0 ? 40 : 20);
+        ScaledParticipant scaled = new ScaledParticipant(view, originalInsets);
+        participantViewsById.put(id, view);
+        scaledViewsById.put(id, scaled);
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = column;
+        constraints.gridy = 0;
+        constraints.insets = originalInsets;
+        battleArea.add(scaled, constraints);
     }
 
     public int getParticipantViewCount() { return participantViewsById.size(); }
@@ -112,54 +156,126 @@ public final class BattlePanel extends JPanel implements Screen {
     @Override public void onEnter() { enter.run(); requestFocusInWindow(); }
     @Override public void onExit() { exit.run(); }
 
-    private static final class ParticipantView extends JPanel {
-        private final JLabel name = new JLabel("", JLabel.CENTER);
-        private final HPBar hp = new HPBar();
-        private final JLabel stats = new JLabel("", JLabel.CENTER);
-        private final CharacterView character = new CharacterView();
-        private final Icon portrait;
-        private final BoardView board = new BoardView();
-        private final PieceQueuePanel queue = new PieceQueuePanel();
+    /** 원본 열의 논리 좌표를 유지한 채 화면 높이에 맞게 일괄 축소 */
+    private static final class ScaledParticipant extends JPanel {
+        private final ParticipantView view;
+        private final Insets originalInsets;
+        private Dimension logicalSize;
+        private double scale = 1.0;
 
-        private ParticipantView(String id, String boardName, Icon portrait) {
-            super(new BorderLayout(4, 5));
-            this.portrait = portrait;
-            setBorder(BorderFactory.createLineBorder(java.awt.Color.LIGHT_GRAY));
-            hp.setName("participantHp-" + id);
-            board.setName(boardName);
-            JPanel header = new JPanel(new BorderLayout(4, 3));
-            header.add(name, BorderLayout.NORTH);
-            JPanel state = new JPanel(new GridLayout(2, 1, 0, 2));
-            state.add(hp);
-            state.add(stats);
-            header.add(state, BorderLayout.CENTER);
-            character.setCharacter(portrait, "참가자");
-            header.add(character, BorderLayout.EAST);
-            add(header, BorderLayout.NORTH);
-            add(board, BorderLayout.CENTER);
-
-            JPanel bottom = new JPanel(new BorderLayout());
-            queue.setPreferredSize(new Dimension(0, 75));
-            bottom.add(queue, BorderLayout.CENTER);
-            JPanel itemArea = new JPanel(new BorderLayout(0, 2));
-            itemArea.add(new JLabel("아이템 준비 중", JLabel.CENTER), BorderLayout.NORTH);
-            JPanel slots = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 0));
-            for (int slot = 0; slot < 3; slot++) slots.add(new ItemSlot());
-            itemArea.add(slots, BorderLayout.CENTER);
-            bottom.add(itemArea, BorderLayout.SOUTH);
-            add(bottom, BorderLayout.SOUTH);
+        private ScaledParticipant(ParticipantView view, Insets originalInsets) {
+            this.view = view;
+            this.originalInsets = originalInsets;
+            this.logicalSize = view.getPreferredSize();
+            setLayout(null);
+            add(view);
         }
 
-        private void setState(ParticipantState participant, boolean local) {
-            GameState state = participant.getGameState();
-            name.setText(participant.getName() + (local ? " · 나" : ""));
-            character.setCharacter(portrait, local ? "나" : "상대");
+        private int getLogicalHeight() { return logicalSize.height; }
+        private void refreshLogicalSize() {
+            // setText 직후 EDT의 지연 revalidate 전에 BoxLayout의 빈 이름 캐시 제거
+            ((BoxLayout) view.getLayout()).invalidateLayout(view);
+            view.invalidate();
+            Dimension next = view.getPreferredSize();
+            if (!logicalSize.equals(next)) {
+                logicalSize = next;
+                revalidate();
+            }
+        }
+        private void setScale(double next) {
+            if (Math.abs(scale - next) > 0.0001) {
+                scale = next;
+                revalidate();
+                repaint();
+            }
+        }
+        private Insets scaledInsets(double factor) {
+            return new Insets(round(originalInsets.top * factor), round(originalInsets.left * factor),
+                    round(originalInsets.bottom * factor), round(originalInsets.right * factor));
+        }
+        private static int round(double value) { return (int) Math.round(value); }
+        @Override public Dimension getPreferredSize() {
+            return new Dimension(Math.max(1, round(logicalSize.width * scale)),
+                    Math.max(1, round(logicalSize.height * scale)));
+        }
+        @Override public void doLayout() {
+            view.setBounds(0, 0, logicalSize.width, logicalSize.height);
+            view.doLayout();
+        }
+        @Override protected void paintChildren(Graphics graphics) {
+            Graphics2D scaled = (Graphics2D) graphics.create();
+            try {
+                scaled.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                scaled.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                scaled.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+                        RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                scaled.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
+                        RenderingHints.VALUE_STROKE_PURE);
+                scaled.scale(scale, scale);
+                super.paintChildren(scaled);
+            } finally { scaled.dispose(); }
+        }
+    }
+
+    private static final class ParticipantView extends JPanel {
+        private final JLabel name = new JLabel("", JLabel.CENTER);
+        private final HPBar hp = new HPBar(100, 100);
+        private final FeverBar fever = new FeverBar();
+        private final CharacterView character = new CharacterView();
+        private final JPanel characterArea = new JPanel(new BorderLayout());
+        private final JPanel items = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
+        private final BoardView board = new BoardView();
+        private final JLabel status = new JLabel("0", JLabel.CENTER);
+
+        private ParticipantView(String id, boolean local) {
+            int width = local ? 240 : 180;
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            name.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(name);
+            add(Box.createVerticalStrut(5));
+            fixed(hp, width, 25);
+            hp.setName("participantHp-" + id);
+            add(hp);
+            add(Box.createVerticalStrut(10));
+            fixed(fever, width, 25);
+            add(fever);
+            add(Box.createVerticalStrut(10));
+            character.setCharacter(null, "—");
+            characterArea.setAlignmentX(Component.CENTER_ALIGNMENT);
+            characterArea.add(character, BorderLayout.CENTER);
+            add(characterArea);
+            add(Box.createVerticalStrut(10));
+            items.setAlignmentX(Component.CENTER_ALIGNMENT);
+            for (String key : new String[] {"Q", "W", "E"}) items.add(new ItemSlot(key));
+            add(items);
+            add(Box.createVerticalStrut(10));
+            Dimension boardSize = new Dimension(width, local ? 440 : 360);
+            board.setName(local ? "playerBoard" : "board-" + id);
+            board.setPreferredSize(boardSize);
+            board.setMinimumSize(boardSize);
+            board.setMaximumSize(boardSize);
+            board.setBorder(BorderFactory.createLineBorder(local ? Color.BLACK : Color.GRAY));
+            board.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(board);
+            add(Box.createVerticalStrut(5));
+            status.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(status);
+        }
+
+        private static void fixed(JPanel panel, int width, int height) {
+            Dimension size = new Dimension(width, height);
+            panel.setPreferredSize(size);
+            panel.setMaximumSize(size);
+            panel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        }
+
+        private void setState(ParticipantState participant) {
+            name.setText(participant.getName());
             hp.setHP(participant.getHp(), participant.getMaxHp());
-            stats.setText("<html><center>줄 " + state.getLinesCleared()
-                    + " · Combo " + Math.max(0, state.getCombo())
-                    + "<br>대기 Garbage " + state.getPendingGarbageLines() + "</center></html>");
-            board.setState(state);
-            queue.setState(state);
+            board.setState(participant.getGameState());
+            status.setText(String.valueOf(participant.getGameState().getLinesCleared()));
         }
     }
 }

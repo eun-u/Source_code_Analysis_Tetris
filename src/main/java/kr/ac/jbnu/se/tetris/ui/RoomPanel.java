@@ -1,11 +1,10 @@
 package kr.ac.jbnu.se.tetris.ui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
 import java.util.Map;
 import java.util.function.Consumer;
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -14,81 +13,98 @@ import kr.ac.jbnu.se.tetris.network.RoomState;
 import kr.ac.jbnu.se.tetris.ui.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.components.PlayerCard;
 
-/** 성은 브랜치 WaitingRoomPanel의 참가자 카드를 서버 RoomState에 연결 */
+/** 성은 브랜치 WaitingRoomPanel의 회색 대기방·상대/나 카드 순서 */
 public final class RoomPanel extends JPanel {
-    private final JLabel title = new JLabel("방 연결 대기", JLabel.CENTER);
-    private final JPanel cards = new JPanel(new GridLayout(1, 2, 12, 12));
-    private final JButton ready = new GameButton("준비");
-    private final JButton leave = new GameButton("나가기");
+    private final JLabel title = new JLabel("Waiting Room", JLabel.CENTER);
+    private final JPanel playerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 40, 40));
+    private final JButton ready = new GameButton("READY");
+    private final JButton leave = new GameButton("방 나가기");
+    private final Consumer<RoomCommand> send;
     private RoomState state;
+    private boolean matchFinished;
 
     public RoomPanel(Consumer<RoomCommand> send) {
-        super(new BorderLayout(12, 12));
-        setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        super(new BorderLayout());
+        this.send = send;
         title.setName("roomTitle");
-        title.setFont(title.getFont().deriveFont(18f));
-        add(title, BorderLayout.NORTH);
-        add(cards, BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout());
-        ready.setName("roomReady");
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(title, BorderLayout.CENTER);
         leave.setName("leaveRoom");
-        buttons.add(ready);
-        buttons.add(leave);
-        add(buttons, BorderLayout.SOUTH);
-        ready.setEnabled(false);
-        leave.setEnabled(false);
+        leave.addActionListener(event -> send.accept(RoomCommand.leaveRoom()));
+        top.add(leave, BorderLayout.EAST);
+        add(top, BorderLayout.NORTH);
+        playerPanel.setBackground(Color.LIGHT_GRAY);
+        add(playerPanel, BorderLayout.CENTER);
+        JPanel bottom = new JPanel();
+        ready.setName("roomReady");
         ready.addActionListener(event -> {
-            if (state != null && state.getPhase() == RoomState.Phase.WAITING) {
-                boolean current = Boolean.TRUE.equals(state.getReadyByParticipantId().get(state.getLocalParticipantId()));
+            if (state != null && canChangeReady()) {
+                boolean current = Boolean.TRUE.equals(
+                        state.getReadyByParticipantId().get(state.getLocalParticipantId()));
                 send.accept(RoomCommand.setReady(!current));
             }
         });
-        leave.addActionListener(event -> send.accept(RoomCommand.leaveRoom()));
-        showCards(null);
+        bottom.add(ready);
+        add(bottom, BorderLayout.SOUTH);
+        refreshActions();
     }
 
     public void setState(RoomState next) {
         ScreenRouter.requireEdt();
         state = next;
-        showCards(next);
-        if (next == null) {
-            title.setText("방 연결 대기");
-            ready.setEnabled(false);
-            leave.setEnabled(false);
-            ready.setText("준비");
-            return;
-        }
-        String phase = next.getPhase() == RoomState.Phase.WAITING ? "대기 중"
-                : next.getPhase() == RoomState.Phase.IN_MATCH ? "대전 중" : "종료";
-        title.setText("방 " + next.getRoomId() + " · " + phase);
-        ready.setEnabled(next.getPhase() == RoomState.Phase.WAITING);
-        leave.setEnabled(next.getPhase() != RoomState.Phase.CLOSED);
-        boolean current = Boolean.TRUE.equals(next.getReadyByParticipantId().get(next.getLocalParticipantId()));
-        ready.setText(current ? "준비 취소" : "준비");
+        if (next == null) matchFinished = false;
+        title.setText(next == null ? "Waiting Room" : next.getRoomId());
+        showPlayers();
+        refreshActions();
     }
 
-    private void showCards(RoomState room) {
-        cards.removeAll();
-        int count = 0;
-        int visibleSlots = room == null || room.getReadyByParticipantId().size() <= 2 ? 2 : 4;
-        cards.setLayout(new GridLayout(visibleSlots == 2 ? 1 : 2, 2, 12, 12));
-        if (room != null) {
-            for (Map.Entry<String, Boolean> participant : room.getReadyByParticipantId().entrySet()) {
-                PlayerCard card = new PlayerCard();
-                card.setName("roomParticipant-" + participant.getKey());
-                card.setParticipant(participant.getKey(),
-                        participant.getKey().equals(room.getLocalParticipantId()), participant.getValue());
-                cards.add(card);
-                count++;
+    /** 서버가 확정한 경기 종료 동안에만 다음 READY 요청 허용 */
+    public void setMatchFinished(boolean finished) {
+        ScreenRouter.requireEdt();
+        matchFinished = finished;
+        refreshActions();
+    }
+
+    private boolean canChangeReady() {
+        return state != null && (state.getPhase() == RoomState.Phase.WAITING
+                || state.getPhase() == RoomState.Phase.IN_MATCH && matchFinished);
+    }
+
+    private void refreshActions() {
+        ready.setEnabled(canChangeReady());
+        leave.setEnabled(state != null && state.getPhase() != RoomState.Phase.CLOSED);
+        boolean localReady = state != null && Boolean.TRUE.equals(
+                state.getReadyByParticipantId().get(state.getLocalParticipantId()));
+        ready.setText(localReady ? "READY 취소" : "READY");
+    }
+
+    private void showPlayers() {
+        playerPanel.removeAll();
+        if (state != null) {
+            int opponents = 0;
+            for (Map.Entry<String, Boolean> entry : state.getReadyByParticipantId().entrySet()) {
+                if (!entry.getKey().equals(state.getLocalParticipantId())) {
+                    addCard(entry.getKey(), false, entry.getValue());
+                    opponents++;
+                }
             }
+            if (opponents == 0) {
+                PlayerCard waiting = new PlayerCard();
+                waiting.setName("roomEmpty-opponent");
+                waiting.setEmpty();
+                playerPanel.add(waiting);
+            }
+            String local = state.getLocalParticipantId();
+            addCard(local, true, state.getReadyByParticipantId().get(local));
         }
-        for (int slot = count; slot < visibleSlots; slot++) {
-            PlayerCard empty = new PlayerCard();
-            empty.setName("roomEmpty-" + slot);
-            empty.setEmpty();
-            cards.add(empty);
-        }
-        cards.revalidate();
-        cards.repaint();
+        playerPanel.revalidate();
+        playerPanel.repaint();
+    }
+
+    private void addCard(String id, boolean local, boolean readyState) {
+        PlayerCard card = new PlayerCard();
+        card.setName("roomParticipant-" + id);
+        card.setParticipant(id, local, readyState);
+        playerPanel.add(card);
     }
 }

@@ -10,6 +10,8 @@ import kr.ac.jbnu.se.tetris.ai.HeuristicStrategy;
 import kr.ac.jbnu.se.tetris.ai.HeuristicWeights;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
+import kr.ac.jbnu.se.tetris.story.StageCatalog;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 
 /** 실제 엔진의 승리·재도전·15전투 전환 확인 및 상대 AI 성능 검증과의 분리 */
 public final class StoryFlowTest {
@@ -21,24 +23,24 @@ public final class StoryFlowTest {
                 String first = app.getBattleState().getParticipant("monster").getName();
                 for (int i = 0; i < 100 && !finished(app); i++) app.submit(GameAction.Type.HARD_DROP);
                 check(finished(app), "첫 상대 패배 결과 도달");
-                app.showHome(); app.continueGame();
-                check("result".equals(app.getRouter().getCurrentId()), "패배 후 홈에서 같은 스토리 결과 복귀");
                 button(app.getRouter().getContainer(), "retry").doClick();
+                check("stages".equals(app.getRouter().getCurrentId()), "원본 Story 결과는 난이도 선택으로 복귀");
+                chooseEncounter(app, 0);
                 check(first.equals(app.getBattleState().getParticipant("monster").getName()), "패배 재도전은 같은 상대");
                 for (int encounter = 0; encounter < 15; encounter++) {
                     String name = app.getBattleState().getParticipant("monster").getName();
                     winUsingRealEngine(app);
-                    app.showHome();
-                    check(button(app.getRouter().getContainer(), "continueGame").isEnabled(), "승리 후 홈에서 결과 복귀 가능");
-                    app.continueGame();
                     check("result".equals(app.getRouter().getCurrentId()), "승리 결과와 진행 상태 보존");
                     if (encounter == 0) {
                         button(app.getRouter().getContainer(), "retry").doClick();
+                        chooseEncounter(app, 0);
                         check(name.equals(app.getBattleState().getParticipant("monster").getName()), "승리 후 다시 하기도 같은 상대");
                         winUsingRealEngine(app);
                     }
-                    app.nextEncounter();
+                    button(app.getRouter().getContainer(), "retry").doClick();
+                    check("stages".equals(app.getRouter().getCurrentId()), "원본 결과의 Story로 버튼");
                     if (encounter < 14) {
+                        chooseEncounter(app, encounter + 1);
                         check("battle".equals(app.getRouter().getCurrentId()), "다음 상대 전투 화면");
                         check(!name.equals(app.getBattleState().getParticipant("monster").getName()), "다음 상대 이름 변경");
                     }
@@ -50,6 +52,13 @@ public final class StoryFlowTest {
             } finally { app.close(); }
         });
         System.out.println("PASS StoryFlowTest: 15 encounters, loss retry, win replay, final return");
+    }
+    private static void chooseEncounter(TetrisApplication app, int encounter) {
+        String stageId = StageCatalog.loadDefault().getStages().get(encounter / 3).getId();
+        MonsterTier tier = MonsterTier.values()[encounter % 3];
+        JButton choice = button(app.getRouter().getContainer(), "stage-" + stageId + "-" + tier);
+        check(choice != null && choice.isEnabled(), "실제 승리로 해금된 난이도 버튼");
+        choice.doClick();
     }
     private static boolean finished(TetrisApplication app) {
         return app.getBattleState().getStatus() == BattleState.Status.FINISHED;

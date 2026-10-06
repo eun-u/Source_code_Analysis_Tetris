@@ -26,16 +26,21 @@ public final class TetrisApplication {
     private final StoryProgressService progress = new StoryProgressService(stages);
     private final AIProfileCatalog aiProfiles = AIProfileCatalog.loadDefault();
     private final HomePanel home;
+    private final LoginPanel login;
+    private final SignUpPanel signUp;
+    private final LocalModePanel localModes;
     private final GamePanel game;
     private final BattlePanel battlePanel;
     private final ResultPanel result;
     private final OnlineLobbyPanel onlineLobby;
     private final Timer tutorialGravity;
     private TutorialSession tutorial;
+    private LocalGameSession localGame;
     private Subscription matchSubscription;
     private TcpNetworkClient onlineClient;
     private NetworkSubscription onlineSubscription;
     private boolean rematchRequested;
+    private boolean onlineResultReturned;
     private long rematchRequestId;
     private PlayerProfile profile = new PlayerProfile();
     private PlacementLog placementLog = new PlacementLog();
@@ -57,24 +62,71 @@ public final class TetrisApplication {
         tutorialGravity = new Timer(400, event -> advanceGravity());
         tutorialGravity.setCoalesce(true);
         AssetManager assets = new AssetManager();
-        home = new HomePanel(assets, this::startNewGame, this::showStages, this::showOnline, this::continueGame, this::refreshHome);
+        login = new LoginPanel(this::enterLocalLobby,
+                () -> router.show("signup"));
+        signUp = new SignUpPanel(this::requestRegistration, this::returnToLogin);
+        localModes = new LocalModePanel(() -> startLocalGame(LocalGameSession.Mode.INFINITE),
+                () -> startLocalGame(LocalGameSession.Mode.SPRINT), this::showHome);
+        localModes.setTutorialAction(this::startNewGame);
+        home = new HomePanel(assets, this::showLocalModes, this::showStages, this::showOnline, this::continueGame, this::refreshHome);
         onlineLobby = new OnlineLobbyPanel(this::connectOnline, this::sendRoomCommand, this::showHome);
-        game = new GamePanel(this::submit, this::togglePause, this::showHome, this::enterGame, this::leaveGame);
-        battlePanel = new BattlePanel(assets, this::submit, this::togglePause, this::showHome,
+        game = new GamePanel(this::submit, this::togglePause, this::returnFromGame, this::enterGame, this::leaveGame);
+        battlePanel = new BattlePanel(assets, this::submit, this::togglePause, this::leaveToLobby,
                 this::enterGame, this::leaveGame);
-        result = new ResultPanel(this::restart, this::showHome, this::nextEncounter);
+        result = new ResultPanel(this::returnFromResult, this::leaveToLobby, this::nextEncounter);
+        router.register(login); router.register(signUp); router.register(localModes);
         router.register(home); router.register(game); router.register(battlePanel); router.register(result);
         router.register(onlineLobby);
         router.register(new StageSelectPanel(stages,
-                id -> progress.getCampaignProgress().isStageUnlocked(id), this::startStory, this::showHome));
-        router.show("home");
+                (id, tier) -> progress.getCampaignProgress().isEncounterUnlocked(id, tier),
+                this::startStory, this::leaveToLobby));
+        router.show("login");
     }
+    private void enterLocalLobby() { login.clearSecrets(); router.show("home"); }
+    private void requestRegistration() {
+        signUp.clearSecrets(); signUp.setMessage("회원가입 서비스 연결 준비 중입니다.");
+    }
+    private void returnToLogin() { signUp.clearSecrets(); router.show("login"); }
     public void startNewGame() { startNewGame(seeds.nextLong()); }
     public void startBattle() { startBattle(seeds.nextLong()); }
     public void startNewGame(long seed) {
         ScreenRouter.requireEdt(); if (closed) return;
         prepareSessionChange(); storyActive = false; lastGameWasBattle = false;
-        tutorial = new TutorialSession(seed); router.show("game"); render();
+        tutorial = new TutorialSession(seed); game.setMode("Tutorial"); router.show("game"); render();
+    }
+    public void showLocalModes() { ScreenRouter.requireEdt(); if (!closed) router.show("local-mode"); }
+    public void startLocalGame(LocalGameSession.Mode mode) { startLocalGame(mode, seeds.nextLong()); }
+    public void startLocalGame(LocalGameSession.Mode mode, long seed) {
+        ScreenRouter.requireEdt(); if (closed) return;
+        if (mode == null) throw new IllegalArgumentException("Local mode is required");
+        prepareSessionChange(); storyActive = false; lastGameWasBattle = false;
+        localGame = new LocalGameSession(mode, seed);
+        game.setMode(mode == LocalGameSession.Mode.INFINITE ? "Infinite" : "Sprint");
+        router.show("game"); render();
+    }
+    private void returnFromGame() {
+        if (closed) return;
+        prepareSessionChange(); storyActive = false; router.show("local-mode");
+    }
+    private void leaveToLobby() {
+        ScreenRouter.requireEdt(); if (closed) return;
+        prepareSessionChange(); storyActive = false;
+    }
+    private void returnFromResult() {
+        ScreenRouter.requireEdt(); if (closed) return;
+        if (modes.getCurrent() instanceof OnlineMatchSession) {
+            if (modes.getCurrent().getSnapshot().getPhase() == SessionPhase.FAILED) { showOnline(); return; }
+            onlineResultReturned = true;
+            onlineLobby.setMatchFinished(true);
+            router.show("online");
+            sendRoomCommand(RoomCommand.getRoomState());
+        } else if (storyActive) {
+            prepareSessionChange(); storyActive = false; showStages();
+        } else if (localGame != null) {
+            prepareSessionChange(); showLocalModes();
+        } else if (tutorial != null) {
+            prepareSessionChange(); showLocalModes();
+        } else leaveToLobby();
     }
     /** 개발용 기본 전투 시작 및 제품 홈의 Story 진입과 분리 */
     public void startBattle(long seed) {
@@ -90,7 +142,7 @@ public final class TetrisApplication {
     }
     public void connectOnline(ConnectionOptions options) {
         ScreenRouter.requireEdt(); if (closed) return;
-        prepareSessionChange(); storyActive = false; rematchRequested = false; rematchRequestId = 0;
+        prepareSessionChange(); storyActive = false; rematchRequested = false; rematchRequestId = 0; onlineResultReturned = false;
         onlineLobby.reset(); onlineLobby.setConnecting();
         TcpNetworkClient client = new TcpNetworkClient(); onlineClient = client;
         installMatch(new OnlineMatchSession(newRunId(), client));
@@ -104,7 +156,9 @@ public final class TetrisApplication {
                         rematchRequested = false; rematchRequestId = 0;
                     }
                     break;
-                case MATCH_STARTED: rematchRequested = false; rematchRequestId = 0; break;
+                case MATCH_STARTED:
+                    rematchRequested = false; rematchRequestId = 0; onlineResultReturned = false;
+                    onlineLobby.setMatchFinished(false); break;
                 case REQUEST_OUTCOME:
                     if (!update.getRequestOutcome().isAccepted()) {
                         if (update.getRequestOutcome().getRequestId() == rematchRequestId) {
@@ -135,6 +189,14 @@ public final class TetrisApplication {
     public void startStory(int stageIndex, long seed) {
         if (stageIndex < 0 || stageIndex >= stages.getStages().size()) throw new IllegalArgumentException("Unknown stage");
         startStory(stages.getStages().get(stageIndex).getId(), seed);
+    }
+    public void startStory(String stageId, MonsterTier tier) { startStory(stageId, tier, seeds.nextLong()); }
+    public void startStory(String stageId, MonsterTier tier, long seed) {
+        ScreenRouter.requireEdt(); if (closed) return;
+        EncounterRun run = progress.startEncounter(stageId, tier, newRunId(), "local", "monster");
+        prepareSessionChange(); storyActive = true;
+        profile = new PlayerProfile(); placementLog = new PlacementLog();
+        startStoryEncounter(run, seed);
     }
     private void startStoryEncounter(EncounterRun run, long seed) {
         MonsterSpec spec = run.getMonster();
@@ -189,10 +251,13 @@ public final class TetrisApplication {
         if (matchSubscription != null) { matchSubscription.close(); matchSubscription = null; }
         modes.clear();
         if (tutorial != null) { tutorial.close(); tutorial = null; }
+        if (localGame != null) { localGame.close(); localGame = null; }
+        onlineResultReturned = false;
     }
     public void submit(GameAction.Type type) {
         ScreenRouter.requireEdt(); if (!canPlay()) return;
-        if (tutorial != null) { tutorial.submit(type); render(); }
+        if (localGame != null) { localGame.submit(type); render(); }
+        else if (tutorial != null) { tutorial.submit(type); render(); }
         else if (modes.getCurrent() != null && isUserAction(type)) modes.getCurrent().submit(new PlayerIntent(type));
     }
     private static boolean isUserAction(GameAction.Type type) {
@@ -203,13 +268,23 @@ public final class TetrisApplication {
     /** 튜토리얼 및 로컬 대전만 공유하는 시간 진행 검증 경계 */
     void advanceGravity() {
         ScreenRouter.requireEdt(); if (!canPlay()) return;
-        if (tutorial != null) { tutorial.tick(); render(); }
+        if (localGame != null) { localGame.tick(); render(); }
+        else if (tutorial != null) { tutorial.tick(); render(); }
         else if (modes.getCurrent() instanceof LocalMatchSession) ((LocalMatchSession) modes.getCurrent()).advanceGravity();
     }
     private boolean canPlay() {
         return !closed && ("game".equals(router.getCurrentId()) || "battle".equals(router.getCurrentId()));
     }
     private void render() {
+        if (localGame != null) {
+            game.setState(localGame.getPlayerState()); game.setInstruction(localGame.getInstruction());
+            if (localGame.isFinished()) {
+                tutorialGravity.stop(); result.setLocalResult(localGame.getPlayerState(), localGame.isCompleted());
+                router.show("result");
+            } else if (localGame.isPaused()) tutorialGravity.stop();
+            else if (canPlay()) tutorialGravity.start();
+            return;
+        }
         if (tutorial != null) {
             game.setState(tutorial.getPlayerState()); game.setInstruction(tutorial.getInstruction());
             if (tutorial.isFinished()) {
@@ -230,9 +305,13 @@ public final class TetrisApplication {
             if (match instanceof OnlineMatchSession && snapshot.getPhase() == SessionPhase.WAITING) router.show("online");
             return;
         }
-        if (match instanceof OnlineMatchSession) battlePanel.setOnlineEncounter();
+        if (match instanceof OnlineMatchSession) {
+            battlePanel.setOnlineEncounter();
+            onlineLobby.setMatchFinished(snapshot.getPhase() == SessionPhase.FINISHED);
+        }
         battlePanel.setState(state, snapshot.getLocalParticipantId(), snapshot.getCapabilities().canPause(), isAiThinking());
         if (snapshot.getPhase() == SessionPhase.FINISHED) {
+            if (match instanceof OnlineMatchSession && onlineResultReturned) { router.show("online"); return; }
             result.setBattleResult(state, snapshot.getLocalParticipantId());
             if (storyActive) {
                 EncounterRun run = progress.getActiveRun();
@@ -243,12 +322,16 @@ public final class TetrisApplication {
             if (match instanceof OnlineMatchSession) result.setOnlineRetry(rematchRequested, false);
             router.show("result");
         } else if (match instanceof OnlineMatchSession) {
+            onlineResultReturned = false;
             router.show("battle");
         }
     }
     public void togglePause() {
         ScreenRouter.requireEdt(); if (!canPlay()) return;
-        if (tutorial != null) {
+        if (localGame != null) {
+            if (localGame.isFinished()) return;
+            if (localGame.isPaused()) localGame.resume(); else localGame.pause(); render();
+        } else if (tutorial != null) {
             if (tutorial.isFinished()) return;
             if (tutorial.isPaused()) tutorial.resume(); else tutorial.pause(); render();
         } else if (modes.getCurrent() != null) {
@@ -264,7 +347,9 @@ public final class TetrisApplication {
     public void continueGame() {
         ScreenRouter.requireEdt(); if (closed) return;
         if (hasStoryResult()) { render(); return; }
-        if (tutorial != null && tutorial.isPaused() && !tutorial.isFinished()) {
+        if (localGame != null && localGame.isPaused() && !localGame.isFinished()) {
+            router.show("game"); localGame.resume(); render();
+        } else if (tutorial != null && tutorial.isPaused() && !tutorial.isFinished()) {
             router.show("game"); tutorial.resume(); render();
         } else if (modes.getCurrent() != null && modes.getCurrent().getSnapshot().getPhase() == SessionPhase.PAUSED) {
             router.show("battle"); modes.getCurrent().requestPause(false);
@@ -273,11 +358,13 @@ public final class TetrisApplication {
     private void enterGame() {
         render();
         if (tutorial != null && !tutorial.isPaused() && !tutorial.isFinished()) tutorialGravity.start();
+        if (localGame != null && !localGame.isPaused() && !localGame.isFinished()) tutorialGravity.start();
         if (modes.getCurrent() instanceof LocalMatchSession) ((LocalMatchSession) modes.getCurrent()).startClock();
     }
     private void leaveGame() {
         tutorialGravity.stop();
         if (tutorial != null && !tutorial.isFinished()) tutorial.pause();
+        if (localGame != null && !localGame.isFinished()) localGame.pause();
         MatchSession match = modes.getCurrent();
         if (match != null) {
             SessionSnapshot snapshot = match.getSnapshot();
@@ -296,6 +383,7 @@ public final class TetrisApplication {
     public ScreenRouter getRouter() { return router; }
     public CampaignProgress getCampaignProgress() { return progress.getCampaignProgress(); }
     public GameState getState() {
+        if (localGame != null) return localGame.getPlayerState();
         if (tutorial != null) return tutorial.getPlayerState();
         MatchSession match = modes.getCurrent();
         if (match == null || match.getSnapshot().getBattleState() == null) return null;
@@ -315,7 +403,8 @@ public final class TetrisApplication {
         if (onlineSubscription != null) { onlineSubscription.close(); onlineSubscription = null; }
         onlineClient = null;
         if (matchSubscription != null) { matchSubscription.close(); matchSubscription = null; }
-        modes.close(); if (tutorial != null) tutorial.close(); router.close();
+        modes.close(); if (tutorial != null) tutorial.close(); if (localGame != null) localGame.close();
+        login.clearSecrets(); signUp.clearSecrets(); router.close();
     }
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {

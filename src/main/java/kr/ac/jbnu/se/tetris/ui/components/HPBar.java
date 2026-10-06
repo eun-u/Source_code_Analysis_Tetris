@@ -16,6 +16,11 @@ public final class HPBar extends JPanel {
         add(progress, BorderLayout.CENTER);
     }
 
+    public HPBar(int current, int maximum) {
+        this();
+        setHP(current, maximum);
+    }
+
     public void setHP(int current, int maximum) {
         progress.setMaximum(Math.max(1, maximum));
         progress.setValue(Math.max(0, current));

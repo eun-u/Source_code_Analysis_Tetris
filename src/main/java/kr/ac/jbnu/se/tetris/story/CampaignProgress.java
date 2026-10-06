@@ -36,6 +36,19 @@ public final class CampaignProgress {
         return true;
     }
 
+    /** 원본 난이도 선택 화면의 재도전 및 순차 해금 판정 */
+    public boolean isEncounterUnlocked(String stageId, MonsterTier tier) {
+        if (tier == null) throw new IllegalArgumentException("Monster tier is required");
+        Stage stage = catalog.getStages().get(indexOf(stageId));
+        if (!isStageUnlocked(stageId)) return false;
+        for (int index = 0; index < stage.getEncounters().size(); index++) {
+            if (stage.getEncounters().get(index).getTier() == tier) {
+                return index == 0 || completedEncounterIds.contains(stage.getEncounters().get(index - 1).getId());
+            }
+        }
+        throw new IllegalArgumentException("Unknown encounter tier: " + tier);
+    }
+
     /** 완료된 스테이지의 재진입은 첫 일반 전투 */
     public MonsterSpec getNextEncounter(String stageId) {
         Stage stage = catalog.getStages().get(indexOf(stageId));

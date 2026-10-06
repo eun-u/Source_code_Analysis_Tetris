@@ -53,6 +53,7 @@ SessionSnapshot의 RUNNING/PAUSED/FINISHED에는 현재 참가자가 포함된 B
 - recordBattleResult는 실제 해당 세션의 BattleResult만 사용. stale 결과·중복·상충 결과 구분
 - 앱 어댑터가 runId와 실제 로컬 세션을 결합. UI render는 승패·해금 기록을 수정하지 않는 구조
 - 홈 이동 후 해금 유지, 재진입은 첫 미완료 전투, 완료 Stage 재플레이는 일반부터 시작
+- 성은 원본의 난이도 직접 선택은 startEncounter에서 이전 난이도 승리와 Stage 해금을 검사하며 해금된 난이도는 직접 재도전 가능
 - 다음 전투·재도전은 새 보드와 최대 HP. 재도전은 AI 관측 초기화, 다음 전투는 현재 실행의 관측 유지
 - Save 미구현, 앱 재시작 시 진행 초기화
 

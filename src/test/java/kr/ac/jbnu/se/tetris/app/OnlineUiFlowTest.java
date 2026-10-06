@@ -24,6 +24,7 @@ public final class OnlineUiFlowTest {
                 SwingUtilities.invokeAndWait(() -> {
                     for (int i = 0; i < 2; i++) {
                         apps[i] = new TetrisApplication();
+                        button(apps[i], "localLogin").doClick();
                         button(apps[i], "onlinePvP").doClick();
                         field(apps[i], "serverPort").setText(Integer.toString(server.getPort()));
                         button(apps[i], "connectServer").doClick();
@@ -58,9 +59,13 @@ public final class OnlineUiFlowTest {
                 awaitEdt(() -> ((JLabel) find(apps[0].getRouter().getContainer(), "onlineStatus"))
                         .getText().contains("ALREADY_IN_ROOM"), "unrelated request rejection delivered");
                 SwingUtilities.invokeAndWait(() -> {
-                    check(!button(apps[0], "retry").isEnabled(), "unrelated rejection preserves rematch pending");
+                    check("online".equals(apps[0].getRouter().getCurrentId())
+                            && button(apps[0], "roomReady").isEnabled(), "original return goes to waiting room");
                     button(apps[1], "retry").doClick();
                 });
+                awaitEdt(() -> "online".equals(apps[1].getRouter().getCurrentId())
+                        && button(apps[1], "roomReady").isEnabled(), "opponent returns to waiting room");
+                SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
                 awaitEdt(() -> running(apps[0]) && running(apps[1]), "rematch battle screens");
                 SwingUtilities.invokeAndWait(() -> apps[0].showHome());
                 awaitEdt(() -> finished(apps[1]), "leaving opponent result");

@@ -41,6 +41,20 @@ public final class StoryProgressService {
                 localParticipantId, monsterParticipantId);
     }
 
+    /** 일반·엘리트·보스 버튼의 확정 해금 검사 후 선택한 전투 시작 */
+    public synchronized EncounterRun startEncounter(String stageId, MonsterTier tier, String runId,
+                                                     String localParticipantId, String monsterParticipantId) {
+        if (!getCampaignProgress().isEncounterUnlocked(stageId, tier)) {
+            throw new IllegalStateException("Encounter is locked: " + stageId + "/" + tier);
+        }
+        for (MonsterSpec monster : catalog.getStage(stageId).getEncounters()) {
+            if (monster.getTier() == tier) {
+                return begin(stageId, monster, runId, localParticipantId, monsterParticipantId);
+            }
+        }
+        throw new IllegalArgumentException("Unknown encounter tier: " + tier);
+    }
+
     /** 패배 또는 포기 뒤 같은 상대를 새 전투로 재시작 */
     public synchronized EncounterRun restartActive(String newRunId) {
         if (activeRun == null) throw new IllegalStateException("No active story encounter");

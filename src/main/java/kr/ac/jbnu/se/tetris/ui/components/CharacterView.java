@@ -1,29 +1,37 @@
 package kr.ac.jbnu.se.tetris.ui.components;
 
-import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
-/** 성은 브랜치 CharacterView의 초상 영역 구성 이식 */
+/** 성은 브랜치 CharacterView의 120×120 초상 자리와 아래 이름 구성 */
 public final class CharacterView extends JPanel {
-    private final JLabel portrait = new JLabel("", JLabel.CENTER);
-    private final JLabel caption = new JLabel("", JLabel.CENTER);
+    private final JLabel portrait = new JLabel("Character", JLabel.CENTER);
+    private final JLabel caption = new JLabel("");
 
     public CharacterView() {
-        super(new BorderLayout(0, 3));
+        setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+        Dimension imageSize = new Dimension(120, 120);
+        portrait.setPreferredSize(imageSize);
+        portrait.setMinimumSize(imageSize);
+        portrait.setMaximumSize(imageSize);
         portrait.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        portrait.setPreferredSize(new Dimension(54, 54));
-        add(portrait, BorderLayout.CENTER);
-        add(caption, BorderLayout.SOUTH);
+        portrait.setAlignmentX(Component.CENTER_ALIGNMENT);
+        caption.setAlignmentX(Component.CENTER_ALIGNMENT);
+        add(portrait);
+        add(Box.createVerticalStrut(5));
+        add(caption);
     }
 
     public void setCharacter(Icon icon, String text) {
         portrait.setIcon(icon);
-        portrait.setText(icon == null ? "?" : "");
+        portrait.setText(icon == null ? "Character" : "");
         caption.setText(text);
     }
 }

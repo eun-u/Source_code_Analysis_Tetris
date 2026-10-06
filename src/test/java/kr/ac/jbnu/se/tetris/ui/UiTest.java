@@ -143,7 +143,7 @@ public final class UiTest {
     private static void sessionLifecycle() {
         TetrisApplication app = new TetrisApplication();
         try {
-            check("home".equals(app.getRouter().getCurrentId()), "launch at home");
+            check("login".equals(app.getRouter().getCurrentId()), "launch at original login");
             check(!app.isGravityRunning() && app.getState() == null, "no hidden session at home");
             app.startNewGame(42);
             check("game".equals(app.getRouter().getCurrentId()) && app.isGravityRunning(), "new game starts timer");

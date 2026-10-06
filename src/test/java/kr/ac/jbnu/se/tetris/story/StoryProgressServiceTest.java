@@ -16,6 +16,9 @@ public final class StoryProgressServiceTest {
         check(initial.isStageUnlocked("s1") && !initial.isStageUnlocked("s2"),
                 "첫 스테이지만 해금");
         expectState(() -> story.startStage("s2", "locked", "p", "m"));
+        check(initial.isEncounterUnlocked("s1", MonsterTier.NORMAL)
+                && !initial.isEncounterUnlocked("s1", MonsterTier.ELITE), "원본 난이도 버튼의 초기 잠금");
+        expectState(() -> story.startEncounter("s1", MonsterTier.ELITE, "locked-elite", "p", "m"));
         expectInvalid(() -> story.startStage("missing", "missing", "p", "m"));
 
         EncounterRun normal = story.startStage("s1", "run-1", "p", "m");
@@ -37,8 +40,10 @@ public final class StoryProgressServiceTest {
         check(!initial.isEncounterCleared("s1-normal")
                 && story.getCampaignProgress().isEncounterCleared("s1-normal"),
                 "이전 진행 스냅샷 불변");
+        check(story.getCampaignProgress().isEncounterUnlocked("s1", MonsterTier.ELITE)
+                && !story.getCampaignProgress().isEncounterUnlocked("s1", MonsterTier.BOSS), "일반 승리 후 엘리트만 해금");
 
-        EncounterRun elite = story.startStage("s1", "run-2", "p", "m");
+        EncounterRun elite = story.startEncounter("s1", MonsterTier.ELITE, "run-2", "p", "m");
         check(elite.getEncounterId().equals("s1-elite"), "홈 재진입은 첫 미완료 전투");
         check(story.recordBattleResult("run-1", win)
                 == StoryProgressService.ResultDisposition.STALE, "이전 run 결과 무시");
@@ -69,6 +74,8 @@ public final class StoryProgressServiceTest {
         check(story.nextEncounter("unused-final") == null, "최종 보스 뒤 다음 전투 없음");
         check(story.startStage("s1", "run-8", "p", "m").getEncounterId().equals("s1-normal"),
                 "완료 Stage 재플레이는 일반 전투부터");
+        check(story.startEncounter("s1", MonsterTier.BOSS, "replay-boss", "p", "m").getEncounterId().equals("s1-boss"),
+                "해금된 보스 버튼의 직접 재도전");
     }
 
     private static BattleManager battle() {
