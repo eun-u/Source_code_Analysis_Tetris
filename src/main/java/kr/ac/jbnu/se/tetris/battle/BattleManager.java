@@ -13,7 +13,7 @@ import kr.ac.jbnu.se.tetris.core.GameEngine;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceGenerator;
-import kr.ac.jbnu.se.tetris.core.SeededPieceGenerator;
+import kr.ac.jbnu.se.tetris.core.SevenBagGenerator;
 
 /** ID로 구분한 모든 참가자의 엔진과 전투 규칙을 소유하고 입력 순서를 관리 */
 public final class BattleManager {
@@ -43,7 +43,8 @@ public final class BattleManager {
             if (spec == null || participants.containsKey(spec.getId())) {
                 throw new IllegalArgumentException("Participants require unique, non-null IDs");
             }
-            PieceGenerator generator = generators == null ? new SeededPieceGenerator(seed)
+            // 모든 참가자가 같은 시드의 7-bag을 받아 같은 순서의 블록으로 대전
+            PieceGenerator generator = generators == null ? new SevenBagGenerator(seed)
                     : generators.get(spec.getId());
             if (generator == null) throw new IllegalArgumentException("Missing generator: " + spec.getId());
             GameEngine engine = new GameEngine(spec.getId(), generator);
