@@ -6,6 +6,10 @@
 
 `CoreSnapshots`와 `BattleSnapshots`는 네트워크 메시지 변환 및 UI 독립 개발용 **표시 사본** 생성 도구다. 이 사본을 수정해도 실제 엔진이나 전투에는 반영되지 않는다. 권위 있는 상태 변경은 `GameAction` 또는 `BattleManager`의 명령 경로에서만 수행한다.
 
+## 블록 공급 (7-bag)
+
+`BattleManager`는 참가자마다 `SevenBagGenerator(seed)`를 만든다. 일곱 종류를 한 번씩 섞은 가방을 순서대로 비우므로 같은 가방 안에서는 같은 블록이 나오지 않고, 같은 종류 사이의 간격은 최대 13칸, 같은 블록이 연속 세 번 나오는 경우는 없다. 모든 참가자가 같은 시드를 쓰므로 같은 순서의 블록을 받는다. Story PvE, 로컬 PvP, 온라인 PvP가 모두 `BattleManager`를 거치므로 같은 규칙이 적용된다. `SeededPieceGenerator`(독립 균등 추출)는 단일 `GameEngine` 테스트와 `TutorialSession`에서 계속 사용한다.
+
 ## 팀원이 바로 사용할 API
 
 | API | 입력과 결과 | 주요 검증 |
