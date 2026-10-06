@@ -23,14 +23,19 @@ public final class OnlineUiFlowTest {
             try {
                 SwingUtilities.invokeAndWait(() -> {
                     for (int i = 0; i < 2; i++) {
-                        apps[i] = new TetrisApplication(); apps[i].showOnline();
-                        apps[i].connectOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
+                        apps[i] = new TetrisApplication();
+                        button(apps[i], "onlinePvP").doClick();
+                        field(apps[i], "serverPort").setText(Integer.toString(server.getPort()));
+                        button(apps[i], "connectServer").doClick();
                     }
                 });
                 awaitEdt(() -> button(apps[0], "createRoom").isEnabled() && button(apps[1], "createRoom").isEnabled(), "connected lobby");
-                SwingUtilities.invokeAndWait(() -> apps[0].sendRoomCommand(RoomCommand.createRoom(2)));
+                SwingUtilities.invokeAndWait(() -> button(apps[0], "createRoom").doClick());
                 awaitEdt(() -> !field(apps[0], "roomId").getText().isEmpty(), "room ID shown");
-                SwingUtilities.invokeAndWait(() -> apps[1].sendRoomCommand(RoomCommand.joinRoom(field(apps[0], "roomId").getText())));
+                SwingUtilities.invokeAndWait(() -> {
+                    field(apps[1], "roomId").setText(field(apps[0], "roomId").getText());
+                    button(apps[1], "joinRoom").doClick();
+                });
                 awaitEdt(() -> button(apps[1], "roomReady").isEnabled(), "joined room ready control");
                 SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
                 awaitEdt(() -> running(apps[0]) && running(apps[1]), "two battle screens");

@@ -28,6 +28,7 @@ public final class OffscreenUiTest {
                 app.showStages(); capture(app, "stage-select");
                 app.startStory(0, 7); capture(app, "story-battle");
                 app.showHome(); capture(app, "paused-home");
+                app.showOnline(); capture(app, "online-lobby");
             } finally { app.close(); }
             JPanel preview = UiPreviewMain.createPanel();
             JTabbedPane tabs = null;
@@ -40,7 +41,7 @@ public final class OffscreenUiTest {
                 capture(preview, "preview-" + i);
             }
         });
-        System.out.println("PASS OffscreenUiTest: 6 app screens + 8 preview tabs at 2 sizes, no native window");
+        System.out.println("PASS OffscreenUiTest: 7 app screens + 8 preview tabs at 2 sizes, no native window");
     }
     private static void capture(TetrisApplication app, String name) {
         capture(app.getRouter().getContainer(), name);

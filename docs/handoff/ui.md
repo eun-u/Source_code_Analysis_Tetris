@@ -2,6 +2,14 @@
 
 현재 프론트엔드는 Java Swing이다. 새 웹 프레임워크는 도입하지 않는다. UI는 확정 상태를 표시하고 입력 의도를 전달한다. HP·피해·승패·아이템 보유량의 직접 계산은 전투 계층 소유다.
 
+## 성은 UI 통합
+
+`origin/seongeun`의 `0eee2c4` 화면 구성을 현재 `src/main/java`의 실행 화면에 이식했다. 로비 메뉴, Stage 행, 참가자 카드와 HP 바, 대전·결과 화면은 현재 `TetrisApplication`과 세션 상태를 사용한다. 공통 표시 컴포넌트는 `ui/components`에 위치한다.
+
+구형 `src/kr/.../Board`와 별도 `UIPreview` 실행기, 더미 방·레벨·결과·3단계 진행 모델은 제품에 포함하지 않는다. 현재 엔진의 `BoardView`, 5개 `StageCatalog`, 진행 서비스와 서버 판정을 유지한다. 계정 인증·회원가입은 현재 `dev`의 기능이 아니며 은진 브랜치와 별도 통합한다. 방 목록 조회, Infinite/Sprint, 아이템·Fever 조작도 현재 세션이 지원할 때 연결한다.
+
+`SeongeunUiIntegrationTest`는 화면의 실제 입력 전달, Stage 잠금, 서버 확정 준비 상태, 참가자 카드 교체와 HP 표시를 검증한다. `OnlineUiFlowTest`는 홈·접속·방 생성·입장 버튼으로 실제 TCP 대전을 시작한다. `OffscreenUiTest`는 로컬 접속 화면을 포함한 실행 화면과 fixture를 760×680, 960×820으로 렌더링한다. 실제 창 포커스와 물리 키 입력은 별도 검증 대상이다.
+
 ## 서버 없이 시작
 
 ```powershell

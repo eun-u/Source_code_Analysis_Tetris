@@ -78,4 +78,6 @@ Java 8 / Swing 기반의 실행 가능한 공통 개발 기반입니다. 팀별 
 - [Story 인수인계](docs/handoff/story.md)
 - [UI 인수인계](docs/handoff/ui.md)
 
+성은 브랜치의 로비·Stage 행·참가자 카드·대전 화면 구성을 현재 엔진과 세션에 연결했습니다. 제품 실행 코드는 `src/main/java`이며 구형 `src/kr`의 독립 UI 미리보기는 사용하지 않습니다. 인증·회원가입은 은진 브랜치와 별도 통합할 범위입니다.
+
 기존 `docs/phase0-*`, `phase1-*`, `phase2-*` 및 [이전 네트워크 설계](docs/network-design.md)는 당시 기준의 이력입니다. 현재 동작과 범위는 위 G0 문서와 로컬 PvP 안내를 우선합니다. `dev`는 팀 통합 기준이며 개인 개발은 해당 기준에서 분기합니다.

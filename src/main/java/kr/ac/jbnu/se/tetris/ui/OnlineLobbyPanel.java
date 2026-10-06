@@ -1,6 +1,7 @@
 package kr.ac.jbnu.se.tetris.ui;
 
 import java.awt.BorderLayout;
+import java.awt.GridLayout;
 import java.awt.FlowLayout;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
@@ -11,14 +12,15 @@ import javax.swing.JTextField;
 import kr.ac.jbnu.se.tetris.network.ConnectionOptions;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
+import kr.ac.jbnu.se.tetris.ui.components.GameButton;
 
-/** 로컬 서버 접속·방 생성·입장과 서버 확정 방 상태 표시 */
+/** 성은 브랜치 온라인 방 화면을 로컬 서버의 실제 접속·입장·준비 상태에 연결 */
 public final class OnlineLobbyPanel extends JPanel implements Screen {
     private final JTextField port = new JTextField("28080", 6);
     private final JTextField roomId = new JTextField(12);
-    private final JButton connect = new JButton("접속");
-    private final JButton create = new JButton("방 만들기");
-    private final JButton join = new JButton("입장");
+    private final JButton connect = new GameButton("접속");
+    private final JButton create = new GameButton("방 만들기");
+    private final JButton join = new GameButton("입장");
     private final JLabel status = new JLabel("로컬 서버를 실행한 뒤 접속하세요.");
     private final RoomPanel room;
     private boolean connected;
@@ -26,15 +28,19 @@ public final class OnlineLobbyPanel extends JPanel implements Screen {
     public OnlineLobbyPanel(Consumer<ConnectionOptions> connectAction,
             Consumer<RoomCommand> send, Runnable home) {
         super(new BorderLayout(12, 12));
-        setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
-        JPanel top = new JPanel(new java.awt.GridLayout(3, 1, 0, 8));
+        setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+        JPanel top = new JPanel(new GridLayout(4, 1, 0, 5));
+        JLabel title = new JLabel("ONLINE BATTLE · 로컬 서버");
+        title.setFont(title.getFont().deriveFont(22f));
         JPanel connection = new JPanel(new FlowLayout(FlowLayout.LEFT));
         connection.add(new JLabel("서버 127.0.0.1   포트")); connection.add(port); connection.add(connect);
         JPanel rooms = new JPanel(new FlowLayout(FlowLayout.LEFT));
         rooms.add(create); rooms.add(new JLabel("방 번호")); rooms.add(roomId); rooms.add(join);
-        top.add(connection); top.add(rooms); top.add(status); add(top, BorderLayout.NORTH);
+        top.add(title); top.add(connection); top.add(rooms); top.add(status); add(top, BorderLayout.NORTH);
         room = new RoomPanel(send); add(room, BorderLayout.CENTER);
-        JButton back = new JButton("접속 종료 · 홈으로"); back.setName("onlineHome");
+        JButton back = new GameButton("접속 종료 · 홈으로");
+        back.setPreferredSize(new java.awt.Dimension(170, 35));
+        back.setName("onlineHome");
         back.addActionListener(event -> home.run()); add(back, BorderLayout.SOUTH);
         port.setName("serverPort"); roomId.setName("roomId");
         status.setName("onlineStatus");
