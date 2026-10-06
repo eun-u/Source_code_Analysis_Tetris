@@ -224,13 +224,15 @@ public final class GameEngine implements GameActionSink {
         boolean tSpin = rotatedAtLock && activePiece.getType() == PieceType.T
                 && occupiedCorners(detached, pieceX, landingY) >= 3;
         int cleared = detached.removeFullLines();
+        // 퍼펙트 클리어는 줄 제거 직후 가비지를 올리기 전에 보드가 완전히 비었는지로 판정
+        boolean perfectClear = cleared > 0 && detached.isEmpty();
         boolean overflow = false;
         for (GameAction.Garbage garbage : pendingGarbage) {
             for (int i = 0; i < garbage.getLines() && !overflow; i++) {
                 overflow |= detached.addGarbageLine(garbage.getHoleColumn());
             }
         }
-        return new LockPreview(detached, cleared, tSpin, overflow);
+        return new LockPreview(detached, cleared, tSpin, perfectClear, overflow);
     }
 
     private static int occupiedCorners(Board board, int x, int y) {
@@ -259,9 +261,11 @@ public final class GameEngine implements GameActionSink {
             linesCleared += preview.linesCleared;
             combo++;
             events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
+                    preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear));
+            if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
                     preview.linesCleared, null, combo, preview.tSpin));
-            if (combo > 0) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin));
+            // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
+            if (preview.perfectClear) combo = -1;
         } else {
             combo = -1;
         }
@@ -322,12 +326,15 @@ public final class GameEngine implements GameActionSink {
         private final Board board;
         private final int linesCleared;
         private final boolean tSpin;
+        private final boolean perfectClear;
         private final boolean overflow;
 
-        private LockPreview(Board board, int linesCleared, boolean tSpin, boolean overflow) {
+        private LockPreview(Board board, int linesCleared, boolean tSpin, boolean perfectClear,
+                            boolean overflow) {
             this.board = board;
             this.linesCleared = linesCleared;
             this.tSpin = tSpin;
+            this.perfectClear = perfectClear;
             this.overflow = overflow;
         }
     }
@@ -343,8 +350,12 @@ public final class GameEngine implements GameActionSink {
 
     private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
                             String reason, int eventCombo, boolean tSpin) {
+        return event(type, piece, x, y, lineCount, reason, eventCombo, tSpin, false);
+    }
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
+                            String reason, int eventCombo, boolean tSpin, boolean perfectClear) {
         return new GameEvent(type, ++lastEventId, version, tick, actorId,
-                piece, x, y, lineCount, reason, eventCombo, tSpin);
+                piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear);
     }
 
     private ActionResult accepted(List<GameEvent> events) {

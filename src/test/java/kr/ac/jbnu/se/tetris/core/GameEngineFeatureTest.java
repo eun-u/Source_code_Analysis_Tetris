@@ -84,6 +84,8 @@ public final class GameEngineFeatureTest {
         for (int y = 0; y < 4; y++) for (int x = 0; x < 10; x++) {
             if (x != 6 && x != 7) board.setCell(x, y, PieceType.Z);
         }
+        // 두 번째 줄 제거에서 보드가 완전히 비면 퍼펙트 클리어로 콤보가 초기화되므로 한 칸을 남겨 콤보 이어짐을 확인
+        board.setCell(0, 4, PieceType.Z);
         int sequence = 1;
         for (int round = 0; round < 2; round++) {
             ActionResult drop = send(engine, GameAction.Type.HARD_DROP, sequence++);

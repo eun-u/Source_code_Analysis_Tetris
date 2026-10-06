@@ -34,6 +34,14 @@ public final class Board {
 
     PieceType getCell(int x, int y) { return cells[y * WIDTH + x]; }
 
+    /** 가비지를 포함한 모든 칸이 비어 있는 상태의 확인, 퍼펙트 클리어 판정용 */
+    boolean isEmpty() {
+        for (PieceType cell : cells) {
+            if (cell != PieceType.EMPTY) return false;
+        }
+        return true;
+    }
+
     void setCell(int x, int y, PieceType type) { cells[y * WIDTH + x] = type; }
 
     void place(Piece piece, int originX, int originY) {
