@@ -13,12 +13,13 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /** 전투 무대를 보드 위에 두고 전투 상태를 실시간으로 읽는 게임 화면. */
-public class BattlePanel extends JPanel {
-    private static final Color BG = new Color(10, 18, 31), TEXT = new Color(234, 240, 244);
+public class BattlePanel extends JPanel implements Scrollable {
+    private static final Color BG = UniversityPixelTheme.BG, TEXT = UniversityPixelTheme.TEXT;
     private final PixelArena arena = new PixelArena();
     private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
     private final JLabel playerStatus = label("LINES 0"), enemyStatus = label("LINES 0");
@@ -35,6 +36,7 @@ public class BattlePanel extends JPanel {
     private final Board enemyBoard = new Board(enemyStatus, false);
     private final JButton[] slots = new JButton[4];
     private final JButton resultTestButton = button("전투 정보");
+    private final JButton backButton = button("돌아가기 [ESC]");
     private IntConsumer itemAction;
     private long feedbackUntil;
     private final JLabel title = label("MONSTER BATTLE");
@@ -48,7 +50,14 @@ public class BattlePanel extends JPanel {
         top.setOpaque(false);
         title.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
         top.add(title, BorderLayout.WEST);
-        top.add(clock, BorderLayout.EAST);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        actions.setOpaque(false);
+        actions.add(clock);
+        backButton.setBackground(UniversityPixelTheme.GOLD);
+        backButton.setFocusable(false);
+        backButton.setToolTipText("현재 전투를 종료하고 돌아갑니다. 진행 중인 대전은 기권 처리됩니다.");
+        actions.add(backButton);
+        top.add(actions, BorderLayout.EAST);
         JPanel hero = new JPanel(new BorderLayout(0, 4));
         hero.setOpaque(false);
         hero.add(top, BorderLayout.NORTH);
@@ -108,12 +117,16 @@ public class BattlePanel extends JPanel {
         JPanel opponent = new JPanel(new BorderLayout(0, 4));
         opponent.setOpaque(false);
         opponent.add(enemyName, BorderLayout.NORTH);
-        enemyBoard.setPreferredSize(new Dimension(140, 308));
-        enemyBoard.setMinimumSize(new Dimension(100, 220));
+        enemyBoard.setPreferredSize(new Dimension(90, 198));
+        enemyBoard.setMinimumSize(new Dimension(80, 176));
         JPanel preview = new JPanel(new GridBagLayout());
         preview.setOpaque(false);
         preview.add(enemyBoard);
-        opponent.add(preview, BorderLayout.CENTER);
+        JPanel sidebar = new JPanel(new BorderLayout(0, 6));
+        sidebar.setOpaque(false);
+        sidebar.add(preview, BorderLayout.CENTER);
+        sidebar.add(keyGuide(), BorderLayout.SOUTH);
+        opponent.add(sidebar, BorderLayout.CENTER);
         opponent.add(enemyStatus, BorderLayout.SOUTH);
         center.add(opponent, c);
         add(center, BorderLayout.CENTER);
@@ -139,6 +152,33 @@ public class BattlePanel extends JPanel {
         return button;
     }
 
+    private static JPanel keyGuide() {
+        JPanel guide = new JPanel(new GridLayout(0, 1, 0, 3));
+        guide.setOpaque(false);
+        String[] keys = { "← →  이동", "↑ ↓  회전", "D  한 칸 낙하", "SPACE  즉시 낙하",
+                "C  HOLD", "P  일시정지", "1–4  아이템", "ESC  돌아가기" };
+        for (String text : keys) {
+            JLabel chip = label(text);
+            chip.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+            chip.setOpaque(true);
+            chip.setBackground(UniversityPixelTheme.PANEL);
+            chip.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 1),
+                    new EmptyBorder(1, 7, 1, 7)));
+            guide.add(chip);
+        }
+        return guide;
+    }
+    @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+    @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 16; }
+    @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+        return Math.max(16, (orientation == SwingConstants.VERTICAL ? visible.height : visible.width) - 16);
+    }
+    @Override public boolean getScrollableTracksViewportWidth() { return true; }
+    @Override public boolean getScrollableTracksViewportHeight() {
+        return getParent() != null && getParent().getHeight() >= getPreferredSize().height;
+    }
+
     public void setPlayers(PlayerData player, PlayerData enemy) {
         playerName.setText(player.getNickname());
         enemyName.setText(enemy.getNickname());
@@ -149,6 +189,7 @@ public class BattlePanel extends JPanel {
     public void startBattle() { playerBoard.start(); }
     public void setResultAction(ActionListener listener) { resultTestButton.addActionListener(listener); }
     public void setItemAction(IntConsumer action) { itemAction = action; }
+    public void setBackAction(ActionListener action) { backButton.addActionListener(action); }
     @Override public void doLayout() {
         int arenaHeight = getHeight() < 740 ? 150 : 225;
         if (arena.getPreferredSize().height != arenaHeight)
@@ -213,7 +254,7 @@ public class BattlePanel extends JPanel {
         if (System.currentTimeMillis() >= feedbackUntil) {
             status.setForeground(TEXT);
             status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
-                    : "← → 이동  ↑ ↓ 회전  D 빠른 낙하  SPACE 즉시 낙하  C HOLD  P 일시정지  1–4 아이템");
+                    : "테트리스로 공격하세요 · 조작은 오른쪽 키 안내 · ESC로 돌아가기");
         }
     }
     private static String itemName(String id) {

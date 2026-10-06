@@ -11,8 +11,8 @@ import kr.ac.jbnu.se.tetris.core.*;
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
     private static final int COLUMNS = 10, ROWS = 22;
-    private static final Color EMPTY = new Color(16, 23, 37);
-    private static final Color GRID = new Color(33, 47, 68);
+    private static final Color EMPTY = new Color(11, 11, 46);
+    private static final Color GRID = new Color(43, 33, 102);
     private static final Color[] COLORS = {
         EMPTY, new Color(255, 139, 113), new Color(112, 217, 155),
         new Color(114, 157, 255), new Color(255, 221, 115),
@@ -25,14 +25,42 @@ public class Board extends JPanel {
     private Runnable pauseHandler;
     private Consumer<Integer> itemHandler;
     private String overlayText;
+    private final boolean keyboardEnabled;
+    private final Map<Integer, Runnable> keyActions = new LinkedHashMap<Integer, Runnable>();
+    private final KeyEventDispatcher keyDispatcher = event -> {
+        if (event.getID() != KeyEvent.KEY_PRESSED || event.getModifiersEx() != 0
+                || !isShowing() || state == null ||
+                (state.getStatus() != GameState.Status.RUNNING
+                        && state.getStatus() != GameState.Status.PAUSED)) return false;
+        Runnable action = keyActions.get(event.getKeyCode());
+        if (action == null || MenuSelectionManager.defaultManager().getSelectedPath().length != 0)
+            return false;
+        Window gameWindow = SwingUtilities.getWindowAncestor(this);
+        Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        if (gameWindow == null || focusOwner == null
+                || SwingUtilities.getWindowAncestor(focusOwner) != gameWindow) return false;
+        action.run();
+        return true;
+    };
 
     public Board(JLabel statusbar, boolean keyboardEnable) {
         this.statusbar = statusbar;
+        keyboardEnabled = keyboardEnable;
         setBackground(EMPTY);
         setPreferredSize(new Dimension(260, 572));
         setMinimumSize(new Dimension(120, 264));
         setFocusable(true);
         if (keyboardEnable) bindKeys();
+    }
+    @Override public void addNotify() {
+        super.addNotify();
+        if (keyboardEnabled)
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keyDispatcher);
+    }
+    @Override public void removeNotify() {
+        if (keyboardEnabled)
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(keyDispatcher);
+        super.removeNotify();
     }
     public void start() { requestFocusInWindow(); }
     public void setState(GameState next) {
@@ -71,6 +99,7 @@ public class Board extends JPanel {
         }
     }
     private void bind(int key, String name, Runnable action) {
+        keyActions.put(key, action);
         getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, 0), name);
         getActionMap().put(name, new AbstractAction() {
             @Override public void actionPerformed(ActionEvent event) { if (isShowing()) action.run(); }

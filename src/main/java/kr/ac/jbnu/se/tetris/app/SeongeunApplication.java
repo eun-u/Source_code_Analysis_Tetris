@@ -54,6 +54,7 @@ import kr.ac.jbnu.se.tetris.story.StoryProgressService;
 import kr.ac.jbnu.se.tetris.ui.ScreenRouter;
 import kr.ac.jbnu.se.tetris.ui.SessionUiBinding;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.BattlePanel;
@@ -153,6 +154,12 @@ public final class SeongeunApplication implements AutoCloseable {
         addScreens();
         bindActions();
         buildMenu();
+        UniversityPixelTheme.apply(screens);
+        screens.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), "back-from-game");
+        screens.getActionMap().put("back-from-game", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent event) { backFromGame(); }
+        });
         show(LOGIN);
     }
 
@@ -219,6 +226,7 @@ public final class SeongeunApplication implements AutoCloseable {
         battle.getPlayerBoard().setInputHandlers(this::submit, this::togglePause);
         battle.getPlayerBoard().setItemHandler(this::useItem);
         battle.setItemAction(this::useItem);
+        battle.setBackAction(event -> backFromGame());
     }
 
     private void buildMenu() {
@@ -518,6 +526,20 @@ public final class SeongeunApplication implements AutoCloseable {
         ScreenRouter.requireEdt();
         if (match != null && BATTLE.equals(currentScreen) && match.getSnapshot().getCapabilities().canLeave()) {
             match.leave();
+        }
+    }
+
+    private void backFromGame() {
+        ScreenRouter.requireEdt();
+        if (closed) return;
+        if (LOCAL_GAME.equals(currentScreen)) {
+            closeSession();
+            show(LOCAL_MODE);
+        } else if (BATTLE.equals(currentScreen)) {
+            boolean returnToStory = storyBattle;
+            if (match != null && match.getSnapshot().getCapabilities().canLeave()) match.leave();
+            closeSession();
+            if (returnToStory) showStories(); else show(LOBBY);
         }
     }
 

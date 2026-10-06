@@ -26,12 +26,13 @@ public final class MiniPiecePreview extends JComponent {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-            g.setColor(new Color(16, 25, 41)); g.fillRect(0, 0, getWidth(), getHeight());
-            g.setColor(new Color(80, 117, 143)); g.drawRect(0, 0, getWidth() - 1, getHeight() - 1);
-            g.setFont(new Font(Font.MONOSPACED, Font.BOLD, 10));
-            g.setColor(new Color(208, 228, 234)); g.drawString(title, 5, 12);
+            g.setColor(UniversityPixelTheme.BLACK); g.fillRect(0, 0, getWidth(), getHeight());
+            g.setColor(UniversityPixelTheme.PANEL); g.fillRect(3, 3, getWidth() - 6, getHeight() - 6);
+            g.setColor(UniversityPixelTheme.LINE); g.drawRect(5, 5, getWidth() - 11, getHeight() - 11);
+            g.setFont(UniversityPixelTheme.font(10, Font.BOLD));
+            g.setColor(UniversityPixelTheme.GOLD); g.drawString(title, 7, 15);
             if (type == null) {
-                g.setColor(new Color(135, 158, 174));
+                g.setColor(UniversityPixelTheme.TEXT_SUB);
                 g.drawString("없음", 14, 43);
                 return;
             }
@@ -52,7 +53,7 @@ public final class MiniPiecePreview extends JComponent {
                 g.setColor(color); g.fillRect(x + 1, y + 1, cell - 2, cell - 2);
             }
             if (item) {
-                g.setColor(new Color(255, 235, 142));
+                g.setColor(UniversityPixelTheme.GOLD);
                 g.fillRect(getWidth() - 12, 3, 6, 6);
             }
         } finally { g.dispose(); }

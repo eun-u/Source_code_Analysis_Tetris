@@ -7,6 +7,7 @@ import javax.swing.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 
@@ -25,11 +26,13 @@ public class LocalGamePanel extends JPanel {
 
     public LocalGamePanel() {
         setLayout(new BorderLayout());
-        setBackground(new Color(13, 23, 40));
+        setBackground(UniversityPixelTheme.BG);
 
         titleLabel = new JLabel("Local Game", SwingConstants.CENTER);
         titleLabel.setForeground(Color.WHITE);
-        backButton = new GameButton("Back");
+        backButton = new GameButton("돌아가기 [ESC]");
+        backButton.setBackground(UniversityPixelTheme.GOLD);
+        backButton.setFocusable(false);
 
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setOpaque(false);
@@ -68,9 +71,10 @@ public class LocalGamePanel extends JPanel {
         nextArea.add(Box.createVerticalStrut(24));
         nextArea.add(lightLabel("← → 이동"));
         nextArea.add(lightLabel("↑ ↓ 회전"));
-        nextArea.add(lightLabel("D 빠른 낙하"));
+        nextArea.add(lightLabel("D 한 칸 낙하"));
         nextArea.add(lightLabel("SPACE 즉시 낙하"));
         nextArea.add(lightLabel("C HOLD · P 일시정지"));
+        nextArea.add(lightLabel("ESC 돌아가기"));
         c.gridx = 1; c.weightx = 0; c.fill = GridBagConstraints.VERTICAL;
         c.insets = new Insets(20, 8, 20, 24);
         boardArea.add(nextArea, c);

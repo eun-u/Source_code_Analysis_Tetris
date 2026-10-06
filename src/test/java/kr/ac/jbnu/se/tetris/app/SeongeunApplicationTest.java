@@ -53,10 +53,14 @@ public final class SeongeunApplicationTest {
                 });
                 assert app.isLocalGravityRunning();
                 assert app.getLocalState().getStatus() == kr.ac.jbnu.se.tetris.core.GameState.Status.RUNNING;
-                button(app.getScreens(), "Back").doClick();
+                button(app.getScreens(), "돌아가기 [ESC]").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 assert app.getLocalState() == null;
                 assert !app.isLocalGravityRunning();
+                button(app.getScreens(), "Infinite").doClick();
+                escape(app);
+                assert LOCAL_MODE.equals(app.getCurrentScreen());
+                assert app.getLocalState() == null && !app.isLocalGravityRunning();
 
                 button(app.getScreens(), "Back").doClick();
                 button(app.getScreens(), "Story").doClick();
@@ -90,6 +94,11 @@ public final class SeongeunApplicationTest {
                 button(app.getScreens(), "Story로").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 assert app.getMatchSnapshot() == null;
+                button(app.getScreens(), "일반").doClick();
+                escape(app);
+                assert STORY_STAGE.equals(app.getCurrentScreen());
+                assert app.getMatchSnapshot() == null && !app.isStoryClockRunning();
+                assert app.getSaveData().getCoins() == 0;
             } finally {
                 app.close();
             }
@@ -171,7 +180,11 @@ public final class SeongeunApplicationTest {
                 });
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");
-                SwingUtilities.invokeAndWait(() -> menuItem(apps[0].getMenu(), "대전 포기").doClick());
+                SwingUtilities.invokeAndWait(() -> {
+                    button(apps[0].getScreens(), "돌아가기 [ESC]").doClick();
+                    assert LOBBY.equals(apps[0].getCurrentScreen());
+                    assert apps[0].getMatchSnapshot() == null;
+                });
                 awaitEdt(() -> RESULT.equals(apps[1].getCurrentScreen()), "opponent forfeit result");
             } finally {
                 SwingUtilities.invokeAndWait(() -> {
@@ -237,6 +250,15 @@ public final class SeongeunApplicationTest {
             }
         }
         throw new AssertionError("Menu item not found: " + text);
+    }
+
+    private static void escape(SeongeunApplication app) {
+        Object binding = app.getScreens().getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .get(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0));
+        assert binding != null;
+        javax.swing.Action action = app.getScreens().getActionMap().get(binding);
+        assert action != null;
+        action.actionPerformed(new java.awt.event.ActionEvent(app.getScreens(), 0, binding.toString()));
     }
 
     private static final String LOGIN = "LOGIN";

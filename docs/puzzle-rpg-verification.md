@@ -2,7 +2,18 @@
 
 검증일: 2026-10-06. 기준 브랜치: `codex/feature-puzzle-rpg-mvp`, 시작 커밋: `c1aca5d`.
 
-## 통합 결과
+## 입력·복귀와 임시 UI 추가 검증
+
+초기 MVP 이후 키 입력과 전투 복귀를 보완하고, 사용자가 지정한 `University_Simulation`의 색상·픽셀 패널·아바타 PNG를 차용했다. 제품 소스 150개와 검증 소스 50개를 Java 8로 컴파일했고 전체 41개 테스트 모음을 통과했다. 로그는 `out/keyboard-ui-integration.log`다. 이 버전 JAR SHA-256은 `81B0316CD737F7202337A829BEE61B25DC1AC58805DA5AA863EA15C5E9FE1211`이다.
+
+- 기존 보드의 키가 버튼과 JScrollPane 바인딩에 선점되는 문제를 별도 JFrame에서 재현했다. 수정 후 같은 창의 표시 중인 게임 보드만 조작 키를 먼저 받고, 숨긴 카드와 다른 창의 입력은 가져오지 않는 경로를 확인했다.
+- `BoardKeyboardDesktopSmoke`는 실제 Swing 버튼 포커스와 KeyboardFocusManager 이벤트 전달을 검사한다. OS 키 입력을 주입하는 시험과는 구분한다.
+- Esc·돌아가기의 로컬/스토리 세션 종료와 타이머 해제, 온라인 상대 기권 전달을 앱·실제 TCP 테스트에서 확인했다.
+- 실제 JScrollPane에 담은 1160×780 및 760×660 렌더에서 상단 돌아가기와 오른쪽 키 안내가 표시되는 것을 확인했다. 최종 PNG는 `out/university-skin/battle-final-1160.png`와 `battle-final-760.png`다.
+- PNG 3개의 원본과 복사본 해시를 대조했고 원본 프로젝트는 수정하지 않았다. 출처는 `src/main/resources/ui/university/README.md`에 기록했다.
+- 독립 정적 리뷰에서 남은 확정 P1/P2는 없었다. 새 제품 창을 실행했으나 사용자 입력 감지로 Windows 자동 키 시험은 중단했다. 실제 OS 키 조작 전체를 검증했다고 주장하지 않는다.
+
+## 초기 MVP 통합 결과 (`7687350`)
 
 JDK 8u504로 제품 소스 149개와 검증 소스 49개를 컴파일하고 전체 41개 헤드리스 테스트 모음을 통과했다. 실제 루프백 TCP와 파일 저장을 허용한 실행 환경에서 검증했다.
 

@@ -1,10 +1,24 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
-import java.awt.*;
-import javax.swing.*;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import javax.imageio.ImageIO;
+import javax.swing.JComponent;
+import javax.swing.Timer;
 
-/** 체력 변화에 반응하는 상단 픽셀 전투 무대. */
+/** University_Simulation 에셋을 임시로 쓰는 상단 전투 무대. HP 변화와 피격 연출은 실제 전투 상태에 연동된다. */
 public final class PixelArena extends JComponent {
+    private static final BufferedImage PLAYER_ART = loadArt("avatar_player.png");
+    private static final BufferedImage MONSTER_ART = loadArt("avatar_professor.png");
+    private static final BufferedImage HP_ICON = loadArt("stat_stamina.png");
     private int playerHp = 100, playerMax = 100, monsterHp = 100, monsterMax = 100;
     private String playerName = "PLAYER", monsterName = "MONSTER";
     private long playerHitAt, monsterHitAt;
@@ -22,8 +36,8 @@ public final class PixelArena extends JComponent {
 
     public void update(String player, int hp, int maxHp, String monster, int enemyHp, int enemyMax) {
         long now = System.currentTimeMillis();
-        if (this.playerName.equals(player) && hp < playerHp) playerHitAt = now;
-        if (this.monsterName.equals(monster) && enemyHp < monsterHp) monsterHitAt = now;
+        if (playerName.equals(player) && hp < playerHp) playerHitAt = now;
+        if (monsterName.equals(monster) && enemyHp < monsterHp) monsterHitAt = now;
         playerName = player == null ? "PLAYER" : player;
         monsterName = monster == null ? "MONSTER" : monster;
         playerHp = Math.max(0, hp);
@@ -38,81 +52,134 @@ public final class PixelArena extends JComponent {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             int w = getWidth(), h = getHeight();
-            g.setColor(new Color(13, 21, 40)); g.fillRect(0, 0, w, h);
-            g.setColor(new Color(19, 36, 64)); g.fillRect(0, h / 3, w, h / 2);
-            g.setColor(new Color(34, 61, 85)); g.fillRect(0, h * 3 / 4, w, h / 4);
-            g.setColor(new Color(57, 82, 101));
-            for (int i = 0; i < w; i += 42) g.fillRect(i, h * 3 / 4 + (i / 42 % 2) * 6, 32, 8);
-            // 배경의 픽셀 별과 양쪽 발판
-            g.setColor(new Color(108, 156, 181));
-            for (int i = 17; i < w; i += 73) g.fillRect(i, 22 + i % 43, 3, 3);
-            int scale = Math.max(2, Math.min(6, h < 180 ? h / 40 : h / 31));
-            int playerX = w / 4 - 9 * scale, enemyX = w * 3 / 4 - 9 * scale;
-            int spriteY = h * 3 / 4 - 13 * scale;
-            drawFighter(g, playerX, spriteY, scale, false, recent(playerHitAt));
-            drawFighter(g, enemyX, spriteY, scale, true, recent(monsterHitAt));
-            int hpTop = h < 180 ? 0 : 13;
-            drawHp(g, 18, hpTop, Math.max(100, w / 3), playerName, playerHp, playerMax, new Color(116, 221, 169));
-            drawHp(g, w - Math.max(100, w / 3) - 18, hpTop, Math.max(100, w / 3),
-                    monsterName, monsterHp, monsterMax, new Color(255, 135, 122));
-            drawImpact(g, w, h, scale);
-            g.setColor(new Color(136, 171, 193));
+            if (w <= 0 || h <= 0) return;
+            paintBackdrop(g, w, h);
+
+            int artHeight = Math.min(126, Math.max(58, h - 82));
+            int artWidth = artHeight * 6 / 7;
+            int artY = h - 16 - artHeight;
+            paintAvatar(g, PLAYER_ART, w / 4 - artWidth / 2, artY, artWidth, artHeight, recent(playerHitAt), false);
+            paintAvatar(g, MONSTER_ART, w * 3 / 4 - artWidth / 2, artY, artWidth, artHeight, recent(monsterHitAt), true);
+
+            int barWidth = Math.min(240, Math.max(100, w / 3));
+            paintHp(g, 14, 9, barWidth, playerName, playerHp, playerMax, UniversityPixelTheme.MINT);
+            paintHp(g, w - barWidth - 14, 9, barWidth,
+                    monsterName, monsterHp, monsterMax, UniversityPixelTheme.CORAL);
+            paintImpact(g, w, h);
+            g.setColor(UniversityPixelTheme.BLACK);
             g.drawRect(1, 1, w - 3, h - 3);
+            g.drawRect(2, 2, w - 5, h - 5);
+            g.setColor(UniversityPixelTheme.LINE);
+            g.drawRect(5, 5, w - 11, h - 11);
         } finally { g.dispose(); }
     }
 
-    private void drawHp(Graphics2D g, int x, int y, int width, String name, int hp, int max, Color color) {
-        g.setFont(new Font(Font.MONOSPACED, Font.BOLD, 13));
-        g.setColor(new Color(239, 242, 240)); g.drawString(name, x, y + 12);
-        g.drawString(hp + " / " + max, x, y + 30);
-        g.setColor(new Color(8, 13, 24)); g.fillRect(x - 2, y + 36, width + 4, 14);
-        g.setColor(color.darker()); g.fillRect(x, y + 38, width, 10);
-        g.setColor(color); g.fillRect(x, y + 38, Math.min(width, (int) ((long) width * hp / max)), 10);
+    private static void paintBackdrop(Graphics2D g, int w, int h) {
+        g.setColor(UniversityPixelTheme.BG);
+        g.fillRect(0, 0, w, h);
+        g.setColor(new Color(0x10103A));
+        g.fillRect(7, 7, w - 14, h - 14);
+        g.setColor(new Color(0x171044));
+        for (int x = 11; x < w - 8; x += 18) g.fillRect(x, 9, 1, h - 18);
+        for (int y = 11; y < h - 8; y += 18) g.fillRect(9, y, w - 18, 1);
+        g.setColor(UniversityPixelTheme.PANEL);
+        g.fillRect(8, h - 19, w - 16, 11);
+        g.setColor(UniversityPixelTheme.LINE);
+        g.fillRect(8, h - 20, w - 16, 3);
+        g.setColor(UniversityPixelTheme.GOLD);
+        for (int x = 31; x < w - 24; x += 91) g.fillRect(x, 67 + x % 17, 3, 3);
+        g.setFont(UniversityPixelTheme.font(h < 185 ? 12 : 15, Font.BOLD));
+        String vs = "VS";
+        FontMetrics metrics = g.getFontMetrics();
+        int vx = (w - metrics.stringWidth(vs)) / 2;
+        g.setColor(UniversityPixelTheme.BLACK);
+        g.fillRect(vx - 10, Math.max(68, h / 2) - 19, metrics.stringWidth(vs) + 20, 29);
+        g.setColor(UniversityPixelTheme.GOLD);
+        g.drawString(vs, vx, Math.max(68, h / 2));
     }
 
-    private static boolean recent(long time) { return System.currentTimeMillis() - time < 330; }
+    private static void paintAvatar(Graphics2D g, BufferedImage image, int x, int y,
+                                    int width, int height, boolean hit, boolean monster) {
+        g.setColor(UniversityPixelTheme.BLACK);
+        g.fillRect(x + 5, y + 5, width, height);
+        if (image != null) {
+            g.drawImage(image, x, y, width, height, null);
+        } else {
+            // 리소스가 빠진 개발용 실행에서도 전투 대상을 볼 수 있게 둔다.
+            g.setColor(monster ? UniversityPixelTheme.CORAL : UniversityPixelTheme.MINT);
+            g.fillRect(x, y, width, height);
+            g.setColor(UniversityPixelTheme.BLACK);
+            g.fillRect(x + width / 4, y + height / 3, width / 2, height / 4);
+        }
+        if (hit) {
+            g.setColor(new Color(255, 247, 232, 130));
+            g.fillRect(x, y, width, height);
+        }
+    }
 
-    private void drawImpact(Graphics2D g, int w, int h, int scale) {
+    private static void paintHp(Graphics2D g, int x, int y, int width,
+                                String name, int hp, int max, Color fill) {
+        g.setColor(UniversityPixelTheme.PANEL);
+        g.fillRect(x, y, width, 54);
+        g.setColor(UniversityPixelTheme.BLACK);
+        g.drawRect(x, y, width - 1, 53);
+        g.setColor(UniversityPixelTheme.LINE);
+        g.drawRect(x + 3, y + 3, width - 7, 47);
+        if (HP_ICON != null) g.drawImage(HP_ICON, x + 7, y + 6, 19, 19, null);
+        g.setFont(UniversityPixelTheme.font(12, Font.BOLD));
+        g.setColor(UniversityPixelTheme.TEXT);
+        FontMetrics metrics = g.getFontMetrics();
+        String visibleName = fit(name, metrics, width - 39);
+        g.drawString(visibleName, x + 29, y + 20);
+        String amount = hp + " / " + max;
+        g.setColor(UniversityPixelTheme.TEXT_SUB);
+        g.drawString(amount, x + 8, y + 36);
+        int meterX = x + 8, meterY = y + 41, meterWidth = width - 16;
+        g.setColor(UniversityPixelTheme.BLACK);
+        g.fillRect(meterX, meterY, meterWidth, 8);
+        g.setColor(fill);
+        int filled = Math.min(meterWidth - 2, (int) ((long) (meterWidth - 2) * hp / max));
+        g.fillRect(meterX + 1, meterY + 1, Math.max(0, filled), 6);
+        g.setColor(UniversityPixelTheme.BLACK);
+        for (int tick = meterX + 10; tick < meterX + meterWidth - 1; tick += 11) {
+            g.fillRect(tick, meterY + 1, 1, 6);
+        }
+    }
+
+    private void paintImpact(Graphics2D g, int width, int height) {
         long now = System.currentTimeMillis();
-        long time = Math.max(playerHitAt, monsterHitAt);
-        if (now - time >= 500) return;
+        long hitTime = Math.max(playerHitAt, monsterHitAt);
+        if (now - hitTime >= 500) return;
         boolean hitPlayer = playerHitAt > monsterHitAt;
-        float phase = (now - time) / 500f;
-        int x = (int) ((hitPlayer ? .69 - .46 * phase : .31 + .46 * phase) * w);
-        int y = h / 2 + (int) (Math.sin(phase * Math.PI) * -h / 9);
-        g.setColor(hitPlayer ? new Color(255, 138, 97) : new Color(122, 234, 237));
-        g.fillRect(x, y, scale * 3, scale * 3);
-        g.fillRect(x + scale, y - scale, scale, scale * 5);
-        g.fillRect(x - scale, y + scale, scale * 5, scale);
+        float phase = (now - hitTime) / 500f;
+        int x = (int) ((hitPlayer ? .69 - .46 * phase : .31 + .46 * phase) * width);
+        int y = height / 2 + (int) (Math.sin(phase * Math.PI) * -height / 9);
+        g.setColor(hitPlayer ? UniversityPixelTheme.CORAL : UniversityPixelTheme.MINT);
+        g.fillRect(x, y, 18, 18);
+        g.fillRect(x + 6, y - 6, 6, 30);
+        g.fillRect(x - 6, y + 6, 30, 6);
     }
 
-    private void drawFighter(Graphics2D g, int x, int y, int size, boolean monster, boolean hit) {
-        String[] rows = monster ? new String[] {
-                "....KKKK....", "..KKRRRRKK..", ".KRRRRRRRRK.", "KRRW R W RRK",
-                "KRRRRRRRRRRK", "KRRKKRRKKRRK", ".KRRRRRRRRK.", "..KRRRRRRK..",
-                "...KRRRRK...", "..KKRRRRKK..", ".K..K..K..K.", "K...K..K...K"
-        } : new String[] {
-                "....KKKK....", "...KHHHHK...", "..KHHHHHHK..", "..KSKSSSKK..",
-                "..KSSSSSSK..", "...KSSSSK...", "..KKBBBBKK..", ".KBBBBBBBBK.",
-                ".KBBBBBBBBK.", "..KBBBBBBK..", "..K..KK..K..", ".KK..KK..KK."
-        };
-        for (int row = 0; row < rows.length; row++) {
-            String line = rows[row].replace(" ", "R");
-            for (int col = 0; col < line.length(); col++) {
-                char pixel = line.charAt(col);
-                if (pixel == '.') continue;
-                Color color;
-                if (hit) color = Color.WHITE;
-                else if (pixel == 'K') color = new Color(12, 21, 37);
-                else if (pixel == 'W') color = new Color(255, 249, 219);
-                else if (pixel == 'R') color = new Color(189, 94, 145);
-                else if (pixel == 'H') color = new Color(59, 74, 118);
-                else if (pixel == 'S') color = new Color(244, 199, 153);
-                else color = new Color(87, 172, 222);
-                g.setColor(color);
-                g.fillRect(x + col * size, y + row * size, size, size);
-            }
+    private static String fit(String text, FontMetrics metrics, int maxWidth) {
+        String value = text == null ? "" : text;
+        if (metrics.stringWidth(value) <= maxWidth) return value;
+        while (value.length() > 1 && metrics.stringWidth(value + "…") > maxWidth) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value + "…";
+    }
+
+    private static boolean recent(long hitTime) {
+        return System.currentTimeMillis() - hitTime < 330;
+    }
+
+    private static BufferedImage loadArt(String file) {
+        try (InputStream stream = PixelArena.class.getResourceAsStream("/ui/university/" + file)) {
+            return stream == null ? null : ImageIO.read(stream);
+        } catch (IOException exception) {
+            return null;
         }
     }
 }

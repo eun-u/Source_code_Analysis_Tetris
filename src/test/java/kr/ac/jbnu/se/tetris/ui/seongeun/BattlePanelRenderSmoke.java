@@ -9,8 +9,10 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
+import javax.swing.JScrollPane;
 import kr.ac.jbnu.se.tetris.battle.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.BattlePanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** headless 구성의 실제 전투 스냅샷을 PNG로 확인하는 독립 렌더 도구. */
 public final class BattlePanelRenderSmoke {
@@ -29,11 +31,14 @@ public final class BattlePanelRenderSmoke {
                 manager.start();
                 BattlePanel panel = new BattlePanel();
                 panel.setState(manager.getState(), "local");
-                panel.setSize(width, height);
-                layout(panel);
+                JScrollPane viewport = new JScrollPane(panel);
+                viewport.setBorder(null);
+                UniversityPixelTheme.apply(viewport);
+                viewport.setSize(width, height);
+                layout(viewport);
                 BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
                 Graphics2D graphics = image.createGraphics();
-                panel.printAll(graphics);
+                viewport.printAll(graphics);
                 graphics.dispose();
                 ImageIO.write(image, "png", output.toFile());
             } catch (Exception error) { throw new RuntimeException(error); }
