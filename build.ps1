@@ -91,7 +91,7 @@ if ($Task -in @('Test', 'GuiTest', 'Preview', 'NetworkFixture')) {
     }
     $testClasspath = "$classes;$testClasses"
     if ($Task -eq 'Preview') {
-        & $java '-Djava.awt.headless=false' -cp $testClasspath kr.ac.jbnu.se.tetris.ui.UiPreviewMain
+        & $java '-Djava.awt.headless=false' -cp $testClasspath kr.ac.jbnu.se.tetris.app.SeongeunApplication
         if ($LASTEXITCODE -ne 0) { throw 'UI preview failed' }
         exit 0
     }

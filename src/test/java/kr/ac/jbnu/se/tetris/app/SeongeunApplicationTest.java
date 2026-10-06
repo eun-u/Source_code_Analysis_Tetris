@@ -1,0 +1,209 @@
+package kr.ac.jbnu.se.tetris.app;
+
+import java.awt.Component;
+import java.awt.Container;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
+import javax.swing.AbstractButton;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.SwingUtilities;
+import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
+import kr.ac.jbnu.se.tetris.core.GameAction;
+import kr.ac.jbnu.se.tetris.network.ConnectionOptions;
+import kr.ac.jbnu.se.tetris.network.server.LocalGameServer;
+
+/** 성은 원본 버튼에서 실제 세션까지 이어지는 최소 흐름 검증. */
+public final class SeongeunApplicationTest {
+    private SeongeunApplicationTest() { }
+
+    public static void main(String[] args) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            SeongeunApplication app = new SeongeunApplication(new Random(17));
+            try {
+                assert LOGIN.equals(app.getCurrentScreen());
+                button(app.getScreens(), "로그인").doClick();
+                assert LOBBY.equals(app.getCurrentScreen());
+
+                button(app.getScreens(), "Local Mode").doClick();
+                assert LOCAL_MODE.equals(app.getCurrentScreen());
+                button(app.getScreens(), "Infinite").doClick();
+                assert LOCAL_GAME.equals(app.getCurrentScreen());
+                long before = app.getLocalState().getVersion();
+                app.submit(GameAction.Type.HARD_DROP);
+                assert app.getLocalState().getVersion() > before;
+                assert app.isLocalGravityRunning();
+                button(app.getScreens(), "Back").doClick();
+                assert LOCAL_MODE.equals(app.getCurrentScreen());
+                assert app.getLocalState() == null;
+                assert !app.isLocalGravityRunning();
+
+                button(app.getScreens(), "Back").doClick();
+                button(app.getScreens(), "Story").doClick();
+                assert STORY_STAGE.equals(app.getCurrentScreen());
+                button(app.getScreens(), "일반").doClick();
+                assert BATTLE.equals(app.getCurrentScreen());
+                assert app.getMatchSnapshot().getPhase() == SessionPhase.RUNNING;
+                long battleBefore = app.getMatchSnapshot().getBattleState().getVersion();
+                app.submit(GameAction.Type.HARD_DROP);
+                assert app.getMatchSnapshot().getBattleState().getVersion() > battleBefore;
+                assert app.isStoryClockRunning();
+                button(app.getScreens(), "Result Test").doClick();
+                assert BATTLE.equals(app.getCurrentScreen());
+                assert !app.getCampaignProgress().isStageCleared(
+                        kr.ac.jbnu.se.tetris.story.StageCatalog.loadDefault().getStages().get(0).getId());
+                menuItem(app.getMenu(), "대전 포기").doClick();
+                assert RESULT.equals(app.getCurrentScreen());
+                assert !app.isStoryClockRunning();
+                button(app.getScreens(), "Story로").doClick();
+                assert STORY_STAGE.equals(app.getCurrentScreen());
+                assert app.getMatchSnapshot() == null;
+            } finally {
+                app.close();
+            }
+        });
+        onlineFlow();
+        unavailableServerKeepsRoomList();
+        System.out.println("PASS SeongeunApplicationTest");
+    }
+
+    private static void unavailableServerKeepsRoomList() throws Exception {
+        final int unavailablePort;
+        try (LocalGameServer server = new LocalGameServer(0)) {
+            server.start();
+            unavailablePort = server.getPort();
+        }
+        final SeongeunApplication[] holder = new SeongeunApplication[1];
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                holder[0] = new SeongeunApplication(new Random(30));
+                holder[0].openOnline(new ConnectionOptions("127.0.0.1", unavailablePort));
+            });
+            awaitEdt(() -> holder[0].getMatchSnapshot().getPhase() == SessionPhase.FAILED
+                    && "ROOM_LIST".equals(holder[0].getCurrentScreen()),
+                    "unavailable server stays in room list without a game result");
+        } finally {
+            SwingUtilities.invokeAndWait(() -> { if (holder[0] != null) holder[0].close(); });
+        }
+    }
+
+    private static void onlineFlow() throws Exception {
+        final SeongeunApplication[] apps = new SeongeunApplication[2];
+        try (LocalGameServer server = new LocalGameServer(0)) {
+            server.start();
+            try {
+                SwingUtilities.invokeAndWait(() -> {
+                    for (int index = 0; index < apps.length; index++) {
+                        apps[index] = new SeongeunApplication(new Random(index + 21));
+                        button(apps[index].getScreens(), "로그인").doClick();
+                        apps[index].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
+                    }
+                });
+                awaitEdt(() -> apps[0].isOnlineConnected() && apps[1].isOnlineConnected(), "TCP connection");
+                SwingUtilities.invokeAndWait(() -> apps[0].createRoomWithName("원본 방"));
+                awaitEdt(() -> apps[0].getRoomState() != null, "server room state");
+                String roomId = onEdtString(() -> apps[0].getRoomState().getRoomId());
+                SwingUtilities.invokeAndWait(() -> apps[1].joinRoom(roomId));
+                awaitEdt(() -> apps[1].getRoomState() != null
+                        && apps[1].getRoomState().getReadyByParticipantId().size() == 2,
+                        "two confirmed participants");
+                SwingUtilities.invokeAndWait(() -> {
+                    button(apps[0].getScreens(), "READY").doClick();
+                    button(apps[1].getScreens(), "READY").doClick();
+                });
+                awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
+                        && BATTLE.equals(apps[1].getCurrentScreen())
+                        && apps[0].getMatchSnapshot().getPhase() == SessionPhase.RUNNING,
+                        "server match started");
+                long before = onEdtLong(() -> apps[0].getMatchSnapshot().getBattleState().getVersion());
+                SwingUtilities.invokeAndWait(() -> apps[0].submit(GameAction.Type.HARD_DROP));
+                awaitEdt(() -> apps[0].getMatchSnapshot().getBattleState().getVersion() > before,
+                        "server input reflected");
+                long deadline = System.nanoTime() + 15_000_000_000L;
+                while (!onEdt(() -> RESULT.equals(apps[0].getCurrentScreen()))
+                        && System.nanoTime() < deadline) {
+                    SwingUtilities.invokeAndWait(() -> apps[0].submit(GameAction.Type.HARD_DROP));
+                    Thread.sleep(50);
+                }
+                awaitEdt(() -> RESULT.equals(apps[0].getCurrentScreen())
+                        && RESULT.equals(apps[1].getCurrentScreen()), "server result delivered");
+                SwingUtilities.invokeAndWait(() -> {
+                    button(apps[0].getScreens(), "대기방으로").doClick();
+                    button(apps[1].getScreens(), "대기방으로").doClick();
+                });
+                awaitEdt(() -> WAITING_ROOM.equals(apps[0].getCurrentScreen())
+                        && WAITING_ROOM.equals(apps[1].getCurrentScreen()), "result returned to waiting room");
+                SwingUtilities.invokeAndWait(() -> {
+                    button(apps[0].getScreens(), "READY").doClick();
+                    button(apps[1].getScreens(), "READY").doClick();
+                });
+                awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
+                        && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");
+                SwingUtilities.invokeAndWait(() -> menuItem(apps[0].getMenu(), "대전 포기").doClick());
+                awaitEdt(() -> RESULT.equals(apps[1].getCurrentScreen()), "opponent forfeit result");
+            } finally {
+                SwingUtilities.invokeAndWait(() -> {
+                    for (SeongeunApplication app : apps) if (app != null) app.close();
+                });
+            }
+        }
+    }
+
+    private static boolean onEdt(BooleanSupplier condition) throws Exception {
+        AtomicBoolean value = new AtomicBoolean();
+        SwingUtilities.invokeAndWait(() -> value.set(condition.getAsBoolean()));
+        return value.get();
+    }
+
+    private static String onEdtString(java.util.function.Supplier<String> supplier) throws Exception {
+        final String[] value = new String[1];
+        SwingUtilities.invokeAndWait(() -> value[0] = supplier.get());
+        return value[0];
+    }
+
+    private static long onEdtLong(java.util.function.LongSupplier supplier) throws Exception {
+        final long[] value = new long[1];
+        SwingUtilities.invokeAndWait(() -> value[0] = supplier.getAsLong());
+        return value[0];
+    }
+
+    private static void awaitEdt(BooleanSupplier condition, String label) throws Exception {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (!onEdt(condition) && System.nanoTime() < deadline) Thread.sleep(10);
+        if (!onEdt(condition)) throw new AssertionError(label);
+    }
+
+    private static AbstractButton button(Component root, String text) {
+        if (!root.isVisible()) throw new AssertionError("Hidden component");
+        if (root instanceof AbstractButton && text.equals(((AbstractButton) root).getText())) {
+            return (AbstractButton) root;
+        }
+        if (root instanceof Container) {
+            for (Component child : ((Container) root).getComponents()) {
+                try { return button(child, text); }
+                catch (AssertionError missing) { /* 다음 컴포넌트 검색 */ }
+            }
+        }
+        throw new AssertionError("Button not found: " + text);
+    }
+
+    private static AbstractButton menuItem(JMenuBar menuBar, String text) {
+        for (int i = 0; i < menuBar.getMenuCount(); i++) {
+            JMenu menu = menuBar.getMenu(i);
+            for (int j = 0; j < menu.getItemCount(); j++) {
+                if (menu.getItem(j) != null && text.equals(menu.getItem(j).getText())) return menu.getItem(j);
+            }
+        }
+        throw new AssertionError("Menu item not found: " + text);
+    }
+
+    private static final String LOGIN = "LOGIN";
+    private static final String LOBBY = "LOBBY";
+    private static final String LOCAL_MODE = "LOCAL_MODE";
+    private static final String LOCAL_GAME = "LOCAL_GAME";
+    private static final String STORY_STAGE = "STORY_STAGE";
+    private static final String BATTLE = "BATTLE";
+    private static final String RESULT = "RESULT";
+    private static final String WAITING_ROOM = "WAITING_ROOM";
+}

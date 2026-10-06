@@ -2,7 +2,15 @@
 
 현재 프론트엔드는 Java Swing이다. 새 웹 프레임워크는 도입하지 않는다. UI는 확정 상태를 표시하고 입력 의도를 전달한다. HP·피해·승패·아이템 보유량의 직접 계산은 전투 계층 소유다.
 
-## 성은 UI 통합
+## 현재 실행 화면: 성은 원본과 내부 로직 연결
+
+현재 제품 진입점 `Tetris.main`은 `SeongeunApplication`을 실행한다. `origin/seongeun`의 `0eee2c4`에 있는 패널·컴포넌트·모델을 `ui/seongeun`에 복사하며 패키지 이름을 분리했다. 원본 생성자의 배치·폰트·간격·크기·기존 버튼을 유지하고 상태 표시와 입력 전달 API만 추가한다. `ui/seongeun/Board`는 원본 보드의 배경·블록 그리기 방식을 사용하며 게임 규칙과 시간 진행은 기존 Core/세션에 맡긴다.
+
+원본에 조작 화면이 없는 튜토리얼, Stage 4·5, 서버 접속·방 번호 입장, 일시정지·포기 등은 별도 기능 메뉴와 대화상자로 접근한다. 기존 화면을 축소하거나 스크롤 구조로 바꾸지 않는다. 화면 가독성·배치 수정은 사용자가 확인 후 결정한다. 이번 연결 확인은 빌드와 실제 입력·세션·통신 기능으로 한정하며 미학 평가로 UI를 고치지 않는다.
+
+원본 로그인 버튼은 로컬 로비 이동을 유지한다. 현재 계정 인증·가입 서비스는 연결되지 않았다. 원본의 가짜 방·가짜 READY·임의 승리 데이터는 실제 세션 상태로 교체하며, `Result Test`는 승패를 조작하지 않는다. 실제 서비스가 없는 Fever·아이템 효과·보상은 구현된 것으로 표시하지 않는다.
+
+## 이전 UI 어댑터 이력 (현재 제품 화면에 사용하지 않음)
 
 `origin/seongeun`의 `0eee2c4` 원본이 UI/UX 기준이다. `d8824b3`에서 변경했던 세로 메뉴·별도 Stage 선택/시작·로컬 플레이어 왼쪽 배치를 원본의 가로 메뉴·난이도 직접 선택·상대 왼쪽으로 복원했다. 화면은 현재 `src/main/java`의 `TetrisApplication`, `BoardView`와 세션 상태에 연결하며 공통 표시 컴포넌트는 `ui/components`에 위치한다.
 
@@ -22,7 +30,7 @@ Fever와 아이템은 원본 위치에 미지원/EMPTY로 표시한다. 확인�
 .\build.ps1 -Task Preview -AllowVisibleDesktop
 ```
 
-`src/test/.../ui/UiPreviewMain`은 Stage 잠금, 2/3/4명 참가자, 방 준비, 승리·패배·연결 실패 샘플을 제공한다. 조작은 의도 로그만 남기므로 실제 대전·실제 연결로 오해하지 않는다. 3/4인 표시는 자료구조 검증용이며 첫 온라인 출시 인원은 별도 정책이다.
+`Preview`는 현재 제품과 같은 `SeongeunApplication`을 실행한다. 온라인에는 별도 로컬 서버가 필요하다. 이전 `src/test/.../ui/UiPreviewMain`은 기존 어댑터의 Stage 잠금, 2/3/4명 참가자, 방 준비, 승리·패배·연결 실패 샘플을 남긴 개발 fixture이며 현재 제품 화면이 아니다.
 
 `support.OnlinePreviewScenario.running()`은 FakeNetworkClient와 OnlineMatchSession을 생성한다. 네트워크 상태를 바꾸려면 Fake에 NetworkUpdate를 emit하고 drain한다. 실제 통신 구현이 없어도 같은 UI 계약으로 작업할 수 있다.
 
