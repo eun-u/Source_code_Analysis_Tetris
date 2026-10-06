@@ -11,9 +11,9 @@ import kr.ac.jbnu.se.tetris.ai.HeuristicWeights;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
+import kr.ac.jbnu.se.tetris.story.Stage;
 
-/** 실제 엔진의 승리·재도전·15전투 전환 확인 및 상대 AI 성능 검증과의 분리 */
+/** 실제 엔진의 승리·재도전·9레벨 전환 확인 및 상대 AI 성능 검증과의 분리 */
 public final class StoryFlowTest {
     public static void main(String[] args) throws Exception {
         SwingUtilities.invokeAndWait(() -> {
@@ -27,7 +27,7 @@ public final class StoryFlowTest {
                 check("stages".equals(app.getRouter().getCurrentId()), "원본 Story 결과는 난이도 선택으로 복귀");
                 chooseEncounter(app, 0);
                 check(first.equals(app.getBattleState().getParticipant("monster").getName()), "패배 재도전은 같은 상대");
-                for (int encounter = 0; encounter < 15; encounter++) {
+                for (int encounter = 0; encounter < 9; encounter++) {
                     String name = app.getBattleState().getParticipant("monster").getName();
                     winUsingRealEngine(app);
                     check("result".equals(app.getRouter().getCurrentId()), "승리 결과와 진행 상태 보존");
@@ -39,7 +39,7 @@ public final class StoryFlowTest {
                     }
                     button(app.getRouter().getContainer(), "retry").doClick();
                     check("stages".equals(app.getRouter().getCurrentId()), "원본 결과의 Story로 버튼");
-                    if (encounter < 14) {
+                    if (encounter < 8) {
                         chooseEncounter(app, encounter + 1);
                         check("battle".equals(app.getRouter().getCurrentId()), "다음 상대 전투 화면");
                         check(!name.equals(app.getBattleState().getParticipant("monster").getName()), "다음 상대 이름 변경");
@@ -51,12 +51,14 @@ public final class StoryFlowTest {
                 check("stages".equals(app.getRouter().getCurrentId()), "중복 다음 입력 무시");
             } finally { app.close(); }
         });
-        System.out.println("PASS StoryFlowTest: 15 encounters, loss retry, win replay, final return");
+        System.out.println("PASS StoryFlowTest: 9 encounters, loss retry, win replay, final return");
     }
     private static void chooseEncounter(TetrisApplication app, int encounter) {
-        String stageId = StageCatalog.loadDefault().getStages().get(encounter / 3).getId();
-        MonsterTier tier = MonsterTier.values()[encounter % 3];
-        JButton choice = button(app.getRouter().getContainer(), "stage-" + stageId + "-" + tier);
+        Stage stage = StageCatalog.loadDefault().getStages().get(encounter / 3);
+        String stageId = stage.getId();
+        String encounterId = stage.getEncounters().get(encounter % 3).getId();
+        JButton choice = button(app.getRouter().getContainer(),
+                "stage-" + stageId + "-" + encounterId);
         check(choice != null && choice.isEnabled(), "실제 승리로 해금된 난이도 버튼");
         choice.doClick();
     }

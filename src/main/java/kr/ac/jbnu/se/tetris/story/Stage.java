@@ -6,7 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 일반·엘리트·보스 순서로 진행하는 한 장의 불변 데이터 */
+/** 하나 이상의 전투를 담는 불변 레벨 데이터. 패턴 순서는 자유롭다. */
 public final class Stage {
     private final String id;
     private final String name;
@@ -14,15 +14,13 @@ public final class Stage {
 
     public Stage(String id, String name, List<MonsterSpec> encounters) {
         if (id == null || id.trim().isEmpty() || name == null || name.trim().isEmpty()
-                || encounters == null || encounters.size() != MonsterTier.values().length) {
-            throw new IllegalArgumentException("Stage needs an ID, name, and three encounters");
+                || encounters == null || encounters.isEmpty()) {
+            throw new IllegalArgumentException("Stage needs an ID, name, and encounters");
         }
         Set<String> ids = new HashSet<String>();
-        for (int index = 0; index < encounters.size(); index++) {
-            MonsterSpec monster = encounters.get(index);
-            if (monster == null || monster.getTier() != MonsterTier.values()[index]
-                    || !ids.add(monster.getId())) {
-                throw new IllegalArgumentException("Stage encounters must be unique NORMAL, ELITE, BOSS");
+        for (MonsterSpec monster : encounters) {
+            if (monster == null || !ids.add(monster.getId())) {
+                throw new IllegalArgumentException("Stage encounters need unique IDs");
             }
         }
         this.id = id;

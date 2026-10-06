@@ -50,7 +50,7 @@ public final class StoryProgressService {
 
     public synchronized EncounterRun getActiveRun() { return activeRun; }
 
-    /** 잠금 검사 후 첫 미완료 전투 시작, 완료된 스테이지는 일반 전투 재시작 */
+    /** 잠금 검사 후 첫 미완료 전투 시작, 완료된 레벨은 해당 전투 재시작 */
     public synchronized EncounterRun startStage(String stageId, String runId,
                                                 String localParticipantId, String monsterParticipantId) {
         CampaignProgress progress = getCampaignProgress();
@@ -61,7 +61,7 @@ public final class StoryProgressService {
                 localParticipantId, monsterParticipantId);
     }
 
-    /** 일반·엘리트·보스 버튼의 확정 해금 검사 후 선택한 전투 시작 */
+    /** 지정 패턴 전투의 해금을 확인한 후 시작 (이전 3전투 UI와 호환). */
     public synchronized EncounterRun startEncounter(String stageId, MonsterTier tier, String runId,
                                                      String localParticipantId, String monsterParticipantId) {
         if (!getCampaignProgress().isEncounterUnlocked(stageId, tier)) {
@@ -75,6 +75,20 @@ public final class StoryProgressService {
         throw new IllegalArgumentException("Unknown encounter tier: " + tier);
     }
 
+    /** 3×3 캠페인의 특정 레벨을 ID로 선택한다. 같은 Elite 패턴도 독립적으로 해금된다. */
+    public synchronized EncounterRun startEncounter(String stageId, String encounterId, String runId,
+                                                     String localParticipantId, String monsterParticipantId) {
+        if (!getCampaignProgress().isEncounterUnlocked(stageId, encounterId)) {
+            throw new IllegalStateException("Encounter is locked: " + stageId + "/" + encounterId);
+        }
+        for (MonsterSpec monster : catalog.getStage(stageId).getEncounters()) {
+            if (monster.getId().equals(encounterId)) {
+                return begin(stageId, monster, runId, localParticipantId, monsterParticipantId);
+            }
+        }
+        throw new IllegalArgumentException("Unknown encounter ID: " + encounterId);
+    }
+
     /** 패배 또는 포기 뒤 같은 상대를 새 전투로 재시작 */
     public synchronized EncounterRun restartActive(String newRunId) {
         if (activeRun == null) throw new IllegalStateException("No active story encounter");
@@ -82,7 +96,7 @@ public final class StoryProgressService {
                 activeRun.getLocalParticipantId(), activeRun.getMonsterParticipantId());
     }
 
-    /** 확정 승리 뒤 다음 상대 또는 다음 스테이지의 일반 전투 시작 */
+    /** 확정 승리 뒤 다음 전투나 다음 레벨의 첫 전투 시작 */
     public synchronized EncounterRun nextEncounter(String newRunId) {
         if (activeRun == null || !activeRun.isWon()) {
             throw new IllegalStateException("Confirmed win is required to advance");

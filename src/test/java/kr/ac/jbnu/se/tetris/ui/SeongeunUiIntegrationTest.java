@@ -20,7 +20,8 @@ import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
+import kr.ac.jbnu.se.tetris.story.MonsterSpec;
+import kr.ac.jbnu.se.tetris.story.Stage;
 
 /** 이식된 화면의 실제 입력·잠금·HP·서버 준비 상태 연결 검증 */
 public final class SeongeunUiIntegrationTest {
@@ -38,25 +39,32 @@ public final class SeongeunUiIntegrationTest {
         Set<String> unlocked = new HashSet<String>();
         String first = catalog.getStages().get(0).getId();
         String second = catalog.getStages().get(1).getId();
-        unlocked.add(first + ":NORMAL");
+        String firstEncounter = catalog.getStages().get(0).getEncounters().get(0).getId();
+        String secondEncounter = catalog.getStages().get(1).getEncounters().get(0).getId();
+        unlocked.add(first + ":" + firstEncounter);
         List<String> started = new ArrayList<String>();
         StageSelectPanel panel = new StageSelectPanel(catalog,
-                (id, tier) -> unlocked.contains(id + ":" + tier),
-                (id, tier) -> started.add(id + ":" + tier), () -> { });
-        for (int i = 0; i < catalog.getStages().size(); i++) {
-            for (MonsterTier tier : MonsterTier.values()) {
-                JButton row = button(panel, "stage-" + catalog.getStages().get(i).getId() + "-" + tier);
-                check(row.isEnabled() == (i == 0 && tier == MonsterTier.NORMAL), "encounters reflect lock state");
+                (id, encounterId) -> unlocked.contains(id + ":" + encounterId),
+                (id, encounterId) -> started.add(id + ":" + encounterId), () -> { });
+        for (Stage stage : catalog.getStages()) {
+            for (MonsterSpec monster : stage.getEncounters()) {
+                JButton row = button(panel, "stage-" + stage.getId() + "-" + monster.getId());
+                check(row.isEnabled() == monster.getId().equals(firstEncounter),
+                        "encounters reflect lock state");
             }
         }
         check(find(panel, "stageSelection") == null && find(panel, "beginStory") == null,
                 "original encounter buttons replace selection and separate launch");
-        button(panel, "stage-" + first + "-ELITE").doClick();
+        button(panel, "stage-" + first + "-level_2_monster").doClick();
         check(started.isEmpty(), "locked stage sends no start intent");
-        unlocked.add(second + ":NORMAL");
+        unlocked.add(second + ":" + secondEncounter);
         panel.onEnter();
-        button(panel, "stage-" + second + "-NORMAL").doClick();
-        check(started.size() == 1 && (second + ":NORMAL").equals(started.get(0)), "button starts stable encounter ID");
+        button(panel, "stage-" + second + "-" + secondEncounter).doClick();
+        check(started.size() == 1 && (second + ":" + secondEncounter).equals(started.get(0)),
+                "button starts stable encounter ID");
+        check(button(panel, "stage-employment-level_7_monster")
+                != button(panel, "stage-employment-level_8_monster"),
+                "two consecutive Elite monsters retain distinct buttons");
     }
 
     private static void roomCardsFollowServerState() {
@@ -120,7 +128,7 @@ public final class SeongeunUiIntegrationTest {
             button(root, "localBack").doClick();
             button(root, "newBattle").doClick();
             String first = StageCatalog.loadDefault().getStages().get(0).getId();
-            button(root, "stage-" + first + "-NORMAL").doClick();
+            button(root, "stage-" + first + "-level_1_monster").doClick();
             check("battle".equals(app.getRouter().getCurrentId()), "lobby story opens real battle");
             Container localHp = (Container) find(root, "participantHp-local");
             JProgressBar hp = findType(localHp, JProgressBar.class);

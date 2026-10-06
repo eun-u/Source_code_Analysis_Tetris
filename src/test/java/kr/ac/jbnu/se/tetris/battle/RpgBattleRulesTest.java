@@ -20,6 +20,7 @@ import kr.ac.jbnu.se.tetris.core.PieceGenerator;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.core.SevenBagGenerator;
 import kr.ac.jbnu.se.tetris.story.MonsterSpec;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
 
 /** 시간, 탱크, PvP 기본형, 난이도 정책의 게임 규칙 회귀 검증. */
@@ -28,8 +29,10 @@ public final class RpgBattleRulesTest {
         garbageTankTimingAndFifo();
         pvpForcesBasicAndInventoryOwnership();
         encounterProfilesAndBossBoundaries();
+        monsterItemLevelsLimitSpawnsAndUse();
         actualItemPickupAndUse();
         perfectClearPreservesAutomaticItems();
+        itemEventsTrackConsumptionAndReacquisition();
         feverAndTimeWarpExpire();
         characterPassives();
     }
@@ -86,10 +89,32 @@ public final class RpgBattleRulesTest {
     }
 
     private static void encounterProfilesAndBossBoundaries() {
+        int[] gravity = {450, 420, 400, 370, 350, 330, 310, 290, 270};
+        int[] hpByLevel = {30, 38, 46, 54, 64, 75, 82, 92, 102};
+        int[] delay = {3500, 3300, 3000, 2800, 2600, 2450, 2300, 2150, 2000};
+        int[] aiTiers = {1, 1, 2, 2, 2, 3, 3, 3, 3};
+        int[] items = {0, 0, 0, 1, 2, 2, 3, 4, 5};
+        MonsterTier[] pattern = {MonsterTier.NORMAL, MonsterTier.ELITE, MonsterTier.BOSS,
+            MonsterTier.NORMAL, MonsterTier.ELITE, MonsterTier.BOSS,
+            MonsterTier.ELITE, MonsterTier.ELITE, MonsterTier.BOSS};
+        double[] attack = {1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50};
+        int previousHp = 0, previousDelay = Integer.MAX_VALUE;
         for (int level = 1; level <= 9; level++) {
             DifficultyProfile profile = DifficultyProfileCatalog.level(level);
-            check(profile.getLevel() == level && profile.getAiStrength().getMaxSearchStates() > 0,
-                    "level preset exists: " + level);
+            check(profile.getLevel() == level
+                    && profile.getPlayerGravityMillis() == gravity[level - 1]
+                    && profile.getMonsterHp() == hpByLevel[level - 1]
+                    && profile.getMonsterDelayMillis() == delay[level - 1]
+                    && profile.getMonsterItemLevel() == items[level - 1]
+                    && DifficultyProfileCatalog.getAiTier(level) == aiTiers[level - 1]
+                    && DifficultyProfileCatalog.getPattern(level) == pattern[level - 1]
+                    && Math.abs(1.0 + profile.getAttackStrength().getDamageBuff()
+                            - attack[level - 1]) < .000001,
+                    "Lv " + level + " 지정 난이도 축");
+            check(profile.getMonsterHp() > previousHp && profile.getMonsterDelayMillis() < previousDelay
+                    && profile.getAttackStrength().getExtraGarbageLines() == 0,
+                    "Lv " + level + " HP/행동 간격 증가와 추가 가비지 없음");
+            previousHp = profile.getMonsterHp(); previousDelay = profile.getMonsterDelayMillis();
         }
         MonsterSpec first = StageCatalog.loadDefault().getStages().get(0).getEncounters().get(0);
         DifficultyProfile encounter = DifficultyProfileCatalog.forEncounter(first);
@@ -113,13 +138,50 @@ public final class RpgBattleRulesTest {
                 "difficulty search capacity reaches AI profile");
     }
 
+    private static void monsterItemLevelsLimitSpawnsAndUse() {
+        check(BattleManager.monsterItems(0).isEmpty(), "Lv 0은 아이템 사용 불가");
+        check(BattleManager.monsterItems(1).equals(Arrays.asList("heal")),
+                "Lv 1은 회복만 허용");
+        check(BattleManager.monsterItems(2).contains("shield")
+                && !BattleManager.monsterItems(2).contains("garbage_bomb"),
+                "Lv 2는 방어만 추가");
+        check(BattleManager.monsterItems(3).contains("line_cleaner")
+                && BattleManager.monsterItems(4).contains("damage_boost")
+                && BattleManager.monsterItems(5).contains("garbage_bomb"),
+                "Lv 3~5의 아이템 범위 확장");
+
+        GameEngine disabled = new GameEngine("m", () -> PieceType.O);
+        disabled.configureItemSpawns(0, 1L, BattleManager.monsterItems(0));
+        check(disabled.dispatch(new GameAction(GameAction.Type.START, "m", 1)).isAccepted()
+                && disabled.getState().getActivePiece().getItemId() == null,
+                "몬스터 레벨 0은 첫 블록부터 아이템 없음");
+        GameEngine allowed = new GameEngine("m", () -> PieceType.O);
+        allowed.configureItemSpawns(1, 1L, BattleManager.monsterItems(1));
+        check(allowed.dispatch(new GameAction(GameAction.Type.START, "m", 1)).isAccepted()
+                && "heal".equals(allowed.getState().getActivePiece().getItemId()),
+                "허용 목록에서만 아이템 생성");
+        BattleManager pve = BattleManager.pve(Arrays.asList(
+                new ParticipantSpec("p", "P", 100), new ParticipantSpec("m", "M", 30)),
+                42L, 450, 3500, 0, 0, 0);
+        check(pve.start().isAccepted()
+                && pve.getState().getParticipant("m").getGameState().getActivePiece().getItemId() == null,
+                "스토리 전투에도 레벨 0 정책 연결");
+        BattleResult forbidden = pve.submitItem("m", new GameAction.ItemUse("heal", "m"));
+        check("ITEM_RESTRICTED".equals(forbidden.getReason())
+                && count(forbidden, BattleEvent.Type.ITEM_USED) == 0,
+                "획득 전이라도 사용 경로를 거부");
+    }
+
     private static void actualItemPickupAndUse() {
         BattleManager heal = squares(seedFor("heal", null), 10000);
         fillRows(heal, "a", false);
         check(heal.getState().getParticipant("a").getItems().contains("heal"), "item mino acquired by line clear");
         fillRows(heal, "b", false);
         check(heal.getState().getParticipant("a").getHp() == 60, "counterattack damaged player");
-        check(heal.submitItem("a", new GameAction.ItemUse("heal", "a")).isAccepted(), "heal can be used");
+        BattleResult healed = heal.submitItem("a", new GameAction.ItemUse("heal", "a"));
+        check(healed.isAccepted(), "heal can be used");
+        check(itemEvent(healed, BattleEvent.Type.ITEM_USED, "a", "a", "heal") != null,
+                "accepted heal emits actual item use");
         check(heal.getState().getParticipant("a").getHp() == 70
                 && !heal.getState().getParticipant("a").getItems().contains("heal"),
                 "one-use heal restores ten percent of max HP and frees slot");
@@ -161,13 +223,23 @@ public final class RpgBattleRulesTest {
                 && before.getParticipant("a").getItems().equals(nullify.getState().getParticipant("a").getItems()),
                 "nullify with empty opposing inventory keeps item");
         fillRows(nullify, "b", false);
-        check(nullify.submitItem("a", new GameAction.ItemUse("nullify", "b")).isAccepted(),
+        String victimItem = nullify.getState().getParticipant("b").getItems().get(0);
+        BattleResult nullified = nullify.submitItem("a", new GameAction.ItemUse("nullify", "b"));
+        check(nullified.isAccepted(),
                 "nullify removes one actual opposing item");
+        BattleEvent nullifyUse = itemEvent(nullified, BattleEvent.Type.ITEM_USED,
+                "a", "b", "nullify");
+        BattleEvent nullifyRemoval = itemEvent(nullified, BattleEvent.Type.ITEM_REMOVED,
+                "a", "b", victimItem);
+        check(nullifyUse != null && nullifyRemoval != null
+                && nullifyUse.getEventId() < nullifyRemoval.getEventId(),
+                "nullify distinguishes own use from opponent item removal");
         check(nullify.getState().getParticipant("b").getItems().isEmpty(), "opposing slot emptied");
 
         BattleManager cleaner = squares(seedFor("line_cleaner", null), 10000);
         fillRows(cleaner, "a", false);
-        check(!cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a")).isAccepted(),
+        BattleResult noClean = cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a"));
+        check(!noClean.isAccepted() && count(noClean, BattleEvent.Type.ITEM_USED) == 0,
                 "cleaner on empty board has no effect");
         check(cleaner.getState().getParticipant("a").getItems().contains("line_cleaner"),
                 "failed cleaner use is not consumed");
@@ -188,13 +260,18 @@ public final class RpgBattleRulesTest {
         fillRows(boost, "b", false);
         check(boost.getState().getParticipant("a").getItems().contains("damage_boost"),
                 "boost held before next attack");
-        fillRows(boost, "a", false);
+        BattleResult perfect = fillRows(boost, "a", false);
         check(boost.getState().getParticipant("a").getItems().contains("damage_boost"),
                 "perfect clear leaves boost untouched");
+        check(count(perfect, BattleEvent.Type.ITEM_USED) == 0,
+                "perfect clear does not falsely report boost consumption");
         int before = boost.getState().getParticipant("b").getHp();
-        fillRows(boost, "a", true);
+        BattleResult boosted = fillRows(boost, "a", true);
         check(boost.getState().getParticipant("b").getHp() == before - 12,
                 "next ordinary double gets +50% damage boost");
+        check(itemEvent(boosted, BattleEvent.Type.ITEM_USED,
+                "a", "a", "damage_boost") != null,
+                "automatic boost consumption emits item use");
 
         BattleManager shield = squares(seedFor("shield", null), 10000);
         // Same deterministic item belongs to actor a; place b into defending role by switching attack order.
@@ -205,11 +282,44 @@ public final class RpgBattleRulesTest {
         check(shield.getState().getParticipant("a").getItems().contains("shield"),
                 "perfect clear leaves shield untouched");
         int hp = shield.getState().getParticipant("a").getHp();
-        fillRows(shield, "b", true);
+        BattleResult blocked = fillRows(shield, "b", true);
         check(shield.getState().getParticipant("a").getHp() == hp - 6,
                 "next ordinary double applies thirty percent shield reduction");
         check(!shield.getState().getParticipant("a").getItems().contains("shield"),
                 "shield consumed by ordinary HP hit");
+        check(itemEvent(blocked, BattleEvent.Type.ITEM_USED,
+                "a", "a", "shield") != null,
+                "automatic shield consumption emits item use");
+    }
+
+    private static void itemEventsTrackConsumptionAndReacquisition() {
+        BattleManager boost = squares(seedForRepeats("a", "damage_boost", 2), 10000);
+        BattleResult first = fillRows(boost, "a", false);
+        check(itemEvent(first, BattleEvent.Type.ITEM_ACQUIRED, "a", "a", "damage_boost") != null,
+                "actual mino pickup emits acquisition");
+        BattleResult next = fillRows(boost, "a", true);
+        BattleEvent used = itemEvent(next, BattleEvent.Type.ITEM_USED,
+                "a", "a", "damage_boost");
+        BattleEvent acquired = itemEvent(next, BattleEvent.Type.ITEM_ACQUIRED,
+                "a", "a", "damage_boost");
+        check(used != null && acquired != null && used.getEventId() < acquired.getEventId()
+                && boost.getState().getParticipant("a").getItems().contains("damage_boost"),
+                "same-ID automatic use and reacquisition both survive one clear");
+        assertSequentialIds(next);
+
+        BattleManager full = squares(seedForRepeats("a", "heal", 4), 10000);
+        for (int i = 0; i < 3; i++) {
+            check(count(fillRows(full, "a", false), BattleEvent.Type.ITEM_ACQUIRED) == 1,
+                    "free inventory slot emits one acquisition");
+        }
+        BattleResult fourth = fillRows(full, "a", false);
+        check(full.getState().getParticipant("a").getItems().size() == 3
+                && count(fourth, BattleEvent.Type.ITEM_ACQUIRED) == 0,
+                "full inventory rejects pickup without false event");
+
+        BattleManager utility = squares(15, CharacterCatalog.loadDefault().utility(), 10000);
+        check(count(fillRows(utility, "a", true), BattleEvent.Type.ITEM_ACQUIRED) == 2,
+                "utility bonus and mino pickup each emit an acquisition");
     }
 
     private static void feverAndTimeWarpExpire() {
@@ -292,16 +402,51 @@ public final class RpgBattleRulesTest {
         check(battle.start().isAccepted(), "fixture battle starts");
         return battle;
     }
-    private static void fillRows(BattleManager battle, String actor, boolean nonPerfect) {
+    private static BattleResult fillRows(BattleManager battle, String actor, boolean nonPerfect) {
         if (nonPerfect) dropAt(battle, actor, 0);
-        for (int x : new int[] {0, 2, 4, 6, 8}) dropAt(battle, actor, x);
+        BattleResult last = null;
+        for (int x : new int[] {0, 2, 4, 6, 8}) last = dropAt(battle, actor, x);
+        return last;
     }
-    private static void dropAt(BattleManager battle, String actor, int x) {
+    private static BattleResult dropAt(BattleManager battle, String actor, int x) {
         while (battle.getState().getParticipant(actor).getGameState().getPieceX() > x)
             check(battle.submit(actor, GameAction.Type.MOVE_LEFT).isAccepted(), "move left");
         while (battle.getState().getParticipant(actor).getGameState().getPieceX() < x)
             check(battle.submit(actor, GameAction.Type.MOVE_RIGHT).isAccepted(), "move right");
-        check(battle.submit(actor, GameAction.Type.HARD_DROP).isAccepted(), "drop O");
+        BattleResult drop = battle.submit(actor, GameAction.Type.HARD_DROP);
+        check(drop.isAccepted(), "drop O");
+        return drop;
+    }
+
+    private static long seedForRepeats(String actor, String itemId, int repeats) {
+        List<String> items = Arrays.asList("damage_boost", "garbage_bomb", "heal", "shield",
+                "line_cleaner", "fever_charge", "time_warp", "nullify");
+        for (long seed = 0; seed < 1000000; seed++) {
+            Random random = new Random(seed ^ (long) actor.hashCode());
+            boolean all = true;
+            for (int index = 0; index < repeats; index++) {
+                if (!itemId.equals(items.get(random.nextInt(items.size())))) { all = false; break; }
+            }
+            if (all) return seed;
+        }
+        throw new AssertionError("Repeated item seed not found");
+    }
+
+    private static BattleEvent itemEvent(BattleResult result, BattleEvent.Type type,
+            String actorId, String targetId, String itemId) {
+        for (BattleEvent event : result.getEvents()) {
+            if (event.getType() == type && actorId.equals(event.getActorId())
+                    && targetId.equals(event.getTargetId()) && itemId.equals(event.getReason())
+                    && event.getAmount() == 1) return event;
+        }
+        return null;
+    }
+    private static void assertSequentialIds(BattleResult result) {
+        long previous = 0;
+        for (BattleEvent event : result.getEvents()) {
+            check(event.getEventId() > previous, "battle event IDs increase in emission order");
+            previous = event.getEventId();
+        }
     }
     private static long seedFor(String aItem, String bItem) {
         List<String> items = Arrays.asList("damage_boost", "garbage_bomb", "heal", "shield",

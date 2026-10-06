@@ -22,6 +22,9 @@ public final class MenuRenderSmoke {
                 StoryStageSelectPanel story = new StoryStageSelectPanel();
                 story.updateProgress(new StoryProgressService(catalog).getCampaignProgress(), catalog);
                 write(story, folder.resolve("story.png"));
+                JTabbedPane chapters = tabs(story);
+                chapters.setSelectedIndex(1); write(story, folder.resolve("story-graduation.png"));
+                chapters.setSelectedIndex(2); write(story, folder.resolve("story-employment.png"));
                 CharacterShopPanel shop = new CharacterShopPanel();
                 Map<String,Integer> prices = new LinkedHashMap<String,Integer>();
                 prices.put("student", 0); prices.put("attacker", 100);
@@ -33,6 +36,7 @@ public final class MenuRenderSmoke {
         System.out.println("PASS MenuRenderSmoke");
     }
     private static void write(JComponent component, Path path) throws Exception {
+        kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.apply(component);
         component.setSize(1020, 720);
         layout(component);
         BufferedImage image = new BufferedImage(1020, 720, BufferedImage.TYPE_INT_ARGB);
@@ -44,5 +48,14 @@ public final class MenuRenderSmoke {
     private static void layout(Container root) {
         root.doLayout();
         for (Component child : root.getComponents()) if (child instanceof Container) layout((Container) child);
+    }
+    private static JTabbedPane tabs(Container root) {
+        for (Component child : root.getComponents()) {
+            if (child instanceof JTabbedPane) return (JTabbedPane) child;
+            if (child instanceof Container) {
+                JTabbedPane found = tabs((Container) child); if (found != null) return found;
+            }
+        }
+        return null;
     }
 }

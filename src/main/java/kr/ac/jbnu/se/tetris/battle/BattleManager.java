@@ -34,32 +34,40 @@ public final class BattleManager {
     private String reason;
 
     public BattleManager(List<ParticipantSpec> specs, long seed) {
-        this(specs, seed, null, false, 400, 400, 0, 0);
+        this(specs, seed, null, false, 400, 400, 0, 0, -1);
     }
     BattleManager(List<ParticipantSpec> specs, long seed, Map<String, PieceGenerator> generators) {
-        this(specs, seed, generators, false, 400, 400, 0, 0);
+        this(specs, seed, generators, false, 400, 400, 0, 0, -1);
     }
     public static BattleManager pvp(List<ParticipantSpec> specs, long seed) {
-        return new BattleManager(specs, seed, null, true, 500, 500, 0, 0);
+        return new BattleManager(specs, seed, null, true, 500, 500, 0, 0, -1);
     }
     public static BattleManager pve(List<ParticipantSpec> specs, long seed, int playerGravityMillis,
             int monsterGravityMillis, double monsterAttackBuff) {
         return new BattleManager(specs, seed, null, false, playerGravityMillis,
-                monsterGravityMillis, monsterAttackBuff, 0);
+                monsterGravityMillis, monsterAttackBuff, 0, -1);
     }
     public static BattleManager pve(List<ParticipantSpec> specs, long seed, int playerGravityMillis,
             int monsterGravityMillis, double monsterAttackBuff, int monsterExtraGarbage) {
         return new BattleManager(specs, seed, null, false, playerGravityMillis,
-                monsterGravityMillis, monsterAttackBuff, monsterExtraGarbage);
+                monsterGravityMillis, monsterAttackBuff, monsterExtraGarbage, -1);
+    }
+    public static BattleManager pve(List<ParticipantSpec> specs, long seed, int playerGravityMillis,
+            int monsterGravityMillis, double monsterAttackBuff, int monsterExtraGarbage,
+            int monsterItemLevel) {
+        return new BattleManager(specs, seed, null, false, playerGravityMillis,
+                monsterGravityMillis, monsterAttackBuff, monsterExtraGarbage, monsterItemLevel);
     }
     private BattleManager(List<ParticipantSpec> specs, long seed,
             Map<String, PieceGenerator> generators, boolean pvp, int playerGravityMillis,
-            int monsterGravityMillis, double monsterAttackBuff, int monsterExtraGarbage) {
+            int monsterGravityMillis, double monsterAttackBuff, int monsterExtraGarbage,
+            int monsterItemLevel) {
         if (specs == null || specs.size() < 2 || specs.size() > 4
                 || (generators != null && generators.size() != specs.size())
                 || playerGravityMillis < 100 || monsterGravityMillis < 100
                 || !Double.isFinite(monsterAttackBuff) || monsterAttackBuff < 0
-                || monsterExtraGarbage < 0 || monsterExtraGarbage > 4)
+                || monsterExtraGarbage < 0 || monsterExtraGarbage > 4
+                || monsterItemLevel < -1 || monsterItemLevel > 5)
             throw new IllegalArgumentException("Invalid battle settings");
         this.pvp = pvp;
         int index = 0;
@@ -73,13 +81,16 @@ public final class BattleManager {
             if (generator == null) throw new IllegalArgumentException("Missing generator: " + spec.getId());
             GameEngine engine = new GameEngine(spec.getId(), generator);
             engine.setBattleManaged(true);
-            engine.configureItemSpawns(5, seed ^ (long) spec.getId().hashCode());
+            int itemLevel = !pvp && index > 0 ? monsterItemLevel : -1;
+            if (itemLevel < 0) engine.configureItemSpawns(5, seed ^ (long) spec.getId().hashCode());
+            else engine.configureItemSpawns(itemLevel == 0 ? 0 : 10 - itemLevel,
+                    seed ^ (long) spec.getId().hashCode(), monsterItems(itemLevel));
             int gravity = pvp ? 500 : index == 0 ? playerGravityMillis : monsterGravityMillis;
             double attackBuff = !pvp && index > 0 ? monsterAttackBuff : 0;
             int extraGarbage = !pvp && index > 0 ? monsterExtraGarbage : 0;
             participants.put(spec.getId(), new Participant(spec, engine,
                     new PlayerController(engine, spec.getId()), seed ^ (index * 0x5DEECE66DL),
-                    gravity, attackBuff, extraGarbage));
+                    gravity, attackBuff, extraGarbage, itemLevel));
             index++;
         }
         itemRandom = new Random(seed ^ 0x2A6F19E5L);
@@ -147,6 +158,8 @@ public final class BattleManager {
         if (cell != null && (cell.getX() >= 10 || cell.getY() >= 22))
             return reject("INVALID_TARGET_CELL", actorId);
         String id = use.getItemId();
+        if (source.itemLevel >= 0 && !monsterItems(source.itemLevel).contains(id))
+            return reject("ITEM_RESTRICTED", actorId);
         if (!ITEM_IDS.contains(id) || !source.items.contains(id)) return reject("ITEM_NOT_OWNED", actorId);
         if ("damage_boost".equals(id) || "shield".equals(id)) return reject("AUTO_ITEM", actorId);
         boolean self = source == target;
@@ -159,6 +172,7 @@ public final class BattleManager {
         if ("time_warp".equals(id) && source.warpUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
         if ("nullify".equals(id) && target.items.isEmpty()) return reject("NO_EFFECT", actorId);
         List<BattleEvent> events = new ArrayList<BattleEvent>();
+        String removedByNullify = null;
         if ("heal".equals(id)) {
             int amount = Math.max(1, (int) Math.ceil(source.spec.getMaxHp() * .1));
             source.hp = hpManager.applyHealing(source.hp, source.spec.getMaxHp(), amount);
@@ -171,8 +185,13 @@ public final class BattleManager {
             processCore(source, clean, events);
         } else if ("fever_charge".equals(id)) chargeFever(source, 20);
         else if ("time_warp".equals(id)) source.warpUntil = elapsedMillis + 5000;
-        else if ("nullify".equals(id)) target.items.remove(itemRandom.nextInt(target.items.size()));
+        else if ("nullify".equals(id))
+            removedByNullify = target.items.remove(itemRandom.nextInt(target.items.size()));
         source.items.remove(id);
+        events.add(event(BattleEvent.Type.ITEM_USED, actorId, target.spec.getId(), 1, id, null));
+        if (removedByNullify != null)
+            events.add(event(BattleEvent.Type.ITEM_REMOVED, actorId,
+                    target.spec.getId(), 1, removedByNullify, null));
         version++;
         return result(true, null, events);
     }
@@ -287,7 +306,7 @@ public final class BattleManager {
                 events.add(event(BattleEvent.Type.GARBAGE_RECEIVED, p.spec.getId(), null,
                         core.getLineCount(), core.getReason(), core));
         }
-        for (String id : acquired) acquire(p, id);
+        for (String id : acquired) acquire(p, id, events);
         if (placed && !p.eliminated && p.controller.getState().isAwaitingSpawn()) {
             if (!cleared) {
                 List<GameAction.Garbage> due = p.tank.drainForPlacement(elapsedMillis);
@@ -321,8 +340,12 @@ public final class BattleManager {
                 + (boost ? .5 : 0);
         DamageManager.Attack computed = damageManager.forLineClear(clear, buff, shield ? .3 : 0);
         int damage = computed.getDamage();
-        if (boost) source.items.remove("damage_boost");
-        if (shield && damage > 0) target.items.remove("shield");
+        if (boost && source.items.remove("damage_boost"))
+            events.add(event(BattleEvent.Type.ITEM_USED, source.spec.getId(),
+                    source.spec.getId(), 1, "damage_boost", null));
+        if (shield && damage > 0 && target.items.remove("shield"))
+            events.add(event(BattleEvent.Type.ITEM_USED, target.spec.getId(),
+                    target.spec.getId(), 1, "shield", null));
         int before = target.hp;
         target.hp = hpManager.applyDamage(before, target.spec.getMaxHp(), damage);
         source.totalDamage = (int) Math.min(Integer.MAX_VALUE,
@@ -344,7 +367,7 @@ public final class BattleManager {
             target.eliminated = true; target.eliminationReason = "HP_DEPLETED";
         } else sendGarbage(source, target, garbage, clear, events);
         if (!perfect && "utility".equals(source.spec.getCharacter().getId())
-                && clear.getLineCount() >= 2) acquire(source, randomItem());
+                && clear.getLineCount() >= 2) acquire(source, randomItem(), events);
         chargeFever(source, feverGain(clear.getLineCount()));
     }
 
@@ -355,10 +378,26 @@ public final class BattleManager {
         events.add(event(BattleEvent.Type.GARBAGE_SENT, source.spec.getId(), target.spec.getId(),
                 lines, null, core));
     }
-    private void acquire(Participant p, String id) {
-        if (ITEM_IDS.contains(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) p.items.add(id);
+    private void acquire(Participant p, String id, List<BattleEvent> events) {
+        if (ITEM_IDS.contains(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) {
+            p.items.add(id);
+            events.add(event(BattleEvent.Type.ITEM_ACQUIRED, p.spec.getId(),
+                    p.spec.getId(), 1, id, null));
+        }
     }
     private String randomItem() { return ITEM_IDS.get(itemRandom.nextInt(ITEM_IDS.size())); }
+    static List<String> monsterItems(int level) {
+        switch (level) {
+            case 0: return java.util.Collections.emptyList();
+            case 1: return Arrays.asList("heal");
+            case 2: return Arrays.asList("heal", "shield");
+            case 3: return Arrays.asList("heal", "shield", "fever_charge", "line_cleaner");
+            case 4: return Arrays.asList("heal", "shield", "fever_charge", "line_cleaner",
+                    "damage_boost", "time_warp");
+            case 5: return ITEM_IDS;
+            default: throw new IllegalArgumentException("Invalid monster item level");
+        }
+    }
     private void chargeFever(Participant p, int amount) {
         if (p.feverUntil > elapsedMillis) return;
         p.fever = Math.min(100, p.fever + amount);
@@ -438,6 +477,7 @@ public final class BattleManager {
         private final int baseGravityMillis;
         private final double extraAttackBuff;
         private final int extraGarbage;
+        private final int itemLevel;
         private int hp;
         private int fever;
         private long feverUntil;
@@ -448,11 +488,13 @@ public final class BattleManager {
         private boolean eliminated;
         private String eliminationReason;
         private Participant(ParticipantSpec spec, GameEngine engine, Controller controller,
-                long tankSeed, int gravityMillis, double extraAttackBuff, int extraGarbage) {
+                long tankSeed, int gravityMillis, double extraAttackBuff, int extraGarbage,
+                int itemLevel) {
             this.spec = spec; this.engine = engine; this.controller = controller;
             this.tank = new GarbageTank(tankSeed); this.hp = spec.getMaxHp();
             this.baseGravityMillis = gravityMillis; this.extraAttackBuff = extraAttackBuff;
             this.extraGarbage = extraGarbage;
+            this.itemLevel = itemLevel;
         }
     }
 }

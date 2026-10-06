@@ -34,6 +34,7 @@ public final class PlayerSaveStoreTest {
             store.save(purchased);
             assert store.load().getSelected().equals("attacker");
             assert store.load().getCoins() == 0;
+            legacyProgressKeepsProfileAndBackup(folder);
             Files.write(path, Arrays.asList("version=1", "coins=-1", "owned=student",
                     "selected=student"), StandardCharsets.UTF_8);
             boolean rejected = false;
@@ -70,5 +71,29 @@ public final class PlayerSaveStoreTest {
                 });
             }
         }
+    }
+
+    private static void legacyProgressKeepsProfileAndBackup(Path folder) throws Exception {
+        Path path = folder.resolve("legacy.properties");
+        java.util.List<String> original = Arrays.asList("version=1", "coins=120", "owned=student,attacker",
+                "selected=attacker", "cleared=calculus_textbook,lab_preview_examiner,bachelor_guardian");
+        Files.write(path, original, StandardCharsets.UTF_8);
+        byte[] originalBytes = Files.readAllBytes(path);
+        PlayerSaveStore store = new PlayerSaveStore(path);
+        PlayerSaveStore.Data migrated = store.load();
+        assert migrated.getCoins() == 120 && "attacker".equals(migrated.getSelected());
+        assert migrated.getCleared().equals(new LinkedHashSet<String>(Arrays.asList(
+                "level_1_monster", "level_2_monster", "level_3_monster")));
+        new StoryProgressService(StageCatalog.loadDefault()).restoreCompletedEncounterIds(migrated.getCleared());
+        assert Arrays.equals(originalBytes, Files.readAllBytes(path)) : "Reading must not replace original save";
+        store.save(migrated);
+        assert Arrays.equals(originalBytes, Files.readAllBytes(path.resolveSibling("legacy.properties.v1.bak")));
+        assert Files.readAllLines(path, StandardCharsets.UTF_8).contains("version=2");
+        assert store.load().getCoins() == 120;
+        Files.write(path, Arrays.asList("version=1", "coins=120", "owned=student",
+                "selected=student", "cleared=bachelor_guardian"), StandardCharsets.UTF_8);
+        boolean rejected = false;
+        try { new PlayerSaveStore(path).load(); } catch (IOException expected) { rejected = true; }
+        assert rejected : "Incomplete legacy prefix must be rejected";
     }
 }

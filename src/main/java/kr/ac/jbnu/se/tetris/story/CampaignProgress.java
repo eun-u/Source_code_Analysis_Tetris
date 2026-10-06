@@ -25,7 +25,7 @@ public final class CampaignProgress {
         int index = indexOf(stageId);
         if (index == 0) return true;
         Stage previous = catalog.getStages().get(index - 1);
-        return completedEncounterIds.contains(previous.getEncounters().get(2).getId());
+        return isStageCleared(previous.getId());
     }
 
     public boolean isStageCleared(String stageId) {
@@ -36,20 +36,33 @@ public final class CampaignProgress {
         return true;
     }
 
-    /** 원본 난이도 선택 화면의 재도전 및 순차 해금 판정 */
-    public boolean isEncounterUnlocked(String stageId, MonsterTier tier) {
-        if (tier == null) throw new IllegalArgumentException("Monster tier is required");
+    /** ID로 특정 전투의 해금을 판정한다. 같은 패턴이 연속으로 나와도 구분된다. */
+    public boolean isEncounterUnlocked(String stageId, String encounterId) {
+        if (encounterId == null) throw new IllegalArgumentException("Encounter ID is required");
         Stage stage = catalog.getStages().get(indexOf(stageId));
         if (!isStageUnlocked(stageId)) return false;
         for (int index = 0; index < stage.getEncounters().size(); index++) {
+            if (stage.getEncounters().get(index).getId().equals(encounterId)) {
+                return index == 0 || completedEncounterIds.contains(
+                        stage.getEncounters().get(index - 1).getId());
+            }
+        }
+        throw new IllegalArgumentException("Unknown encounter ID: " + encounterId);
+    }
+
+    /** 이전 패턴별 선택 UI와 호환한다. 중복 패턴이면 첫 전투를 가리킨다. */
+    public boolean isEncounterUnlocked(String stageId, MonsterTier tier) {
+        if (tier == null) throw new IllegalArgumentException("Monster tier is required");
+        Stage stage = catalog.getStages().get(indexOf(stageId));
+        for (int index = 0; index < stage.getEncounters().size(); index++) {
             if (stage.getEncounters().get(index).getTier() == tier) {
-                return index == 0 || completedEncounterIds.contains(stage.getEncounters().get(index - 1).getId());
+                return isEncounterUnlocked(stageId, stage.getEncounters().get(index).getId());
             }
         }
         throw new IllegalArgumentException("Unknown encounter tier: " + tier);
     }
 
-    /** 완료된 스테이지의 재진입은 첫 일반 전투 */
+    /** 완료된 레벨의 재진입은 그 레벨의 첫 전투 */
     public MonsterSpec getNextEncounter(String stageId) {
         Stage stage = catalog.getStages().get(indexOf(stageId));
         for (MonsterSpec encounter : stage.getEncounters()) {

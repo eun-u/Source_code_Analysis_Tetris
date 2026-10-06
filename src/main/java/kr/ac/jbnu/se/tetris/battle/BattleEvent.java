@@ -6,7 +6,8 @@ import kr.ac.jbnu.se.tetris.core.GameEvent;
 public final class BattleEvent {
     public enum Type {
         MATCH_STARTED, CORE_EVENT, DAMAGE, HP_CHANGED, GARBAGE_SENT,
-        GARBAGE_RECEIVED, MATCH_FINISHED, PAUSED, RESUMED, ACTION_REJECTED
+        GARBAGE_RECEIVED, MATCH_FINISHED, PAUSED, RESUMED, ACTION_REJECTED,
+        ITEM_ACQUIRED, ITEM_USED, ITEM_REMOVED
     }
 
     private final Type type;

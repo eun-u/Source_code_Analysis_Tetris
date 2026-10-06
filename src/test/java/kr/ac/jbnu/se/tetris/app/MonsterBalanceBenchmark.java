@@ -4,10 +4,10 @@ import java.util.Locale;
 import kr.ac.jbnu.se.tetris.ai.AIPlan;
 import kr.ac.jbnu.se.tetris.ai.AIProfile;
 import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.ai.HeuristicStrategy;
 import kr.ac.jbnu.se.tetris.ai.HeuristicWeights;
-import kr.ac.jbnu.se.tetris.ai.PlacementLog;
-import kr.ac.jbnu.se.tetris.ai.PlayerProfile;
+import kr.ac.jbnu.se.tetris.character.CharacterSpec;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
@@ -18,11 +18,10 @@ import kr.ac.jbnu.se.tetris.story.StageCatalog;
 
 /** 실제 전투 엔진의 몬스터 밸런스 비교용 수동 도구 및 자동 Test 묶음에서 제외 */
 public final class MonsterBalanceBenchmark {
-    private static final int[] STAGE_INDEXES = {0, 4};
+    private static final int[] STAGE_INDEXES = {0, 1, 2};
     private static final long[] SEEDS = {1L, 7L};
     private static final int VIRTUAL_LIMIT_MILLIS = 120_000;
     private static final int QUANTUM_MILLIS = 100;
-    private static final int GRAVITY_MILLIS = 400;
     private static final int HUMAN_CADENCE_MILLIS = 1_400;
     private static final long WALL_LIMIT_NANOS = 10_000_000_000L;
 
@@ -38,28 +37,29 @@ public final class MonsterBalanceBenchmark {
         int[][] summary = new int[MonsterTier.values().length][3];
         System.out.println("Synthetic benchmark: player = Heuristic SAFE surrogate, "
                 + "one placement opportunity every 1400ms; not real human-play validation.");
-        System.out.println("Rules: actual MonsterSession/BattleManager, gravity 400ms, "
-                + "virtual limit 120s, wall limit 10s per duel. All monsters use fixed heuristic profiles.");
-        System.out.println("| Stage | Tier | AI profile | Seed | Outcome | Virtual s | "
+        System.out.println("Rules: actual MonsterSession/BattleManager, each level's gravity/delay/profile, "
+                + "virtual limit 120s, wall limit 10s per duel.");
+        System.out.println("| Stage | Lv | Tier | AI profile | Seed | Outcome | Virtual s | "
                 + "HP player/monster | Placements player/monster | AI decisions | "
-                + "Candidates total | AI mean/max ms | Synthetic log |");
-        System.out.println("|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|");
+                + "Candidates total | AI mean/max ms |");
+        System.out.println("|---|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|");
 
-        // 기본 실행 범위인 2개 장 × 3등급 × 2시드의 총 12회 대전
+        // 세 과정 × 세 전투 × 두 시드의 총 18회 대전
         for (int stageIndex : STAGE_INDEXES) {
             Stage stage = catalog.getStages().get(stageIndex);
-            for (MonsterTier tier : MonsterTier.values()) {
+            for (MonsterSpec spec : stage.getEncounters()) {
+                MonsterTier tier = spec.getTier();
                 for (long seed : SEEDS) {
                     if (smoke && (stageIndex != STAGE_INDEXES[0]
-                            || tier != MonsterTier.NORMAL || seed != SEEDS[0])) continue;
-                    MonsterSpec spec = stage.getEncounters().get(tier.ordinal());
+                            || spec != stage.getEncounters().get(0) || seed != SEEDS[0])) continue;
                     AIProfile aiProfile = profiles.get(spec.getAiProfileId());
-                    Result result = run(spec, aiProfile, seed);
+                    Result result = run(spec, seed);
                     int[] counts = summary[tier.ordinal()];
                     if (result.outcome == Outcome.PLAYER) counts[0]++;
                     else if (result.outcome == Outcome.MONSTER) counts[1]++;
                     else counts[2]++;
-                    System.out.println("| " + stage.getId() + " | " + tier + " | "
+                    System.out.println("| " + stage.getId() + " | "
+                            + DifficultyProfileCatalog.forEncounter(spec).getLevel() + " | " + tier + " | "
                             + aiProfile.getProfileId() + " | " + seed + " | " + result.outcome + " | "
                             + oneDecimal(result.virtualMillis / 1000.0) + " | "
                             + result.playerHp + "/" + result.monsterHp + " | "
@@ -67,8 +67,7 @@ public final class MonsterBalanceBenchmark {
                             + result.aiDecisions + " | " + result.aiCandidates + " | "
                             + oneDecimal(result.aiDecisions == 0 ? 0
                                     : result.aiTotalNanos / 1_000_000.0 / result.aiDecisions)
-                            + "/" + oneDecimal(result.aiMaxNanos / 1_000_000.0) + " | "
-                            + result.logSize + " |");
+                            + "/" + oneDecimal(result.aiMaxNanos / 1_000_000.0) + " |");
                 }
             }
         }
@@ -81,12 +80,9 @@ public final class MonsterBalanceBenchmark {
         }
     }
 
-    private static Result run(MonsterSpec spec, AIProfile aiProfile, long seed) throws InterruptedException {
-        PlayerProfile profile = new PlayerProfile();
-        PlacementLog log = new PlacementLog();
-        MonsterSession session = new MonsterSession(seed, spec.getName(), spec.getHp(),
-                aiProfile.getDelayMillis(), MonsterStrategies.create(spec),
-                profile, log);
+    private static Result run(MonsterSpec spec, long seed) throws InterruptedException {
+        MonsterSession session = new MonsterSession(seed, spec.getName(),
+                DifficultyProfileCatalog.forEncounter(spec), CharacterSpec.DEFAULT);
         HeuristicStrategy surrogate = new HeuristicStrategy(HeuristicWeights.SAFE,
                 700, 40_000_000L);
         Result result = new Result();
@@ -126,8 +122,8 @@ public final class MonsterBalanceBenchmark {
                 }
                 if (session.isFinished()) break;
 
-                // 실제 공유 전투 엔진의 중력 입력을 양쪽 참가자에게 동일 간격으로 전달
-                if (millis > 0 && millis % GRAVITY_MILLIS == 0) session.tick();
+                // 실제 PvE 레벨별 중력 간격을 공유 전투 엔진에 적용
+                if (millis > 0) session.advance(QUANTUM_MILLIS);
                 if (session.isFinished()) break;
 
                 if (millis >= nextHumanMillis) {
@@ -152,7 +148,6 @@ public final class MonsterBalanceBenchmark {
             BattleState battle = session.getBattleState();
             result.playerHp = battle.getParticipant(MonsterSession.PLAYER_ID).getHp();
             result.monsterHp = battle.getParticipant(MonsterSession.MONSTER_ID).getHp();
-            result.logSize = log.size();
             if (battle.getStatus() == BattleState.Status.FINISHED) {
                 String winner = battle.getWinnerId();
                 result.outcome = MonsterSession.PLAYER_ID.equals(winner) ? Outcome.PLAYER
@@ -179,7 +174,6 @@ public final class MonsterBalanceBenchmark {
         private int monsterPlacements;
         private int aiDecisions;
         private int aiCandidates;
-        private int logSize;
         private long aiTotalNanos;
         private long aiMaxNanos;
     }

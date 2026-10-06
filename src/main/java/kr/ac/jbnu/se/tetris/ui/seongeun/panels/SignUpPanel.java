@@ -41,7 +41,7 @@ public class SignUpPanel extends JPanel {
         signUpBox.add(titleLabel);
         signUpBox.add(Box.createVerticalStrut(15));
 
-        signUpBox.add(new JLabel("ID"));
+        signUpBox.add(new JLabel("이메일"));
         signUpBox.add(idField);
 
         signUpBox.add(Box.createVerticalStrut(10));
@@ -70,4 +70,9 @@ public class SignUpPanel extends JPanel {
     public void setBackAction(ActionListener listener) {
         backButton.addActionListener(listener);
     }
+    public String getEmail() { return idField.getText().trim(); }
+    public char[] getPassword() { return passwordField.getPassword(); }
+    public char[] getPasswordConfirmation() { return passwordConfirmField.getPassword(); }
+    public void clearPasswords() { passwordField.setText(""); passwordConfirmField.setText(""); }
+    public void setBusy(boolean busy) { registerButton.setEnabled(!busy); }
 }

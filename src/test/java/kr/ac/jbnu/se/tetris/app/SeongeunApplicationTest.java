@@ -65,7 +65,7 @@ public final class SeongeunApplicationTest {
                 button(app.getScreens(), "Back").doClick();
                 button(app.getScreens(), "Story").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
-                button(app.getScreens(), "일반").doClick();
+                button(app.getScreens(), "도전하기").doClick();
                 assert BATTLE.equals(app.getCurrentScreen());
                 assert !menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
                 menuItem(app.getMenu(), "캐릭터 / 상점").doClick();
@@ -94,7 +94,7 @@ public final class SeongeunApplicationTest {
                 button(app.getScreens(), "Story로").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 assert app.getMatchSnapshot() == null;
-                button(app.getScreens(), "일반").doClick();
+                button(app.getScreens(), "도전하기").doClick();
                 escape(app);
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 assert app.getMatchSnapshot() == null && !app.isStoryClockRunning();

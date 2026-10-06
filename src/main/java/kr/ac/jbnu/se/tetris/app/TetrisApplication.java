@@ -5,10 +5,10 @@ import java.util.UUID;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import kr.ac.jbnu.se.tetris.ai.AIProfileCatalog;
-import kr.ac.jbnu.se.tetris.ai.PlayerProfile;
-import kr.ac.jbnu.se.tetris.ai.PlacementLog;
+import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.app.session.*;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.character.CharacterSpec;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PlayerIntent;
@@ -42,8 +42,6 @@ public final class TetrisApplication {
     private boolean rematchRequested;
     private boolean onlineResultReturned;
     private long rematchRequestId;
-    private PlayerProfile profile = new PlayerProfile();
-    private PlacementLog placementLog = new PlacementLog();
     private boolean storyActive;
     private boolean lastGameWasBattle;
     private boolean closed;
@@ -183,7 +181,6 @@ public final class TetrisApplication {
         ScreenRouter.requireEdt(); if (closed) return;
         EncounterRun run = progress.startStage(stageId, newRunId(), "local", "monster");
         prepareSessionChange(); storyActive = true;
-        profile = new PlayerProfile(); placementLog = new PlacementLog();
         startStoryEncounter(run, seed);
     }
     public void startStory(int stageIndex, long seed) {
@@ -195,15 +192,23 @@ public final class TetrisApplication {
         ScreenRouter.requireEdt(); if (closed) return;
         EncounterRun run = progress.startEncounter(stageId, tier, newRunId(), "local", "monster");
         prepareSessionChange(); storyActive = true;
-        profile = new PlayerProfile(); placementLog = new PlacementLog();
+        startStoryEncounter(run, seed);
+    }
+    public void startStory(String stageId, String encounterId) {
+        startStory(stageId, encounterId, seeds.nextLong());
+    }
+    public void startStory(String stageId, String encounterId, long seed) {
+        ScreenRouter.requireEdt(); if (closed) return;
+        EncounterRun run = progress.startEncounter(stageId, encounterId, newRunId(),
+                "local", "monster");
+        prepareSessionChange(); storyActive = true;
         startStoryEncounter(run, seed);
     }
     private void startStoryEncounter(EncounterRun run, long seed) {
         MonsterSpec spec = run.getMonster();
-        MonsterSession engine = new MonsterSession(seed, spec.getName(), spec.getHp(),
-                aiProfiles.get(spec.getAiProfileId()).getDelayMillis(), MonsterStrategies.create(spec),
-                profile, placementLog, run.getRunId(), run.getLocalParticipantId(),
-                run.getMonsterParticipantId(), System::nanoTime);
+        MonsterSession engine = new MonsterSession(seed, spec.getName(),
+                DifficultyProfileCatalog.forEncounter(spec), CharacterSpec.DEFAULT,
+                run.getRunId(), run.getLocalParticipantId(), run.getMonsterParticipantId());
         battlePanel.setEncounter(stages.getStage(run.getStageId()).getName(), spec.getTier().name());
         installMatch(new LocalMatchSession(engine)); router.show("battle");
     }
@@ -230,7 +235,6 @@ public final class TetrisApplication {
         } else if (storyActive && progress.getActiveRun() != null) {
             EncounterRun run = progress.restartActive(newRunId());
             prepareSessionChange(); storyActive = true;
-            profile = new PlayerProfile(); placementLog = new PlacementLog();
             startStoryEncounter(run, seeds.nextLong());
         } else if (lastGameWasBattle) startBattle(); else startNewGame();
     }
@@ -315,8 +319,10 @@ public final class TetrisApplication {
             result.setBattleResult(state, snapshot.getLocalParticipantId());
             if (storyActive) {
                 EncounterRun run = progress.getActiveRun();
-                boolean last = run.getStageId().equals(stages.getStages().get(stages.getStages().size() - 1).getId())
-                        && run.getMonster().getTier() == MonsterTier.BOSS;
+                Stage lastStage = stages.getStages().get(stages.getStages().size() - 1);
+                boolean last = run.getStageId().equals(lastStage.getId())
+                        && run.getEncounterId().equals(lastStage.getEncounters()
+                                .get(lastStage.getEncounters().size() - 1).getId());
                 result.setStoryContinuation(run.isWon(), last);
             }
             if (match instanceof OnlineMatchSession) result.setOnlineRetry(rematchRequested, false);

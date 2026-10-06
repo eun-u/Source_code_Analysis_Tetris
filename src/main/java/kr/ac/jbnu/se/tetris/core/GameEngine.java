@@ -3,6 +3,7 @@ package kr.ac.jbnu.se.tetris.core;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,7 @@ public final class GameEngine implements GameActionSink {
     private boolean battleManaged;
     private int itemEveryPieces;
     private Random itemRandom;
+    private List<String> itemPool = ITEM_IDS;
 
     public GameEngine(PieceGenerator generator) { this("local", generator); }
 
@@ -61,9 +63,20 @@ public final class GameEngine implements GameActionSink {
 
     /** 지정한 수의 새 미노마다 한 번 아이템을 부여한다. */
     public synchronized void configureItemSpawns(int everyPieces, long seed) {
+        configureItemSpawns(everyPieces, seed, ITEM_IDS);
+    }
+
+    /** PvE 몬스터 전용으로 출현 가능한 아이템 종류도 제한한다. */
+    public synchronized void configureItemSpawns(int everyPieces, long seed,
+                                                  List<String> allowedItems) {
         if (status != GameState.Status.READY) throw new IllegalStateException("Configure before START");
-        if (everyPieces < 0) throw new IllegalArgumentException("Item interval must be non-negative");
+        if (everyPieces < 0 || allowedItems == null
+                || (everyPieces > 0 && allowedItems.isEmpty())
+                || !ITEM_IDS.containsAll(allowedItems)
+                || new HashSet<String>(allowedItems).size() != allowedItems.size())
+            throw new IllegalArgumentException("Invalid item spawn policy");
         itemEveryPieces = everyPieces;
+        itemPool = Collections.unmodifiableList(new ArrayList<String>(allowedItems));
         itemRandom = everyPieces == 0 ? null : new Random(seed);
     }
 
@@ -412,7 +425,7 @@ public final class GameEngine implements GameActionSink {
     private Piece issuePiece(PieceType type) {
         long origin = ++issuedPieces;
         String item = itemEveryPieces > 0 && origin % itemEveryPieces == 0
-                ? ITEM_IDS.get(itemRandom.nextInt(ITEM_IDS.size())) : null;
+                ? itemPool.get(itemRandom.nextInt(itemPool.size())) : null;
         return new Piece(type, origin, item);
     }
 

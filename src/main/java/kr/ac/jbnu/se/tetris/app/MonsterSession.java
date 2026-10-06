@@ -54,7 +54,7 @@ public final class MonsterSession implements PlaySession {
         this(seed, "일반 몬스터", 100, 700, new HeuristicStrategy(), new PlayerProfile(), new PlacementLog());
     }
 
-    /** 스토리 전투에서 캐릭터와 여섯 난이도 축을 한 번에 주입한다. */
+    /** 스토리 전투에서 캐릭터와 난이도 설정을 한 번에 주입한다. */
     public MonsterSession(long seed, String name, DifficultyProfile difficulty,
                           CharacterSpec playerCharacter) {
         this(seed, name, difficulty, playerCharacter, UUID.randomUUID().toString(),
@@ -110,9 +110,10 @@ public final class MonsterSession implements PlaySession {
         List<ParticipantSpec> specs = Arrays.asList(new ParticipantSpec(localId, "PLAYER", playerCharacter),
                 new ParticipantSpec(opponentId, name, hp));
         battle = difficulty == null ? new BattleManager(specs, seed) : BattleManager.pve(specs, seed,
-                difficulty.getPlayerGravityMillis(), 500,
+                difficulty.getPlayerGravityMillis(), difficulty.getMonsterDelayMillis(),
                 difficulty.getAttackStrength().getDamageBuff(),
-                difficulty.getAttackStrength().getExtraGarbageLines());
+                difficulty.getAttackStrength().getExtraGarbageLines(),
+                difficulty.getMonsterItemLevel());
         GameState before = getPlayerState();
         BattleResult start = battle.start();
         lastBattleResult = start;

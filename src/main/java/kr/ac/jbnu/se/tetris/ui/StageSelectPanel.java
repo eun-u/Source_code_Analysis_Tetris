@@ -17,27 +17,32 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.border.EmptyBorder;
+import kr.ac.jbnu.se.tetris.story.MonsterSpec;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.story.Stage;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
 import kr.ac.jbnu.se.tetris.ui.components.GameButton;
 
-/** 성은 브랜치 StoryStageSelectPanel의 Stage별 일반·엘리트·보스 버튼 구성 */
+/** 과정별 실제 전투를 고유 ID로 표시한다. 같은 Elite 패턴도 독립 버튼이다. */
 public final class StageSelectPanel extends JPanel implements Screen {
     private final StageCatalog catalog;
-    private final BiPredicate<String, MonsterTier> canEnter;
+    private final BiPredicate<String, String> canEnter;
     private final Map<String, JButton> buttons = new LinkedHashMap<String, JButton>();
 
-    /** Stage 단위 구 호출자의 시작 의미를 일반 전투에만 연결하는 호환 생성자 */
+    /** Stage 단위 구 호출자의 시작 의미를 첫 전투에 연결하는 호환 생성자. */
     public StageSelectPanel(StageCatalog catalog, Predicate<String> canEnter,
             Consumer<String> start, Runnable home) {
-        this(catalog, (id, tier) -> tier == MonsterTier.NORMAL && canEnter.test(id),
-                (id, tier) -> start.accept(id), home);
+        this(catalog, (id, encounterId) ->
+                        catalog.getStage(id).getEncounters().get(0).getId().equals(encounterId)
+                                && canEnter.test(id),
+                (id, encounterId) -> start.accept(id), home);
     }
 
-    public StageSelectPanel(StageCatalog catalog, BiPredicate<String, MonsterTier> canEnter,
-            BiConsumer<String, MonsterTier> start, Runnable home) {
+    public StageSelectPanel(StageCatalog catalog, BiPredicate<String, String> canEnter,
+            BiConsumer<String, String> start, Runnable home) {
         super(new BorderLayout());
+        if (catalog == null || canEnter == null || start == null || home == null)
+            throw new IllegalArgumentException("Story selector requires catalog and actions");
         this.catalog = catalog;
         this.canEnter = canEnter;
 
@@ -60,8 +65,7 @@ public final class StageSelectPanel extends JPanel implements Screen {
         int number = 1;
         for (Stage stage : catalog.getStages()) {
             if (number > 1) stageContainer.add(Box.createVerticalStrut(15));
-            JPanel row = createStagePanel(stage, number++, start);
-            stageContainer.add(row);
+            stageContainer.add(createStagePanel(stage, number++, start));
         }
         JScrollPane scroll = new JScrollPane(stageContainer);
         scroll.setBorder(null);
@@ -71,18 +75,19 @@ public final class StageSelectPanel extends JPanel implements Screen {
     }
 
     private JPanel createStagePanel(Stage stage, int number,
-            BiConsumer<String, MonsterTier> start) {
-        JLabel label = new JLabel("Stage " + number);
-        label.setToolTipText(stage.getName());
-        JPanel buttonPanel = new JPanel(new GridLayout(1, 3, 30, 0));
-        for (MonsterTier tier : MonsterTier.values()) {
-            JButton button = new GameButton(tierName(tier));
-            button.setName(key(stage.getId(), tier));
+            BiConsumer<String, String> start) {
+        JLabel label = new JLabel(number + ". " + stage.getName());
+        JPanel buttonPanel = new JPanel(new GridLayout(1, stage.getEncounters().size(), 12, 0));
+        for (MonsterSpec monster : stage.getEncounters()) {
+            String encounterId = monster.getId();
+            JButton button = new GameButton(monster.getName());
+            button.setName(key(stage.getId(), encounterId));
             button.addActionListener(event -> {
-                if (canEnter.test(stage.getId(), tier)) start.accept(stage.getId(), tier);
+                if (canEnter.test(stage.getId(), encounterId))
+                    start.accept(stage.getId(), encounterId);
             });
             buttonPanel.add(button);
-            buttons.put(key(stage.getId(), tier), button);
+            buttons.put(key(stage.getId(), encounterId), button);
         }
         JPanel row = new JPanel(new BorderLayout(0, 5));
         row.add(label, BorderLayout.NORTH);
@@ -93,18 +98,20 @@ public final class StageSelectPanel extends JPanel implements Screen {
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 162));
         return row;
     }
-
-    private static String key(String id, MonsterTier tier) { return "stage-" + id + "-" + tier.name(); }
+    private static String key(String stageId, String encounterId) {
+        return "stage-" + stageId + "-" + encounterId;
+    }
     private static String tierName(MonsterTier tier) {
         return tier == MonsterTier.NORMAL ? "일반" : tier == MonsterTier.ELITE ? "엘리트" : "보스";
     }
     private void refresh() {
         for (Stage stage : catalog.getStages()) {
-            for (MonsterTier tier : MonsterTier.values()) {
-                JButton button = buttons.get(key(stage.getId(), tier));
-                boolean unlocked = canEnter.test(stage.getId(), tier);
+            for (MonsterSpec monster : stage.getEncounters()) {
+                JButton button = buttons.get(key(stage.getId(), monster.getId()));
+                boolean unlocked = canEnter.test(stage.getId(), monster.getId());
                 button.setEnabled(unlocked);
-                button.setText(unlocked ? tierName(tier) : "Locked");
+                button.setText(unlocked ? monster.getName() + " · " + tierName(monster.getTier())
+                        : monster.getName() + " · 잠김");
             }
         }
     }

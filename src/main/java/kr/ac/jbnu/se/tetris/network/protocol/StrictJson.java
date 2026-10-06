@@ -11,14 +11,14 @@ import java.util.List;
 import java.util.Map;
 
 /** 중복 키와 잘못된 UTF-8 및 과도한 중첩을 거부하는 제한된 JSON 처리 */
-final class StrictJson {
+public final class StrictJson {
     private static final int MAX_DEPTH = 16;
     private static final int MAX_ENTRIES = 256;
-    private static final int MAX_STRING_CHARS = 4096;
+    private static final int MAX_STRING_CHARS = 8192;
 
     private StrictJson() { }
 
-    static Object parse(byte[] utf8) throws IOException {
+    public static Object parse(byte[] utf8) throws IOException {
         String json;
         try {
             json = StandardCharsets.UTF_8.newDecoder()
@@ -35,7 +35,7 @@ final class StrictJson {
         return value;
     }
 
-    static byte[] stringify(Object value) throws IOException {
+    public static byte[] stringify(Object value) throws IOException {
         StringBuilder json = new StringBuilder();
         append(json, value, 0);
         return json.toString().getBytes(StandardCharsets.UTF_8);

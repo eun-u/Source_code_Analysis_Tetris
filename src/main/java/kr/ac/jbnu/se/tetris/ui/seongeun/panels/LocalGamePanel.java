@@ -86,6 +86,7 @@ public class LocalGamePanel extends JPanel {
     public void startMode(String modeName) {
         titleLabel.setText("Local Mode - " + modeName);
         playerBoard.setOverlayText(null);
+        playerBoard.resetEffects();
 
         playerBoard.start();
 

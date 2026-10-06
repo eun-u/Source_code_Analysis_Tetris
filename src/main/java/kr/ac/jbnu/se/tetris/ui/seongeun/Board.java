@@ -26,6 +26,16 @@ public class Board extends JPanel {
     private Consumer<Integer> itemHandler;
     private String overlayText;
     private final boolean keyboardEnabled;
+    private long placementAt, clearAt, garbageAt;
+    private int effectX, effectY, clearCount, clearCombo;
+    private boolean perfectClear;
+    private Piece effectPiece;
+    private boolean automaticEffects = true;
+    private final Timer effects = new Timer(33, event -> {
+        if (!isShowing() || System.currentTimeMillis() - Math.max(placementAt, Math.max(clearAt, garbageAt)) > 1000)
+            ((Timer) event.getSource()).stop();
+        repaint();
+    });
     private final Map<Integer, Runnable> keyActions = new LinkedHashMap<Integer, Runnable>();
     private final KeyEventDispatcher keyDispatcher = event -> {
         if (event.getID() != KeyEvent.KEY_PRESSED || event.getModifiersEx() != 0
@@ -58,12 +68,15 @@ public class Board extends JPanel {
             KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keyDispatcher);
     }
     @Override public void removeNotify() {
+        effects.stop();
         if (keyboardEnabled)
             KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(keyDispatcher);
         super.removeNotify();
     }
     public void start() { requestFocusInWindow(); }
     public void setState(GameState next) {
+        if (automaticEffects && next != null && state != null && next.getLinesCleared() > state.getLinesCleared())
+            showLineClear(next.getLinesCleared() - state.getLinesCleared(), next.getCombo(), false);
         state = next;
         if (statusbar != null && next != null) {
             if (next.getStatus() == GameState.Status.PAUSED) statusbar.setText("일시정지");
@@ -72,6 +85,21 @@ public class Board extends JPanel {
         }
         repaint();
     }
+    public void setAutomaticEffects(boolean enabled) { automaticEffects = enabled; }
+    public GameState getGameState() { return state; }
+    public void resetEffects() {
+        effects.stop(); placementAt = clearAt = garbageAt = 0; effectPiece = null; repaint();
+    }
+    public void showPlacement(Piece piece, int x, int y) {
+        effectPiece = piece; effectX = x; effectY = y; placementAt = System.currentTimeMillis();
+        animate();
+    }
+    public void showLineClear(int count, int combo, boolean perfect) {
+        clearCount = Math.max(1, count); clearCombo = combo; perfectClear = perfect;
+        clearAt = System.currentTimeMillis(); animate();
+    }
+    public void showGarbage(int count) { garbageAt = System.currentTimeMillis(); animate(); }
+    private void animate() { if (isShowing()) effects.start(); repaint(); }
     public void setInputHandlers(Consumer<GameAction.Type> input, Runnable pause) {
         inputHandler = input;
         pauseHandler = pause;
@@ -167,6 +195,7 @@ public class Board extends JPanel {
             g.setColor(new Color(102, 128, 160));
             g.setStroke(new BasicStroke(2f));
             g.drawRect(left, top, width, height);
+            paintEffects(g, left, top, cell, width, height);
             if (overlayText != null || state != null && (state.getStatus() == GameState.Status.PAUSED
                     || state.getStatus() == GameState.Status.GAME_OVER)) {
                 g.setColor(new Color(8, 14, 27, 198));
@@ -178,6 +207,49 @@ public class Board extends JPanel {
                 g.drawString(label, left + (width - g.getFontMetrics().stringWidth(label)) / 2, top + height / 2);
             }
         } finally { g.dispose(); }
+    }
+    private void paintEffects(Graphics2D g, int left, int top, int cell, int width, int height) {
+        long now = System.currentTimeMillis();
+        long landing = now - placementAt;
+        if (effectPiece != null && landing >= 0 && landing < 240) {
+            g.setColor(new Color(255, 247, 232, (int) (150 * (1 - landing / 240.0))));
+            for (int i = 0; i < 4; i++) {
+                int px = left + (effectX + effectPiece.x(i)) * cell;
+                int py = top + (ROWS - 1 - effectY + effectPiece.y(i)) * cell;
+                g.fillRect(px + 1, top, cell - 2, Math.max(0, py - top));
+                g.drawRect(px - 2, py - 2, cell + 3, cell + 3);
+            }
+        }
+        long clear = now - clearAt;
+        if (clearAt > 0 && clear >= 0 && clear < 800) {
+            double progress = clear / 800.0;
+            int beamY = top + height - (int) (height * progress);
+            g.setColor(new Color(255, 209, 102, (int) (150 * (1 - progress))));
+            g.fillRect(left, beamY, width, Math.max(2, cell / 3));
+            for (int i = 0; i < 28 + clearCount * 8; i++) {
+                int x = left + Math.floorMod(i * 47, Math.max(1, width));
+                int y = top + height - (int) (progress * (80 + i % 7 * 28)) - i % 4 * cell;
+                g.setColor(i % 2 == 0 ? new Color(78, 227, 154, (int) (220 * (1 - progress)))
+                        : new Color(255, 209, 102, (int) (220 * (1 - progress))));
+                g.fillRect(x, y, Math.max(2, cell / 6), Math.max(2, cell / 6));
+            }
+            g.setColor(new Color(11, 11, 46, 210));
+            g.fillRect(left + 4, top + height / 2 - 22, width - 8, 48);
+            g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
+            g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(11, Math.min(21, width / 13))));
+            String text = perfectClear ? "PERFECT CLEAR" : clearCount == 4 ? "TETRIS!" : clearCount + " LINE CLEAR";
+            g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, top + height / 2);
+            if (clearCombo > 0) {
+                g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(10, Math.min(16, width / 15))));
+                String combo = "COMBO " + clearCombo;
+                g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, top + height / 2 + 20);
+            }
+        }
+        long garbage = now - garbageAt;
+        if (garbageAt > 0 && garbage >= 0 && garbage < 500) {
+            g.setColor(new Color(255, 92, 122, (int) (230 * (1 - garbage / 500.0))));
+            g.setStroke(new BasicStroke(4)); g.drawRect(left, top, width, height);
+        }
     }
     private static void drawCell(Graphics2D g, int left, int top, int size, int x, int y,
                                  PieceType type, boolean ghost, String itemId) {

@@ -16,6 +16,10 @@ public class ResultPanel extends JPanel {
 
     private GameButton returnButton;
     private GameButton lobbyButton;
+    private final JLabel rankedStatus = new JLabel("", SwingConstants.CENTER);
+    private final JLabel milestone = new JLabel("", SwingConstants.CENTER);
+    private final GameButton nextButton = new GameButton("다음 전투");
+    private final GameButton retryButton = new GameButton("다시 도전");
 
     public ResultPanel() {
         setLayout(new BorderLayout());
@@ -55,6 +59,14 @@ public class ResultPanel extends JPanel {
         resultInfoPanel.add(damageLabel);
         resultInfoPanel.add(Box.createVerticalStrut(10));
         resultInfoPanel.add(rewardLabel);
+        resultInfoPanel.add(Box.createVerticalStrut(18));
+        rankedStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
+        rankedStatus.setForeground(new Color(255, 209, 102));
+        resultInfoPanel.add(rankedStatus);
+        milestone.setAlignmentX(Component.CENTER_ALIGNMENT);
+        milestone.setFont(new Font("Dialog", Font.BOLD, 24));
+        milestone.setForeground(new Color(255, 209, 102));
+        resultInfoPanel.add(Box.createVerticalStrut(16)); resultInfoPanel.add(milestone);
         resultInfoPanel.add(Box.createVerticalGlue());
 
         add(resultInfoPanel, BorderLayout.CENTER);
@@ -65,6 +77,8 @@ public class ResultPanel extends JPanel {
         JPanel buttonPanel = new JPanel();
         buttonPanel.setOpaque(false);
         buttonPanel.add(returnButton);
+        nextButton.setVisible(false); retryButton.setVisible(false);
+        buttonPanel.add(nextButton); buttonPanel.add(retryButton);
         buttonPanel.add(lobbyButton);
 
         add(buttonPanel, BorderLayout.SOUTH);
@@ -107,4 +121,11 @@ public class ResultPanel extends JPanel {
     public void setLobbyAction(ActionListener listener) {
         lobbyButton.addActionListener(listener);
     }
+    public void setRankedStatus(String text) { rankedStatus.setText(text); }
+    public void setStoryActions(boolean story, boolean hasNext, String earnedBadge) {
+        nextButton.setVisible(story && hasNext); retryButton.setVisible(story);
+        milestone.setText(earnedBadge == null ? "" : earnedBadge);
+    }
+    public void setNextAction(ActionListener action) { nextButton.addActionListener(action); }
+    public void setRetryAction(ActionListener action) { retryButton.addActionListener(action); }
 }

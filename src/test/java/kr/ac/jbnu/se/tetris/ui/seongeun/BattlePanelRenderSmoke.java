@@ -27,9 +27,11 @@ public final class BattlePanelRenderSmoke {
             try {
                 BattleManager manager = BattleManager.pve(Arrays.asList(
                         new ParticipantSpec("local", "플레이어", 100),
-                        new ParticipantSpec("monster", "슬라임 군주", 150)), 17L, 500, 500, 0);
+                        new ParticipantSpec("monster", "술", 30)), 17L, 450, 3500, 0);
                 manager.start();
                 BattlePanel panel = new BattlePanel();
+                panel.setEncounter("university", 1, kr.ac.jbnu.se.tetris.story.MonsterTier.NORMAL, "university:0");
+                kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt.sprite("university:0");
                 panel.setState(manager.getState(), "local");
                 JScrollPane viewport = new JScrollPane(panel);
                 viewport.setBorder(null);

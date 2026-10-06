@@ -35,12 +35,12 @@ public final class UniversityPixelTheme {
     /** 현재 화면과 자식 위젯에 적용한다. 기존 레이아웃과 사용자 입력 설정은 건드리지 않는다. */
     public static void apply(Component component) {
         if (component == null) return;
-        if (component instanceof JPanel) component.setBackground(BG);
+        if (component instanceof JPanel && !isThemeColor(component.getBackground())) component.setBackground(BG);
         if (component instanceof JScrollPane) component.setBackground(BG);
         if (component instanceof JTextField) component.setBackground(PANEL);
         if (component instanceof JLabel || component instanceof AbstractButton
                 || component instanceof JTextField) {
-            component.setForeground(TEXT);
+            if (!isThemeColor(component.getForeground())) component.setForeground(TEXT);
             Font previous = component.getFont();
             if (previous != null) component.setFont(font(previous.getSize(), previous.getStyle()));
         }
@@ -56,6 +56,12 @@ public final class UniversityPixelTheme {
         if (component instanceof Container) {
             for (Component child : ((Container) component).getComponents()) apply(child);
         }
+    }
+
+    private static boolean isThemeColor(Color color) {
+        return BG.equals(color) || PANEL.equals(color) || PANEL_LIGHT.equals(color)
+                || TEXT.equals(color) || TEXT_SUB.equals(color) || GOLD.equals(color)
+                || MINT.equals(color) || CORAL.equals(color) || LINE.equals(color) || BLACK.equals(color);
     }
 
     private static String chooseFont() {

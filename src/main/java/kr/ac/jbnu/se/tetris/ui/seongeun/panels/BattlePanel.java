@@ -8,6 +8,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.battle.*;
 import kr.ac.jbnu.se.tetris.core.GameState;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
+import kr.ac.jbnu.se.tetris.audio.AudioService;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
@@ -40,12 +43,18 @@ public class BattlePanel extends JPanel implements Scrollable {
     private IntConsumer itemAction;
     private long feedbackUntil;
     private final JLabel title = label("MONSTER BATTLE");
+    private final JProgressBar feverBar = new JProgressBar(0, 100);
+    private AudioService audio;
+    private long lastEventId;
+    private ParticipantState previousLocal, previousEnemy;
+    private boolean online;
 
     public BattlePanel() {
         setLayout(new BorderLayout(0, 8));
         setPreferredSize(new Dimension(850, 660));
         setBackground(BG);
         setBorder(new EmptyBorder(8, 12, 8, 12));
+        playerBoard.setAutomaticEffects(false); enemyBoard.setAutomaticEffects(false);
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
         title.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
@@ -97,6 +106,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         hud.add(hold); hud.add(holdPreview); hud.add(Box.createVerticalStrut(4));
         hud.add(next); hud.add(previews); hud.add(Box.createVerticalStrut(8));
         hud.add(gauge);
+        feverBar.setForeground(UniversityPixelTheme.GOLD);
+        feverBar.setBackground(UniversityPixelTheme.PANEL_LIGHT);
+        feverBar.setMaximumSize(new Dimension(210, 14));
+        feverBar.setAlignmentX(Component.LEFT_ALIGNMENT); hud.add(feverBar);
         hud.add(warp); hud.add(Box.createVerticalStrut(5));
         hud.add(pending); hud.add(Box.createVerticalStrut(8));
         hud.add(inventoryTitle); hud.add(Box.createVerticalStrut(6));
@@ -182,7 +195,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setPlayers(PlayerData player, PlayerData enemy) {
         playerName.setText(player.getNickname());
         enemyName.setText(enemy.getNickname());
-        arena.update(player.getNickname(), 100, 100, enemy.getNickname(), 100, 100);
+        arena.resetForEncounter();
     }
     /** 기존 미리보기 API 호환. 실제 아이템은 setState의 스냅샷으로 표시한다. */
     public void setItems(ItemData[] playerItems, ItemData[] enemyItems) { }
@@ -197,7 +210,57 @@ public class BattlePanel extends JPanel implements Scrollable {
         resultTestButton.setVisible(getHeight() >= 740);
         super.doLayout();
     }
-    public void setMode(boolean online) { title.setText(online ? "PVP BATTLE" : "MONSTER BATTLE"); }
+    public void setMode(boolean online) {
+        this.online = online;
+        if (online) title.setText("ONLINE PvP BATTLE");
+        arena.setOnline(online);
+    }
+    public void setAudio(AudioService service) { audio = service; }
+    public void setEncounter(String chapter, int level, MonsterTier pattern, String art) {
+        title.setText("CAMPUS QUEST  /  LV " + level);
+        arena.setChapter(chapter); arena.setMonsterPattern(pattern); arena.setMonsterArt(art); arena.setOnline(false);
+    }
+    public void resetFeedback() {
+        previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
+        playerBoard.resetEffects(); enemyBoard.resetEffects();
+        arena.resetForEncounter();
+    }
+    public void finish(boolean won) { arena.showEffect(won ? PixelArena.Effect.VICTORY : PixelArena.Effect.DEFEAT, 0); }
+    private void sound(AudioService.Event event) { if (audio != null) audio.play(event); }
+    public void applyEvents(List<BattleEvent> events, String localId) {
+        for (BattleEvent event : events) {
+            if (event.getEventId() <= lastEventId) continue;
+            lastEventId = event.getEventId();
+            boolean local = localId != null && localId.equals(event.getActorId());
+            Board board = local ? playerBoard : enemyBoard;
+            if (event.getType() == BattleEvent.Type.DAMAGE) {
+                arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
+                        event.getAmount(), local);
+                sound(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+            } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
+                board.showGarbage(event.getAmount());
+            } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
+                arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
+                if (local) { sound(AudioService.Event.ITEM_ACQUIRE); setFeedback("아이템 획득 · " + itemName(event.getReason())); }
+            } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
+                boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
+                arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
+                if (local) setFeedback("아이템 사용 · " + itemName(event.getReason()));
+            } else if (event.getType() == BattleEvent.Type.ITEM_REMOVED) {
+                if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + itemName(event.getReason()));
+            } else if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null) {
+                GameEvent core = event.getCoreEvent();
+                if (core.getType() == GameEvent.Type.PIECE_PLACED) {
+                    board.showPlacement(core.getPiece(), core.getX(), core.getY());
+                    if (local) sound(AudioService.Event.DROP);
+                } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
+                    board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
+                    arena.showEffect(PixelArena.Effect.LINE_CLEAR, core.getLineCount(), !local);
+                    if (local) sound(AudioService.Event.LINE_CLEAR);
+                } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
+            }
+        }
+    }
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;
         status.setText(text);
@@ -214,6 +277,16 @@ public class BattlePanel extends JPanel implements Scrollable {
         for (ParticipantState participant : state.getParticipants().values())
             if (!localId.equals(participant.getId())) { enemy = participant; break; }
         if (enemy == null) return;
+        if (previousLocal != null && local.getHp() > previousLocal.getHp()) sound(AudioService.Event.HEAL);
+        if (previousEnemy != null && enemy.getHp() > previousEnemy.getHp()) sound(AudioService.Event.HEAL);
+        if (online) {
+            onlineEffects(previousLocal, local, playerBoard, false);
+            onlineEffects(previousEnemy, enemy, enemyBoard, true);
+        }
+        if (previousLocal != null && !previousLocal.isFeverActive() && local.isFeverActive()) {
+            arena.showEffect(PixelArena.Effect.FEVER, 0); sound(AudioService.Event.FEVER);
+        }
+        previousLocal = local; previousEnemy = enemy;
         playerName.setText(local.getName());
         enemyName.setText(enemy.getName());
         playerBoard.setState(local.getGameState());
@@ -228,6 +301,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         gauge.setText(local.isFeverActive() ? "FEVER  발동 중 " +
                 String.format("%.1fs", local.getFeverRemainingMillis() / 1000.0)
                 : "FEVER  " + local.getFever() + "%");
+        feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         warp.setText(local.getTimeWarpRemainingMillis() > 0
                 ? String.format("시간 왜곡 %.1fs · 낙하 %dms",
                 local.getTimeWarpRemainingMillis() / 1000.0, local.getGravityMillis()) : " ");
@@ -255,6 +329,20 @@ public class BattlePanel extends JPanel implements Scrollable {
             status.setForeground(TEXT);
             status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
                     : "테트리스로 공격하세요 · 조작은 오른쪽 키 안내 · ESC로 돌아가기");
+        }
+    }
+    private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
+        if (previous == null) return;
+        int lines = current.getGameState().getLinesCleared() - previous.getGameState().getLinesCleared();
+        if (lines > 0) {
+            board.showLineClear(lines, current.getGameState().getCombo(), false);
+            arena.showEffect(PixelArena.Effect.LINE_CLEAR, lines, monster);
+            if (!monster) sound(AudioService.Event.LINE_CLEAR);
+        }
+        if (current.getHp() < previous.getHp()) {
+            arena.showEffect(monster ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
+                    previous.getHp() - current.getHp(), monster);
+            sound(monster ? AudioService.Event.ATTACK : AudioService.Event.HIT);
         }
     }
     private static String itemName(String id) {

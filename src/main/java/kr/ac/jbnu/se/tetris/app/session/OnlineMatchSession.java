@@ -15,6 +15,7 @@ import kr.ac.jbnu.se.tetris.network.NetworkUpdate;
 import kr.ac.jbnu.se.tetris.network.RequestOutcome;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
+import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
 
 /** 서버 확정 상태만 화면으로 전달하는 온라인 대전 어댑터 */
 public final class OnlineMatchSession implements MatchSession {
@@ -53,6 +54,9 @@ public final class OnlineMatchSession implements MatchSession {
         long localId = ++nextLocalRequestId;
         if (phase != SessionPhase.RUNNING) {
             reject(localId, "SESSION_NOT_RUNNING");
+        } else if (network instanceof WebSocketNetworkClient && intent.getItemUse() != null) {
+            // 현재 배포된 공식 PvP 서버는 아이템 입력을 허용하지 않는다.
+            reject(localId, "ITEM_NOT_IMPLEMENTED");
         } else {
             send(localId, intent);
         }
@@ -137,6 +141,9 @@ public final class OnlineMatchSession implements MatchSession {
                 break;
             case REQUEST_OUTCOME:
                 onRequestOutcome(update.getRequestOutcome());
+                break;
+            case RANKED_SAVE_STATUS:
+                // 랭킹 저장 상태는 화면 구독자에게 별도로 전달된다.
                 break;
             default:
                 throw new IllegalStateException("Unknown network update");

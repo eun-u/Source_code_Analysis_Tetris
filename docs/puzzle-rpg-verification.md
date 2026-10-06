@@ -1,6 +1,35 @@
 # 퍼즐 RPG MVP 검증 기록
 
-검증일: 2026-10-06. 기준 브랜치: `codex/feature-puzzle-rpg-mvp`, 시작 커밋: `c1aca5d`.
+## Campus Quest 통합 (2026-10-07)
+
+기준 브랜치: `codex/feature-puzzle-rpg-mvp`, 시작 커밋: `b0ff168`. 대학교·졸업·취업의 3개 Stage와 각 3전투, 총 9레벨을 반영했다. 상대는 술·교양·교수 / 재수강 F·GPT·캡스톤 / 코딩테스트·면접관·기업이며 각 세 번째 전투가 보스다. 낙하 간격 450→270ms, 공격 배율 1.0→1.5, 몬스터 아이템 레벨 0→5는 사용자 지정 수치다. 초반 HP·행동 간격·AI 탐색은 완화했고 패턴과 레벨을 분리했다.
+
+Java 8u504로 제품 소스 164개와 검증 소스 54개를 컴파일했다. 최종 결과는 `out/campus-rpg-release-tests.log`의 **45개 헤드리스 테스트 모음 PASS**이며 제품은 `out/tetris.jar`다.
+
+```powershell
+.\build.ps1 -Task Test -JdkHome 'C:\Users\User\AppData\Local\Temp\codex-tetris-baseline-jdk8\jdk8u504-b01'
+.\scripts\package-campus-client.ps1
+```
+
+- 스토리: 실제 엔진의 9전투 승리·해금·패배·재도전·최종 복귀, 같은 Stage의 엘리트 두 전투를 ID로 구별한다.
+- 전투·아이템: 레벨별 몬스터 아이템 제한, 획득·사용·무효화 이벤트, 같은 ID 아이템의 사용 직후 재획득, 획득 실패·효과 없는 사용 시 이벤트 부재를 검사했다. 피격·공격·회복·Fever·착지·클리어·콤보·승패를 화면 효과와 연결했다. 8종 아이템은 각각 다른 모양·색·문구로 표시한다.
+- 저장: 이전 15전투 형식의 순차 진행을 9레벨로 이관하고 코인·소유·장착을 유지한다. 읽기만으로 원본을 변경하지 않으며 첫 저장에서 바이트가 동일한 `.v1.bak`을 남긴다. 알 수 없는 전투나 완료 순서의 공백은 거부한다.
+- 네트워크: 실제 루프백 TCP, 로컬 HTTP/WSS 프로토콜 대체 서버, 인증 헤더·토큰 갱신·WebSocket 프레임·직렬화·랭킹 테이블을 검사했다. 계정 A의 접속 종료 → B 로그인 → B 토큰으로 랭킹 조회까지 앱 흐름을 검사했다. 이 대체 서버 검증은 운영 DB 저장 증거가 아니다.
+- 독립 리뷰: 계정 전환과 오래된 요청 응답의 충돌, 랭킹 재조회, 실제 아이템 이벤트 누락을 수정한 뒤 관련 회귀 검증을 통과했다. 최종 독립 정적 리뷰에서 남은 확정 P1/P2는 없었다.
+- 이미지: built-in image_gen으로 전투 아틀라스 3개와 개별 캐릭터 컷아웃 6개를 제작했다. 최종 프롬프트는 `src/main/resources/ui/puzzle-rpg/README.md`에 기록했고 원본 이미지를 보존했다.
+- 효과음: `University_Simulation`의 원본 MP3 3개를 Windows Media Transcoder로 WAV 변환하여 JAR에 포함했다. 출처·해시는 `src/main/resources/audio/university/README.md`에 기록했다. 설치된 Oracle JRE/Android Studio JBR에서 8개 믹서와 Clip 열기를 확인했으며 음량·음소거를 저장한다. 빌드용 임시 JDK는 믹서가 0개였다.
+
+최종 헤드리스 화면은 `out/campus-preview/story.png`, `story-graduation.png`, `story-employment.png` 및 `battle-final-1240.png`, `battle-final-760.png`다. 8종 아이템 효과 비교는 `out/audiofx-validation/arena-items.png`다. 실행 패키지 `out/campus-quest-client.zip`에는 JAR·공개 설정·실행 스크립트·안내의 4개 파일만 포함한다.
+
+패키지 내 JAR과 빌드 JAR의 SHA-256은 `BD5108BFD7B840070F8C6582E68BB2CE3997BE6488055D03198CDC529E6C57F1`로 일치한다. ZIP SHA-256은 `54E87E4B5516E56B63DA4AC3281B3EC7C7570A25609F669ECADDCAC4D07C0947`이다. 패키지의 공개 설정은 3줄이며 JAR에 새 PNG 9개와 WAV 3개가 포함됨을 확인했다. Android Studio JBR의 `javaw.exe`로 패키지 JAR을 콘솔 없이 실행했고 새 로그인 화면을 실제 Windows 창 캡처로 확인했다.
+
+기존 Render 서버의 `/healthz`는 2026-10-07에 **200 OK / ok** 응답을 받았다. Supabase 로그인·공식 PvP·랭킹을 새 클라이언트에 연결했으며 운영 서버 재배포·DB 변경은 하지 않았다. 공식 온라인은 기존 서버 규칙을 사용한다. 공개 설정은 서버 주소·Supabase 주소·publishable key 3개뿐이며 비밀번호나 계정 토큰을 패키지에 넣지 않는다.
+
+검증 한계: 사람의 체감 난이도와 승리 비율, 실제 스피커 청취, 물리 키 입력 전체, 다른 PC의 LAN, 새 클라이언트의 실계정 인터넷 2인 경기와 전적 저장은 이번 검증으로 입증하지 않는다. Render Free 절전 후 대전 접수 재개와 일반 가입·복구 SMTP는 기존 운영 설정에 따른다.
+
+---
+
+아래는 2026-10-06 초기 MVP의 이력이다. 당시 Stage 구성과 산출물 해시는 현재 버전과 구별한다. 기준 브랜치: `codex/feature-puzzle-rpg-mvp`, 시작 커밋: `c1aca5d`.
 
 ## 입력·복귀와 임시 UI 추가 검증
 
