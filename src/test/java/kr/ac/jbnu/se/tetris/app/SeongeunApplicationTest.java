@@ -27,6 +27,13 @@ public final class SeongeunApplicationTest {
                 assert LOGIN.equals(app.getCurrentScreen());
                 button(app.getScreens(), "로컬 시작").doClick();
                 assert LOBBY.equals(app.getCurrentScreen());
+                button(app.getScreens(), "설정").doClick();
+                assert "SETTINGS".equals(app.getCurrentScreen());
+                button(app.getScreens(), "5단계 튜토리얼 직접 해보기").doClick();
+                assert LOCAL_GAME.equals(app.getCurrentScreen()) && app.isLocalGravityRunning();
+                button(app.getScreens(), "돌아가기 [ESC]").doClick();
+                assert "SETTINGS".equals(app.getCurrentScreen()) && !app.isLocalGravityRunning();
+                button(app.getScreens(), "로비로").doClick();
                 assert menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
                 button(app.getScreens(), "캐릭터 / 상점").doClick();
                 assert "CHARACTER_SHOP".equals(app.getCurrentScreen());
@@ -35,7 +42,7 @@ public final class SeongeunApplicationTest {
 
                 button(app.getScreens(), "Local Mode").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
-                button(app.getScreens(), "Infinite").doClick();
+                buttonNamed(app.getScreens(), "infiniteModeStart").doClick();
                 assert LOCAL_GAME.equals(app.getCurrentScreen());
                 assert !menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
                 menuItem(app.getMenu(), "캐릭터 / 상점").doClick();
@@ -57,12 +64,12 @@ public final class SeongeunApplicationTest {
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 assert app.getLocalState() == null;
                 assert !app.isLocalGravityRunning();
-                button(app.getScreens(), "Infinite").doClick();
+                buttonNamed(app.getScreens(), "infiniteModeStart").doClick();
                 escape(app);
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 assert app.getLocalState() == null && !app.isLocalGravityRunning();
 
-                button(app.getScreens(), "Back").doClick();
+                button(app.getScreens(), "로비로").doClick();
                 button(app.getScreens(), "Story").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 button(app.getScreens(), "도전하기").doClick();
@@ -84,7 +91,6 @@ public final class SeongeunApplicationTest {
                 });
                 assert app.isStoryClockRunning();
                 assert app.getMatchSnapshot().getPhase() == SessionPhase.RUNNING;
-                button(app.getScreens(), "전투 정보").doClick();
                 assert BATTLE.equals(app.getCurrentScreen());
                 assert !app.getCampaignProgress().isStageCleared(
                         kr.ac.jbnu.se.tetris.story.StageCatalog.loadDefault().getStages().get(0).getId());
@@ -149,8 +155,8 @@ public final class SeongeunApplicationTest {
                         && apps[1].getRoomState().getReadyByParticipantId().size() == 2,
                         "two confirmed participants");
                 SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "READY").doClick();
-                    button(apps[1].getScreens(), "READY").doClick();
+                    button(apps[0].getScreens(), "준비 완료").doClick();
+                    button(apps[1].getScreens(), "준비 완료").doClick();
                 });
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen())
@@ -175,8 +181,8 @@ public final class SeongeunApplicationTest {
                 awaitEdt(() -> WAITING_ROOM.equals(apps[0].getCurrentScreen())
                         && WAITING_ROOM.equals(apps[1].getCurrentScreen()), "result returned to waiting room");
                 SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "READY").doClick();
-                    button(apps[1].getScreens(), "READY").doClick();
+                    button(apps[0].getScreens(), "준비 완료").doClick();
+                    button(apps[1].getScreens(), "준비 완료").doClick();
                 });
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");
@@ -240,6 +246,16 @@ public final class SeongeunApplicationTest {
             }
         }
         throw new AssertionError("Button not found: " + text);
+    }
+
+    private static AbstractButton buttonNamed(Component root, String name) {
+        if (!root.isVisible()) throw new AssertionError("Hidden component");
+        if (root instanceof AbstractButton && name.equals(root.getName())) return (AbstractButton) root;
+        if (root instanceof Container) for (Component child : ((Container) root).getComponents()) {
+            try { return buttonNamed(child, name); }
+            catch (AssertionError missing) { }
+        }
+        throw new AssertionError("Button not found: " + name);
     }
 
     private static AbstractButton menuItem(JMenuBar menuBar, String text) {

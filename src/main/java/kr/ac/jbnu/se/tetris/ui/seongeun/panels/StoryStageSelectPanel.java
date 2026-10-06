@@ -31,51 +31,54 @@ public class StoryStageSelectPanel extends JPanel {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         right.setOpaque(false); right.add(completion); right.add(back);
         header.add(right, BorderLayout.EAST); add(header, BorderLayout.NORTH);
-        JTabbedPane chapters = new JTabbedPane();
-        chapters.setFont(UniversityPixelTheme.font(18, Font.BOLD));
+        JPanel chapters = new JPanel(new GridLayout(3, 1, 0, 10));
+        chapters.setOpaque(false);
         int level = 0;
         for (Stage stage : catalog.getStages()) {
-            JPanel chapter = new JPanel(new BorderLayout(12, 20));
-            chapter.setBackground(UniversityPixelTheme.BG);
-            chapter.setBorder(new EmptyBorder(20, 12, 20, 12));
-            JLabel intro = new JLabel(introduction(stage.getId()));
-            intro.setForeground(UniversityPixelTheme.TEXT_SUB);
-            intro.setFont(UniversityPixelTheme.font(15, Font.PLAIN));
+            JPanel chapter = new JPanel(new BorderLayout(0, 5));
+            chapter.setOpaque(false);
+            JLabel intro = new JLabel(stage.getName() + "   /   " + introduction(stage.getId()));
+            intro.setForeground(UniversityPixelTheme.GOLD);
+            intro.setFont(UniversityPixelTheme.font(14, Font.BOLD));
             chapter.add(intro, BorderLayout.NORTH);
-            JPanel cards = new JPanel(new GridLayout(1, 3, 12, 0)); cards.setOpaque(false);
+            JPanel cards = new JPanel(new GridLayout(1, 3, 8, 0)); cards.setOpaque(false);
             for (MonsterSpec monster : stage.getEncounters()) {
                 level++;
                 DifficultyProfile difficulty = DifficultyProfileCatalog.forEncounter(monster);
-                JPanel card = new JPanel(); card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+                JPanel card = new JPanel(new BorderLayout(8, 2));
                 card.setBackground(UniversityPixelTheme.PANEL);
                 card.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2), new EmptyBorder(14, 12, 14, 12)));
-                addCentered(card, "LV " + level + "  /  " + tierName(monster.getTier()), 15, UniversityPixelTheme.GOLD);
-                JLabel art = new JLabel(GameArt.icon(GameArt.keyForLevel(level), 180, 210));
-                art.setAlignmentX(Component.CENTER_ALIGNMENT); card.add(art);
-                addCentered(card, monster.getName(), 19, UniversityPixelTheme.TEXT);
-                card.add(Box.createVerticalStrut(12));
-                addCentered(card, "HP " + difficulty.getMonsterHp() + "  ·  낙하 "
-                        + difficulty.getPlayerGravityMillis() + "ms", 12, UniversityPixelTheme.TEXT_SUB);
-                addCentered(card, "몬스터 아이템 LV " + difficulty.getMonsterItemLevel(), 12, UniversityPixelTheme.TEXT_SUB);
-                card.add(Box.createVerticalGlue());
-                JLabel state = addCentered(card, "잠김", 13, UniversityPixelTheme.TEXT_SUB);
-                states.put(monster.getId(), state); card.add(Box.createVerticalStrut(8));
+                        BorderFactory.createLineBorder(monster.getTier() == MonsterTier.BOSS
+                                ? UniversityPixelTheme.GOLD : UniversityPixelTheme.LINE, 2),
+                        new EmptyBorder(7, 9, 7, 9)));
+                JLabel art = new JLabel(GameArt.icon(GameArt.keyForLevel(level), 102, 106));
+                card.add(art, BorderLayout.WEST);
+                JPanel details = new JPanel(); details.setOpaque(false);
+                details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
+                line(details, "LV " + level + "  /  " + tierName(monster.getTier()), 12, UniversityPixelTheme.GOLD);
+                line(details, monster.getName(), 18, UniversityPixelTheme.TEXT);
+                details.add(Box.createVerticalStrut(3));
+                line(details, "HP " + difficulty.getMonsterHp() + " · "
+                        + difficulty.getPlayerGravityMillis() + "ms", 11, UniversityPixelTheme.TEXT_SUB);
+                line(details, "아이템 LV " + difficulty.getMonsterItemLevel(), 11, UniversityPixelTheme.TEXT_SUB);
+                details.add(Box.createVerticalGlue());
+                JLabel state = line(details, "잠김", 11, UniversityPixelTheme.TEXT_SUB);
+                states.put(monster.getId(), state);
+                card.add(details, BorderLayout.CENTER);
                 JButton button = new PixelButton("도전하기"); button.setName(monster.getId());
-                button.setAlignmentX(Component.CENTER_ALIGNMENT);
-                button.setMaximumSize(new Dimension(240, 46));
-                encounters.put(monster.getId(), button); card.add(button); cards.add(card);
+                button.setPreferredSize(new Dimension(100, 34));
+                encounters.put(monster.getId(), button); card.add(button, BorderLayout.SOUTH); cards.add(card);
             }
-            chapter.add(cards, BorderLayout.CENTER); chapters.addTab(stage.getName(), chapter);
+            chapter.add(cards, BorderLayout.CENTER); chapters.add(chapter);
         }
         add(chapters, BorderLayout.CENTER);
         JLabel foot = new JLabel("한 전투를 이기면 다음 레벨이 열립니다. 완료한 전투는 다시 도전할 수 있습니다.");
         foot.setForeground(UniversityPixelTheme.TEXT_SUB); add(foot, BorderLayout.SOUTH);
     }
-    private static JLabel addCentered(JPanel target, String text, int size, Color color) {
+    private static JLabel line(JPanel target, String text, int size, Color color) {
         JLabel label = new JLabel(text); label.setForeground(color);
         label.setFont(UniversityPixelTheme.font(size, Font.BOLD));
-        label.setAlignmentX(Component.CENTER_ALIGNMENT); target.add(label); return label;
+        label.setAlignmentX(Component.LEFT_ALIGNMENT); target.add(label); return label;
     }
     private static String introduction(String id) {
         if ("university".equals(id)) return "출석부터 교수님의 시험까지, 캠퍼스 생활을 통과하세요.";

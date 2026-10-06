@@ -2,6 +2,7 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.event.ActionListener;
 import java.util.List;
 import javax.swing.*;
@@ -20,24 +21,38 @@ public final class LeaderboardPanel extends JPanel {
         @Override public boolean isCellEditable(int row, int column) { return false; }
     };
     public LeaderboardPanel() {
-        setLayout(new BorderLayout(0, 14)); setBorder(new EmptyBorder(24, 28, 24, 28));
+        setLayout(new BorderLayout(0, 14)); setBorder(new EmptyBorder(18, 22, 18, 22));
         setBackground(UniversityPixelTheme.BG);
-        JPanel header = new JPanel(new BorderLayout()); header.setOpaque(false);
-        JLabel title = new JLabel("ONLINE PvP  /  랭킹 TOP 100");
-        title.setFont(UniversityPixelTheme.font(24, java.awt.Font.BOLD));
+        JPanel header = new JPanel(new BorderLayout(8, 0)); header.setOpaque(false);
+        JLabel title = new JLabel("RANKED PvP  /  TOP 100");
+        title.setFont(UniversityPixelTheme.font(23, Font.BOLD));
+        title.setForeground(UniversityPixelTheme.GOLD);
         header.add(title, BorderLayout.WEST);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT)); buttons.setOpaque(false);
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0)); buttons.setOpaque(false);
         buttons.add(reload); buttons.add(back); header.add(buttons, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
         JTable table = new JTable(model); table.setName("ranked-leaderboard");
-        table.setRowHeight(40); table.setFont(UniversityPixelTheme.font(16, java.awt.Font.PLAIN));
+        table.setRowHeight(35); table.setFont(UniversityPixelTheme.font(15, Font.PLAIN));
         table.setBackground(UniversityPixelTheme.PANEL); table.setForeground(UniversityPixelTheme.TEXT);
         table.setSelectionBackground(UniversityPixelTheme.PANEL_LIGHT);
-        table.getTableHeader().setFont(UniversityPixelTheme.font(15, java.awt.Font.BOLD));
+        table.setShowVerticalLines(false);
+        table.getTableHeader().setFont(UniversityPixelTheme.font(14, Font.BOLD));
         table.getTableHeader().setBackground(UniversityPixelTheme.PANEL_LIGHT);
         table.getTableHeader().setForeground(UniversityPixelTheme.TEXT);
         table.setGridColor(UniversityPixelTheme.LINE); table.setFillsViewportHeight(true);
-        add(new JScrollPane(table), BorderLayout.CENTER); add(status, BorderLayout.SOUTH);
+        table.getColumnModel().getColumn(0).setPreferredWidth(55);
+        table.getColumnModel().getColumn(1).setPreferredWidth(250);
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setColumnHeaderView(table.getTableHeader());
+        scroll.getViewport().setBackground(UniversityPixelTheme.PANEL);
+        scroll.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 3));
+        add(scroll, BorderLayout.CENTER);
+        status.setForeground(UniversityPixelTheme.TEXT_SUB);
+        status.setFont(UniversityPixelTheme.font(13, Font.PLAIN));
+        status.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 1),
+                new EmptyBorder(7, 11, 7, 11)));
+        add(status, BorderLayout.SOUTH);
     }
     public void setEntries(List<LeaderboardEntry> entries) {
         model.setRowCount(0);

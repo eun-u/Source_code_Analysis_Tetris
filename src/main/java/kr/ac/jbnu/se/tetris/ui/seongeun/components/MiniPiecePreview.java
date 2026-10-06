@@ -12,9 +12,9 @@ public final class MiniPiecePreview extends JComponent {
     private boolean item;
     public MiniPiecePreview(String title) {
         this.title = title;
-        setPreferredSize(new Dimension(58, 60));
-        setMinimumSize(new Dimension(50, 60));
-        setMaximumSize(new Dimension(58, 60));
+        setPreferredSize(new Dimension(68, 70));
+        setMinimumSize(new Dimension(66, 68));
+        setMaximumSize(new Dimension(68, 70));
         setToolTipText(title);
     }
     public void setPiece(PieceType type, boolean item) {
@@ -29,11 +29,11 @@ public final class MiniPiecePreview extends JComponent {
             g.setColor(UniversityPixelTheme.BLACK); g.fillRect(0, 0, getWidth(), getHeight());
             g.setColor(UniversityPixelTheme.PANEL); g.fillRect(3, 3, getWidth() - 6, getHeight() - 6);
             g.setColor(UniversityPixelTheme.LINE); g.drawRect(5, 5, getWidth() - 11, getHeight() - 11);
-            g.setFont(UniversityPixelTheme.font(10, Font.BOLD));
+            g.setFont(UniversityPixelTheme.font(12, Font.BOLD));
             g.setColor(UniversityPixelTheme.GOLD); g.drawString(title, 7, 15);
             if (type == null) {
                 g.setColor(UniversityPixelTheme.TEXT_SUB);
-                g.drawString("없음", 14, 43);
+                g.drawString("없음", 19, 46);
                 return;
             }
             Piece piece = new Piece(type);
@@ -43,8 +43,8 @@ public final class MiniPiecePreview extends JComponent {
                 minX = Math.min(minX, piece.x(index)); maxX = Math.max(maxX, piece.x(index));
                 minY = Math.min(minY, piece.y(index)); maxY = Math.max(maxY, piece.y(index));
             }
-            int cell = 9, width = (maxX - minX + 1) * cell, height = (maxY - minY + 1) * cell;
-            int left = (getWidth() - width) / 2, top = 20 + (getHeight() - 20 - height) / 2;
+            int cell = 11, width = (maxX - minX + 1) * cell, height = (maxY - minY + 1) * cell;
+            int left = (getWidth() - width) / 2, top = 22 + (getHeight() - 22 - height) / 2;
             Color color = color(type);
             for (int index = 0; index < 4; index++) {
                 int x = left + (piece.x(index) - minX) * cell;

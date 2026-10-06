@@ -3,6 +3,12 @@ package kr.ac.jbnu.se.tetris.app;
 import java.awt.CardLayout;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dimension;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.GraphicsEnvironment;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
@@ -75,6 +81,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LocalModePanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LoginPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.MainLobbyPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.ResultPanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.panels.SettingsPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.RoomListPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.SignUpPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.StoryStageSelectPanel;
@@ -94,6 +101,7 @@ public final class SeongeunApplication implements AutoCloseable {
     private static final String LOCAL_GAME = "LOCAL_GAME";
     private static final String CHARACTER_SHOP = "CHARACTER_SHOP";
     private static final String LEADERBOARD = "LEADERBOARD";
+    private static final String SETTINGS = "SETTINGS";
 
     private final CardLayout cards = new CardLayout();
     private final JPanel screens = new JPanel(cards);
@@ -116,7 +124,11 @@ public final class SeongeunApplication implements AutoCloseable {
     private final LocalGamePanel localPanel = new LocalGamePanel();
     private final CharacterShopPanel characterShop = new CharacterShopPanel();
     private final LeaderboardPanel leaderboard = new LeaderboardPanel();
+    private final SettingsPanel settings = new SettingsPanel();
     private final AudioService audio = new AudioService();
+    private final TutorialPreferenceStore tutorialPreferences;
+    private boolean skipTutorial;
+    private String tutorialReturnScreen = LOBBY;
     private RankedOnlineConfig rankedConfig;
     private SupabaseAuthService auth;
     private AuthSession accountSession;
@@ -135,6 +147,8 @@ public final class SeongeunApplication implements AutoCloseable {
     private boolean saveDirty;
     private final Timer localGravity;
     private JFrame frame;
+    private int lastViewWidth, lastViewHeight;
+    private boolean correctingWindowSize;
     private String currentScreen;
     private String lastMessage;
     private LocalGameSession localGame;
@@ -163,6 +177,11 @@ public final class SeongeunApplication implements AutoCloseable {
         if (seeds == null) throw new IllegalArgumentException("Seed generator is required");
         this.seeds = seeds;
         this.saveStore = saveStore;
+        this.tutorialPreferences = saveStore == null ? null : TutorialPreferenceStore.defaultStore();
+        if (tutorialPreferences != null) {
+            try { skipTutorial = tutorialPreferences.loadSkip(); }
+            catch (IOException ignored) { skipTutorial = false; }
+        }
         try {
             rankedConfig = RankedOnlineConfig.load();
             if (rankedConfig != null) auth = new SupabaseAuthService(rankedConfig.getSupabaseConfig());
@@ -214,11 +233,19 @@ public final class SeongeunApplication implements AutoCloseable {
         screens.add(localPanel, LOCAL_GAME);
         screens.add(characterShop, CHARACTER_SHOP);
         screens.add(leaderboard, LEADERBOARD);
+        screens.add(settings, SETTINGS);
     }
 
     private void bindActions() {
         // 원본의 로그인 버튼은 계정 확인 기능이 아니라 로컬 로비 진입이었다.
-        login.setLoginAction(event -> { clearSecrets(login); show(LOBBY); });
+        login.setLoginAction(event -> {
+            clearSecrets(login); show(LOBBY);
+            if (!skipTutorial && frame != null && frame.isShowing())
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && LOBBY.equals(currentScreen) && !skipTutorial)
+                        startTutorial(LOBBY);
+                });
+        });
         login.setOnlineLoginAction(event -> loginOnline());
         login.setSignUpAction(event -> show(SIGN_UP));
         signUp.setBackAction(event -> { clearSecrets(signUp); show(LOGIN); });
@@ -227,8 +254,22 @@ public final class SeongeunApplication implements AutoCloseable {
         lobby.setOnlineBattleAction(event -> openOnline());
         lobby.setLocalModeAction(event -> show(LOCAL_MODE));
         lobby.setCharacterAction(event -> showCharacters());
-        lobby.setTutorialAction(event -> startTutorial());
+        lobby.setTutorialAction(event -> showSettings());
         lobby.setServerAction(event -> showLeaderboard());
+        lobby.setSettingsAction(event -> showSettings());
+        lobby.setAccountAction(event -> {
+            if (accountSession == null) show(LOGIN);
+            else signOutOnline();
+        });
+        settings.setBackAction(event -> show(LOBBY));
+        settings.setTutorialAction(event -> startTutorial(SETTINGS));
+        settings.setLanConnectAction(event -> promptConnection());
+        settings.setLanHostAction(event -> startLocalServer());
+        settings.setBgmMuteAction(audio::setBgmMuted);
+        settings.setSfxMuteAction(audio::setMuted);
+        settings.setBgmVolumeAction(audio::setBgmVolume);
+        settings.setSfxVolumeAction(audio::setVolume);
+        settings.setSkipTutorialAction(this::saveSkipTutorial);
         leaderboard.setBackAction(event -> show(LOBBY));
         leaderboard.setReloadAction(event -> loadLeaderboard());
         characterShop.setBackAction(event -> show(LOBBY));
@@ -258,7 +299,7 @@ public final class SeongeunApplication implements AutoCloseable {
         localMode.setBackAction(event -> show(LOBBY));
         localMode.setInfiniteAction(event -> startLocal(LocalGameSession.Mode.INFINITE));
         localMode.setSprintAction(event -> startLocal(LocalGameSession.Mode.SPRINT));
-        localPanel.setBackAction(event -> { closeSession(); show(LOCAL_MODE); });
+        localPanel.setBackAction(event -> backFromGame());
         localPanel.getPlayerBoard().setInputHandlers(this::submit, this::togglePause);
         battle.getPlayerBoard().setInputHandlers(this::submit, this::togglePause);
         battle.getPlayerBoard().setItemHandler(this::useItem);
@@ -334,6 +375,19 @@ public final class SeongeunApplication implements AutoCloseable {
     private void showStories() {
         storySelect.updateProgress(progress.getCampaignProgress(), stages);
         show(STORY_STAGE);
+    }
+
+    private void showSettings() {
+        settings.update(audio.isBgmMuted(), audio.getBgmVolume(), audio.isMuted(),
+                audio.getVolume(), skipTutorial);
+        show(SETTINGS);
+    }
+
+    private void saveSkipTutorial(boolean skip) {
+        skipTutorial = skip;
+        if (tutorialPreferences == null) return;
+        try { tutorialPreferences.saveSkip(skip); }
+        catch (IOException failed) { lastMessage = "튜토리얼 설정을 저장하지 못했습니다."; }
     }
 
     private void showCharacters() {
@@ -422,14 +476,16 @@ public final class SeongeunApplication implements AutoCloseable {
         renderLocal();
     }
 
-    private void startTutorial() {
+    private void startTutorial() { startTutorial(SETTINGS); }
+
+    private void startTutorial(String returnScreen) {
         ScreenRouter.requireEdt();
         closeSession();
+        tutorialReturnScreen = returnScreen;
         tutorial = new TutorialSession(seeds.nextLong());
         localPanel.startMode("Tutorial");
         show(LOCAL_GAME);
         renderLocal();
-        message(tutorial.getInstruction());
     }
 
     void submit(GameAction.Type action) {
@@ -470,6 +526,8 @@ public final class SeongeunApplication implements AutoCloseable {
         if (state == null) return;
         GameState previous = localPanel.getPlayerBoard().getGameState();
         localPanel.setState(state);
+        if (tutorial != null)
+            localPanel.setTutorialInstruction(tutorial.getStep(), tutorial.getInstruction());
         if (previous != null && state.getLinesCleared() > previous.getLinesCleared()) audio.play(AudioService.Event.LINE_CLEAR);
         boolean finished = localGame != null ? localGame.isFinished() : tutorial.isFinished();
         if (finished) {
@@ -478,9 +536,10 @@ public final class SeongeunApplication implements AutoCloseable {
                 if (localGame.isCompleted()) localPanel.setCompleted(true);
                 return;
             }
+            if (tutorial.isCompleted()) saveSkipTutorial(true);
             result.setResultDetails(tutorial.isCompleted() ? "COMPLETE" : "GAME OVER", "Player",
                     Integer.toString(state.getLinesCleared()), "—", "—", "—");
-            result.setReturnButtonText("로컬 모드로");
+            result.setReturnButtonText(tutorialReturnScreen.equals(SETTINGS) ? "설정으로" : "로비로");
             result.setRankedStatus(""); result.setStoryActions(false, false, "");
             show(RESULT);
         } else if (state.getStatus() == GameState.Status.PAUSED) localGravity.stop();
@@ -631,8 +690,9 @@ public final class SeongeunApplication implements AutoCloseable {
         ScreenRouter.requireEdt();
         if (closed) return;
         if (LOCAL_GAME.equals(currentScreen)) {
+            String destination = tutorial != null ? tutorialReturnScreen : LOCAL_MODE;
             closeSession();
-            show(LOCAL_MODE);
+            if (SETTINGS.equals(destination)) showSettings(); else show(destination);
         } else if (BATTLE.equals(currentScreen)) {
             boolean returnToStory = storyBattle;
             if (match != null && match.getSnapshot().getCapabilities().canLeave()) match.leave();
@@ -657,6 +717,10 @@ public final class SeongeunApplication implements AutoCloseable {
         if (storyBattle) {
             closeSession();
             showStories();
+        } else if (tutorial != null) {
+            String destination = tutorialReturnScreen;
+            closeSession();
+            if (SETTINGS.equals(destination)) showSettings(); else show(destination);
         } else if (match instanceof OnlineMatchSession) {
             if (match.getSnapshot().getPhase() == SessionPhase.FAILED) {
                 closeSession();
@@ -1126,21 +1190,53 @@ public final class SeongeunApplication implements AutoCloseable {
         ScreenRouter.requireEdt();
         if (frame != null) throw new IllegalStateException("Window is already open");
         frame = new JFrame("Tetris Monster");
-        java.awt.Dimension screen = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
-        int usableWidth = Math.max(1, screen.width - 40);
-        int usableHeight = Math.max(1, screen.height - 70);
-        frame.setMinimumSize(new java.awt.Dimension(Math.min(960, usableWidth),
-                Math.min(760, usableHeight)));
-        frame.setSize(Math.min(1240, usableWidth), Math.min(900, usableHeight));
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        frame.setMinimumSize(new Dimension(Math.min(820, usable.width), Math.min(650, usable.height)));
+        frame.setSize(Math.min(1200, usable.width), Math.min(900, usable.height));
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLocationRelativeTo(null);
-        frame.setJMenuBar(menu);
         frame.add(screens);
+        frame.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent event) { keepWindowAspect(); }
+        });
         frame.addWindowListener(new WindowAdapter() {
             @Override public void windowClosed(WindowEvent event) { close(); }
         });
         frame.setVisible(true);
+        keepWindowAspect();
+        audio.startBgm();
         if (lastMessage != null && !lastMessage.isEmpty()) message(lastMessage);
+    }
+
+    /** 화면 내용의 4:3 비율을 유지하면서 너비·높이 어느 쪽으로든 창을 조절한다. */
+    private void keepWindowAspect() {
+        if (frame == null || !frame.isShowing() || correctingWindowSize) return;
+        int viewWidth = frame.getContentPane().getWidth();
+        int viewHeight = frame.getContentPane().getHeight();
+        if (viewWidth < 1 || viewHeight < 1) return;
+        int oldWidth = lastViewWidth, oldHeight = lastViewHeight;
+        lastViewWidth = viewWidth; lastViewHeight = viewHeight;
+        if (Math.abs(viewWidth * 3 - viewHeight * 4) <= 8) return;
+        int targetWidth, targetHeight;
+        if (oldWidth == 0 || Math.abs(viewWidth - oldWidth) >= Math.abs(viewHeight - oldHeight)) {
+            targetWidth = viewWidth; targetHeight = Math.round(targetWidth * 0.75f);
+        } else {
+            targetHeight = viewHeight; targetWidth = Math.round(targetHeight * 4f / 3f);
+        }
+        Insets border = frame.getInsets();
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int maxWidth = Math.max(1, usable.width - border.left - border.right);
+        int maxHeight = Math.max(1, usable.height - border.top - border.bottom);
+        double scale = Math.min(1d, Math.min((double) maxWidth / targetWidth,
+                (double) maxHeight / targetHeight));
+        targetWidth = Math.max(1, (int) Math.floor(targetWidth * scale));
+        targetHeight = Math.max(1, Math.round(targetWidth * 0.75f));
+        if (Math.abs(viewWidth - targetWidth) < 2 && Math.abs(viewHeight - targetHeight) < 2) return;
+        correctingWindowSize = true;
+        try { frame.setSize(targetWidth + border.left + border.right,
+                targetHeight + border.top + border.bottom); }
+        finally { correctingWindowSize = false; }
+        lastViewWidth = targetWidth; lastViewHeight = targetHeight;
     }
 
     @Override public void close() {

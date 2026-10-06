@@ -38,6 +38,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final Board playerBoard = new Board(playerStatus, true);
     private final Board enemyBoard = new Board(enemyStatus, false);
     private final JButton[] slots = new JButton[4];
+    private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
     private final JButton backButton = button("돌아가기 [ESC]");
     private IntConsumer itemAction;
@@ -78,7 +79,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         GridBagConstraints c = new GridBagConstraints();
         c.gridy = 0; c.weighty = 1; c.fill = GridBagConstraints.BOTH;
         c.insets = new Insets(0, 4, 0, 8);
-        c.gridx = 0; c.weightx = .56;
+        c.gridx = 0; c.weightx = .39;
         JPanel local = new JPanel(new BorderLayout(0, 4));
         local.setOpaque(false);
         local.add(playerName, BorderLayout.NORTH);
@@ -86,29 +87,46 @@ public class BattlePanel extends JPanel implements Scrollable {
         local.add(playerStatus, BorderLayout.SOUTH);
         center.add(local, c);
 
-        c.gridx = 1; c.weightx = .27; c.insets = new Insets(0, 8, 0, 8);
+        c.gridx = 1; c.weightx = .40; c.insets = new Insets(0, 8, 0, 8);
         JPanel hud = new JPanel();
-        hud.setOpaque(false);
+        hud.setBackground(UniversityPixelTheme.PANEL);
+        hud.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UniversityPixelTheme.GOLD, 2),
+                new EmptyBorder(8, 12, 8, 12)));
         hud.setLayout(new BoxLayout(hud, BoxLayout.Y_AXIS));
         for (JLabel hudLabel : new JLabel[] { hold, next, gauge, warp, pending }) {
             hudLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         }
         warp.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
         holdPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel inventoryTitle = label("ITEM / 1–4");
-        inventoryTitle.setFont(new Font(Font.MONOSPACED, Font.BOLD, 15));
+        JLabel inventoryTitle = label("아이템  /  1–4 키");
+        inventoryTitle.setForeground(UniversityPixelTheme.GOLD);
+        inventoryTitle.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         inventoryTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JPanel previews = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 0));
+        JPanel previews = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
         previews.setOpaque(false);
-        previews.setMaximumSize(new Dimension(210, 62));
+        previews.setPreferredSize(new Dimension(218, 70));
         previews.setAlignmentX(Component.LEFT_ALIGNMENT);
         for (MiniPiecePreview preview : nextPreviews) previews.add(preview);
-        hud.add(hold); hud.add(holdPreview); hud.add(Box.createVerticalStrut(4));
-        hud.add(next); hud.add(previews); hud.add(Box.createVerticalStrut(8));
+        next.setForeground(UniversityPixelTheme.GOLD);
+        next.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        hold.setForeground(UniversityPixelTheme.GOLD);
+        hold.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+        JPanel queue = new JPanel(new BorderLayout(4, 0)); queue.setOpaque(false);
+        queue.setAlignmentX(Component.LEFT_ALIGNMENT);
+        queue.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+        JPanel upcoming = new JPanel(); upcoming.setOpaque(false);
+        upcoming.setLayout(new BoxLayout(upcoming, BoxLayout.Y_AXIS));
+        upcoming.add(next); upcoming.add(previews);
+        JPanel saved = new JPanel(); saved.setOpaque(false);
+        saved.setLayout(new BoxLayout(saved, BoxLayout.Y_AXIS));
+        saved.add(hold); saved.add(holdPreview);
+        queue.add(upcoming, BorderLayout.WEST); queue.add(saved, BorderLayout.EAST);
+        hud.add(queue); hud.add(Box.createVerticalStrut(3));
         hud.add(gauge);
         feverBar.setForeground(UniversityPixelTheme.GOLD);
         feverBar.setBackground(UniversityPixelTheme.PANEL_LIGHT);
-        feverBar.setMaximumSize(new Dimension(210, 14));
+        feverBar.setMaximumSize(new Dimension(260, 14));
         feverBar.setAlignmentX(Component.LEFT_ALIGNMENT); hud.add(feverBar);
         hud.add(warp); hud.add(Box.createVerticalStrut(5));
         hud.add(pending); hud.add(Box.createVerticalStrut(8));
@@ -117,8 +135,14 @@ public class BattlePanel extends JPanel implements Scrollable {
             final int index = i;
             slots[i] = button((i + 1) + "  비어 있음");
             slots[i].setAlignmentX(Component.LEFT_ALIGNMENT);
-            slots[i].setMaximumSize(new Dimension(210, 30));
-            slots[i].addActionListener(event -> { if (itemAction != null) itemAction.accept(index); });
+            slots[i].setFont(UniversityPixelTheme.font(14, Font.BOLD));
+            slots[i].setMaximumSize(new Dimension(270, 38));
+            slots[i].setPreferredSize(new Dimension(250, 38));
+            slots[i].addActionListener(event -> {
+                if (automaticSlots[index]) setFeedback("자동 사용 아이템 · 조건이 맞으면 발동합니다.");
+                else if (itemAction != null) itemAction.accept(index);
+            });
+            slots[i].setEnabled(false);
             hud.add(slots[i]); hud.add(Box.createVerticalStrut(2));
         }
         hud.add(Box.createVerticalGlue());
@@ -126,7 +150,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         hud.add(resultTestButton);
         center.add(hud, c);
 
-        c.gridx = 2; c.weightx = .17; c.insets = new Insets(0, 8, 0, 4);
+        c.gridx = 2; c.weightx = .21; c.insets = new Insets(0, 8, 0, 4);
         JPanel opponent = new JPanel(new BorderLayout(0, 4));
         opponent.setOpaque(false);
         opponent.add(enemyName, BorderLayout.NORTH);
@@ -204,10 +228,10 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setItemAction(IntConsumer action) { itemAction = action; }
     public void setBackAction(ActionListener action) { backButton.addActionListener(action); }
     @Override public void doLayout() {
-        int arenaHeight = getHeight() < 740 ? 150 : 225;
+        int arenaHeight = getHeight() < 740 ? 130 : 205;
         if (arena.getPreferredSize().height != arenaHeight)
             arena.setPreferredSize(new Dimension(850, arenaHeight));
-        resultTestButton.setVisible(getHeight() >= 740);
+        resultTestButton.setVisible(false);
         super.doLayout();
     }
     public void setMode(boolean online) {
@@ -313,14 +337,18 @@ public class BattlePanel extends JPanel implements Scrollable {
             boolean locked = i >= local.getItemSlots();
             boolean available = !locked && i < items.size() && items.get(i) != null;
             String item = available ? items.get(i) : null;
-            slots[i].setText((i + 1) + "  " + (locked ? "잠김"
-                    : item == null ? "비어 있음" : itemName(item)));
+            slots[i].setText("[" + (i + 1) + "]  " + (locked ? "잠김"
+                    : item == null ? "빈 슬롯" : itemName(item) + ("damage_boost".equals(item)
+                    || "shield".equals(item) ? " · AUTO" : "")));
             boolean automatic = "damage_boost".equals(item) || "shield".equals(item);
+            automaticSlots[i] = automatic;
+            slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
+                    : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
             slots[i].setToolTipText(locked ? "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다."
                     : item == null ? "비어 있는 슬롯"
                     : automatic ? itemName(item) + " · 조건이 맞으면 자동 사용"
                     : itemName(item) + " · 클릭 또는 " + (i + 1) + " 키");
-            slots[i].setEnabled(item != null && !automatic
+            slots[i].setEnabled(item != null
                     && state.getStatus() == BattleState.Status.RUNNING);
         }
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,

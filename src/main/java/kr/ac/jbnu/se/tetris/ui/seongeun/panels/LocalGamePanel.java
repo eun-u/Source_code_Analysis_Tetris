@@ -23,6 +23,9 @@ public class LocalGamePanel extends JPanel {
     private final MiniPiecePreview[] nextPreviews = {
         new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
     };
+    private final JPanel tutorialGuide = new JPanel(new BorderLayout(8, 2));
+    private final JLabel tutorialStep = new JLabel("STEP 01 / 05");
+    private final JLabel tutorialInstruction = new JLabel("블록을 직접 움직여 보세요.");
 
     public LocalGamePanel() {
         setLayout(new BorderLayout());
@@ -39,7 +42,21 @@ public class LocalGamePanel extends JPanel {
         topPanel.add(titleLabel, BorderLayout.CENTER);
         topPanel.add(backButton, BorderLayout.EAST);
 
-        add(topPanel, BorderLayout.NORTH);
+        tutorialGuide.setBackground(UniversityPixelTheme.PANEL);
+        tutorialGuide.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UniversityPixelTheme.GOLD, 2),
+                BorderFactory.createEmptyBorder(7, 12, 7, 12)));
+        tutorialStep.setForeground(UniversityPixelTheme.GOLD);
+        tutorialStep.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+        tutorialInstruction.setForeground(UniversityPixelTheme.TEXT);
+        tutorialInstruction.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        tutorialGuide.add(tutorialStep, BorderLayout.WEST);
+        tutorialGuide.add(tutorialInstruction, BorderLayout.CENTER);
+        tutorialGuide.setVisible(false);
+        JPanel header = new JPanel(new BorderLayout(0, 8)); header.setOpaque(false);
+        header.add(topPanel, BorderLayout.NORTH);
+        header.add(tutorialGuide, BorderLayout.CENTER);
+        add(header, BorderLayout.NORTH);
 
         statusLabel = new JLabel("0", SwingConstants.CENTER);
         statusLabel.setForeground(Color.WHITE);
@@ -85,6 +102,7 @@ public class LocalGamePanel extends JPanel {
 
     public void startMode(String modeName) {
         titleLabel.setText("Local Mode - " + modeName);
+        tutorialGuide.setVisible("Tutorial".equals(modeName));
         playerBoard.setOverlayText(null);
         playerBoard.resetEffects();
 
@@ -111,6 +129,10 @@ public class LocalGamePanel extends JPanel {
 
     public void setStatusText(String text) {
         statusLabel.setText(text);
+    }
+    public void setTutorialInstruction(int step, String instruction) {
+        tutorialStep.setText(String.format("STEP %02d / 05", Math.min(5, step + 1)));
+        tutorialInstruction.setText(instruction);
     }
     public void setCompleted(boolean completed) {
         playerBoard.setOverlayText(completed ? "SPRINT COMPLETE" : null);

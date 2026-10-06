@@ -35,7 +35,7 @@ $resultType = [Windows.Media.Transcoding.PrepareTranscodeResult, Windows.Media.T
 $profile = $profileType::CreateWav([Windows.Media.MediaProperties.AudioEncodingQuality]::Medium)
 $transcoder = [Activator]::CreateInstance($transcoderType)
 
-foreach ($name in @('click', 'nextlog', 'weekSummary')) {
+foreach ($name in @('click', 'nextlog', 'weekSummary', 'background')) {
     $inputPath = Join-Path $resolvedSource ($name + '.mp3')
     $sourceBytes = [IO.File]::ReadAllBytes($inputPath)
     $inputMemory = New-Object IO.MemoryStream(, $sourceBytes)

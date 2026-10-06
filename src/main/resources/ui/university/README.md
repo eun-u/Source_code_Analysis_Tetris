@@ -12,3 +12,12 @@
 `src/styles/pixel-design-tokens.css`, `src/styles/global.css`를 참고해
 `UniversityPixelTheme`, `PixelArena`, `PixelButton`에 옮겼다.
 이 리소스는 현재 UI 검증을 위한 임시 아트다.
+
+## 로비 캠퍼스 배경
+
+`campus-opening.png`는 같은 프로젝트의
+`C:\Project\University_Simulation\public\university-survival\png\week_week1_start.png`에서
+2026-10-07에 원본 바이트 그대로 복사했다. 로비는 이 배너의 캠퍼스 건물 부분을 표시하며,
+복사한 파일의 픽셀은 수정하지 않았다.
+
+- 원본 및 복사본 SHA-256: `97AB0F90B4F4FBF6E236F67D8975711C286D946AD906D06E6B457B1DB05022D7`

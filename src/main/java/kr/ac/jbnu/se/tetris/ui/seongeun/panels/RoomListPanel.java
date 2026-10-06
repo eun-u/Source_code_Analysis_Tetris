@@ -1,15 +1,14 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.GridLayout;
+import java.awt.*;
 import java.awt.event.ActionListener;
 import java.util.List;
 import java.util.function.Consumer;
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.RoomRow;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
 
 public class RoomListPanel extends JPanel {
@@ -21,17 +20,18 @@ public class RoomListPanel extends JPanel {
     private final JLabel connectionLabel = new JLabel("서버 연결 중...");
 
     public RoomListPanel() {
-        setLayout(new BorderLayout());
-        setBackground(new Color(13, 23, 40));
+        setLayout(new BorderLayout(0, 14));
+        setBackground(UniversityPixelTheme.BG);
+        setBorder(new EmptyBorder(18, 22, 18, 22));
 
-        JLabel titleLabel = new JLabel("Online Battle - Room List", SwingConstants.CENTER);
-        titleLabel.setForeground(Color.WHITE);
-        titleLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 20));
+        JLabel titleLabel = new JLabel("BATTLE LOBBY  /  방 목록");
+        titleLabel.setForeground(UniversityPixelTheme.GOLD);
+        titleLabel.setFont(UniversityPixelTheme.font(23, Font.BOLD));
 
         createRoomButton = new GameButton("방 만들기");
-        backButton = new GameButton("Back");
+        backButton = new GameButton("로비로");
 
-        JPanel topButtonPanel = new JPanel();
+        JPanel topButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         topButtonPanel.setOpaque(false);
         topButtonPanel.add(createRoomButton);
         topButtonPanel.add(joinByIdButton);
@@ -45,13 +45,18 @@ public class RoomListPanel extends JPanel {
         add(topPanel, BorderLayout.NORTH);
 
         roomContainer = new JPanel();
-        roomContainer.setBackground(new Color(13, 23, 40));
+        roomContainer.setBackground(UniversityPixelTheme.BG);
         roomContainer.setLayout(new BoxLayout(roomContainer, BoxLayout.Y_AXIS));
-
         JScrollPane scrollPane = new JScrollPane(roomContainer);
+        scrollPane.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2));
+        scrollPane.getViewport().setBackground(UniversityPixelTheme.BG);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        JPanel listArea = new JPanel(new BorderLayout());
-        connectionLabel.setForeground(new Color(169, 205, 218));
+        JPanel listArea = new JPanel(new BorderLayout(0, 12));
+        listArea.setOpaque(false);
+        connectionLabel.setForeground(UniversityPixelTheme.TEXT_SUB);
+        connectionLabel.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        connectionLabel.setBorder(new EmptyBorder(5, 8, 0, 0));
         listArea.add(connectionLabel, BorderLayout.NORTH);
         listArea.add(scrollPane, BorderLayout.CENTER);
 
@@ -74,13 +79,26 @@ public class RoomListPanel extends JPanel {
     public void setRooms(List<RoomData> rooms, Consumer<RoomData> joinAction) {
         roomContainer.removeAll();
         if (rooms.isEmpty()) {
-            JLabel hint = new JLabel("방 목록 조회를 지원하지 않습니다. 초대받은 방 번호로 입장하세요.");
-            hint.setForeground(new Color(179, 208, 217));
+            JLabel hint = new JLabel("방 번호를 입력하거나 새 방을 만들어 전투하세요.", SwingConstants.CENTER);
+            hint.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+            hint.setBorder(new EmptyBorder(30, 8, 30, 8));
+            hint.setForeground(UniversityPixelTheme.TEXT_SUB);
             roomContainer.add(hint);
         }
 
         for (RoomData room : rooms) {
             RoomRow row = new RoomRow(room);
+            row.setBackground(UniversityPixelTheme.PANEL);
+            row.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 2, 0, UniversityPixelTheme.LINE),
+                    new EmptyBorder(8, 12, 8, 12)));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 58));
+            for (Component child : row.getComponents()) {
+                if (child instanceof JLabel) {
+                    child.setForeground(UniversityPixelTheme.TEXT);
+                    child.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+                }
+            }
             row.setJoinAction(joinAction);
             roomContainer.add(row);
         }
