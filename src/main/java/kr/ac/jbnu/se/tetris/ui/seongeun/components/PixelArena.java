@@ -59,7 +59,9 @@ public final class PixelArena extends JComponent {
     private static final BufferedImage PROFESSOR_WINDUP = readArt("/ui/campus-rpg/poses/professor-windup.png");
     private static final BufferedImage PROFESSOR_STRIKE = readArt("/ui/campus-rpg/poses/professor-strike.png");
     private static final BufferedImage PROFESSOR_HURT = readArt("/ui/campus-rpg/poses/professor-hurt.png");
-    private static final BufferedImage UNIVERSITY_BG = readArt("/ui/campus-rpg/university-bg.png");
+    private static final BufferedImage UNIVERSITY_BATTLE_BG = readArt("/ui/campus-rpg/university-battle-bg.png");
+    private static final BufferedImage UNIVERSITY_BG = UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG
+            : readArt("/ui/campus-rpg/university-bg.png");
     private static final BufferedImage GRADUATION_BG = readArt("/ui/campus-rpg/graduation-bg.png");
     private static final BufferedImage EMPLOYMENT_BG = readArt("/ui/campus-rpg/employment-bg.png");
     private static final Map<String, BufferedImage> ART_CACHE = new ConcurrentHashMap<>();
@@ -383,9 +385,9 @@ public final class PixelArena extends JComponent {
     private void paintBackdrop(Graphics2D g, Stage s, long now) {
         int w = s.w, h = s.h;
         Color skyTop, skyBottom, accent = tierColor();
-        if ("graduation".equals(chapter)) { skyTop = new Color(0x182831); skyBottom = new Color(0x394750); }
-        else if ("employment".equals(chapter)) { skyTop = new Color(0x26323A); skyBottom = new Color(0x67766E); }
-        else { skyTop = new Color(0x192C34); skyBottom = new Color(0x41575B); }
+        if ("graduation".equals(chapter)) { skyTop = new Color(0x646C6B); skyBottom = new Color(0xA09B8D); }
+        else if ("employment".equals(chapter)) { skyTop = new Color(0x657875); skyBottom = new Color(0xA8A897); }
+        else { skyTop = new Color(0x76847D); skyBottom = new Color(0xB2AA98); }
         BufferedImage backdrop = "graduation".equals(chapter) ? GRADUATION_BG
                 : "employment".equals(chapter) ? EMPLOYMENT_BG : UNIVERSITY_BG;
         if (backdrop == null) {
@@ -393,28 +395,24 @@ public final class PixelArena extends JComponent {
             g.fillRect(-20, -20, w + 40, s.horizon + 20);
         } else {
             g.drawImage(backdrop(backdrop, w, h), 0, 0, null);
-            // 전투원과 이펙트가 전경에서 읽히도록 사진/일러스트의 대비를 낮춘다.
-            g.setPaint(new GradientPaint(0, 0, new Color(10, 23, 27, 78),
-                    0, s.horizon, new Color(10, 23, 27, 130)));
-            g.fillRect(0, 0, w, s.horizon);
+            // 원본 광장의 바닥과 줄눈을 그대로 살려 건물 안쪽에서도 한 장소처럼 보이게 한다.
+            g.setColor(new Color(242, 227, 199, 13));
+            g.fillRect(0, 0, w, h);
         }
         if (backdrop == null) paintSilhouette(g, s);
 
-        // 콘크리트 광장 바닥의 이음새. 움직이는 네온 격자는 장면을 가리므로 사용하지 않는다.
-        g.setPaint(backdrop == null
-                ? new GradientPaint(0, s.horizon, new Color(0x354246), 0, h, new Color(0x172328))
-                : new GradientPaint(0, s.horizon, new Color(59, 70, 70, 212),
-                        0, h, new Color(17, 30, 34, 235)));
-        g.fillRect(-20, s.horizon, w + 40, h - s.horizon + 20);
-        g.setColor(new Color(225, 203, 152, 160));
-        g.fillRect(-20, s.horizon, w + 40, 2);
-        g.setColor(new Color(150, 161, 154, 52));
-        for (int i = -5; i <= 5; i++)
-            g.drawLine(w / 2 + i * 22, s.horizon, w / 2 + i * w / 3, h);
-        for (int i = 1; i < 6; i++) {
-            float t = i / 6f;
-            int y = s.horizon + Math.round((h - s.horizon) * t * t);
-            g.drawLine(-20, y, w + 20, y);
+        if (backdrop == null) {
+            g.setPaint(new GradientPaint(0, s.horizon, new Color(0xA39D90),
+                    0, h, new Color(0x606965)));
+            g.fillRect(-20, s.horizon, w + 40, h - s.horizon + 20);
+            g.setColor(new Color(233, 228, 210, 38));
+            for (int i = -2; i <= 2; i++)
+                g.drawLine(w / 2 + i * 24, s.horizon, w / 2 + i * w / 3, h);
+            for (int i = 1; i < 4; i++) {
+                float t = i / 4f;
+                int y = s.horizon + Math.round((h - s.horizon) * t * t);
+                g.drawLine(-20, y, w + 20, y);
+            }
         }
         // PvE는 몬스터 조명을 키우고, PvP는 양쪽 선수에게 같은 크기의 조명을 준다.
         paintSpotlight(g, s.monsterX, s.monsterFoot, s.monsterSize, s.top, accent);
@@ -426,14 +424,14 @@ public final class PixelArena extends JComponent {
         paintFighterMark(g, s.monsterX, s.monsterFoot, s.monsterSize, accent, now, monsterPlacementAt);
         paintFighterMark(g, s.playerCenterX(), s.portraitY + s.portraitH,
                 s.portraitW, MINT, now, playerPlacementAt);
-        // 떠다니는 빛 먼지.
+        // 풍경 위의 상시 입자는 줄이고 실제 공격 때만 큰 광원을 쓴다.
         if (effectsEnabled) {
-            for (int i = 0; i < 14; i++) {
+            for (int i = 0; i < 6; i++) {
                 long cycle = 5200 + i * 310;
                 float t = ((now + i * 777) % cycle) / (float) cycle;
                 int x = Math.floorMod(i * 61 + 7, Math.max(1, w)) + (int) (Math.sin(t * 6.28 + i) * 10);
                 int y = h - Math.round((h - s.top) * t);
-                g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int) (120 * Math.sin(t * Math.PI))));
+                g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int) (55 * Math.sin(t * Math.PI))));
                 g.fillRect(x, y, 2, 2);
             }
         }
@@ -453,7 +451,10 @@ public final class PixelArena extends JComponent {
             double ratio = Math.max(width / (double) source.getWidth(), height / (double) source.getHeight());
             int scaledW = Math.max(width, (int) Math.ceil(source.getWidth() * ratio));
             int scaledH = Math.max(height, (int) Math.ceil(source.getHeight() * ratio));
-            canvas.drawImage(source, (width - scaledW) / 2, (height - scaledH) / 2, scaledW, scaledH, null);
+            int imageX = (width - scaledW) / 2;
+            if (source == UNIVERSITY_BATTLE_BG)
+                imageX = Math.round((width - scaledW) * 0.34f);
+            canvas.drawImage(source, imageX, (height - scaledH) / 2, scaledW, scaledH, null);
         } finally { canvas.dispose(); }
         synchronized (BACKDROP_CACHE) { BACKDROP_CACHE.put(key, result); }
         return result;
@@ -1185,14 +1186,14 @@ public final class PixelArena extends JComponent {
                                      int main, int trail, int hp, int max, Color fill, boolean flash) {
         g.setColor(UniversityPixelTheme.BLACK);
         g.fillRect(x, y, width, height);
-        g.setColor(flash ? new Color(0x663A32) : UniversityPixelTheme.PANEL);
+        g.setColor(flash ? new Color(0xF4D6CB) : UniversityPixelTheme.PANEL);
         g.fillRect(x + 2, y + 2, width - 4, height - 4);
         g.setFont(UniversityPixelTheme.font(10, Font.BOLD));
         FontMetrics tagMetrics = g.getFontMetrics();
         int tagWidth = tagMetrics.stringWidth(tag) + 10;
         g.setColor(fill);
         g.fillRect(x + 6, y + 6, tagWidth, 14);
-        g.setColor(UniversityPixelTheme.BLACK);
+        g.setColor(UniversityPixelTheme.readableOn(fill));
         g.drawString(tag, x + 11, y + 17);
         boolean compact = width < 200;
         g.setFont(UniversityPixelTheme.font(compact ? 11 : 13, Font.BOLD));
@@ -1246,7 +1247,7 @@ public final class PixelArena extends JComponent {
         g.fillRect((s.w - bandW) / 2, y + 9, bandW, 3);
         if (close > 0) return;
         if (age < 700) {
-            drawPop(g, "VS  " + monsterName, s.w / 2, y - bandH + 30, 13, 1f, UniversityPixelTheme.TEXT, Math.min(255, (int) (age * 2)));
+            drawPop(g, "VS  " + monsterName, s.w / 2, y - bandH + 30, 13, 1f, UniversityPixelTheme.TEXT_ON_DARK, Math.min(255, (int) (age * 2)));
             drawPop(g, "READY?", s.w / 2, y, Math.min(40, s.w / 6), age < 140 ? 0.6f + age / 350f : 1f, WHITE, 255);
         } else {
             long fight = age - 700;

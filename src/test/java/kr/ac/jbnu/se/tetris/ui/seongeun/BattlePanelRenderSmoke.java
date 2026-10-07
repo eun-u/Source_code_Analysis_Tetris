@@ -29,13 +29,15 @@ public final class BattlePanelRenderSmoke {
     private BattlePanelRenderSmoke() { }
     public static void main(String[] args) throws Exception {
         if (args.length != 1 && args.length != 3 && args.length != 4)
-            throw new IllegalArgumentException("Output PNG path [width height [online|impact]] required");
+            throw new IllegalArgumentException("Output PNG path [width height [online|impact|sample]] required");
         Path output = Paths.get(args[0]);
         final int width = args.length >= 3 ? Integer.parseInt(args[1]) : 1160;
         final int height = args.length >= 3 ? Integer.parseInt(args[2]) : 780;
         final boolean online = args.length == 4 && "online".equalsIgnoreCase(args[3]);
         final boolean impact = args.length == 4 && "impact".equalsIgnoreCase(args[3]);
-        if (args.length == 4 && !online && !impact) throw new IllegalArgumentException("Unknown mode: " + args[3]);
+        final boolean sample = args.length == 4 && "sample".equalsIgnoreCase(args[3]);
+        if (args.length == 4 && !online && !impact && !sample)
+            throw new IllegalArgumentException("Unknown mode: " + args[3]);
         SwingUtilities.invokeAndWait(() -> {
             try {
                 BattleManager manager = online ? BattleManager.pvp(Arrays.asList(
@@ -52,7 +54,7 @@ public final class BattlePanelRenderSmoke {
                     kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt.sprite("university:0");
                 }
                 BattleState initial = manager.getState();
-                panel.setState(online ? withoutBoardOrigins(initial) : initial, "local");
+                panel.setState(online ? withoutBoardOrigins(initial) : sample ? sampleInventory(initial) : initial, "local");
                 JScrollPane viewport = new JScrollPane(panel);
                 viewport.setBorder(null);
                 UniversityPixelTheme.apply(viewport);
@@ -115,6 +117,37 @@ public final class BattlePanelRenderSmoke {
             return;
         }
         throw new AssertionError("Online arena is missing");
+    }
+    /** 실제 슬롯 글자와 광석 칸이 최소 창에서 잘리지 않는지 보는 표시 전용 예제. */
+    private static BattleState sampleInventory(BattleState state) {
+        Map<String, ParticipantState> participants = new LinkedHashMap<>(state.getParticipants());
+        ParticipantState local = participants.get("local");
+        GameState game = local.getGameState();
+        PieceType[] cells = new PieceType[220];
+        Arrays.fill(cells, PieceType.EMPTY);
+        String[] rows = { "Z.........", "ZZ......S.", "ZZ.J....SS", "JJJOO...SS", "JJJOO.OOOO" };
+        for (int row = 0; row < rows.length; row++) {
+            int y = rows.length - 1 - row;
+            for (int x = 0; x < 10; x++) {
+                char cell = rows[row].charAt(x);
+                if (cell != '.') cells[y * 10 + x] = PieceType.valueOf(String.valueOf(cell));
+            }
+        }
+        String[] itemIds = new String[220];
+        itemIds[1 * 10 + 4] = "heal";
+        GameState example = CoreSnapshots.game(game.getActorId(), game.getVersion(), game.getTick(),
+                game.getStatus(), CoreSnapshots.board(10, 22, cells, itemIds), null, 0, 0,
+                game.getLinesCleared(), true, game.getHoldPiece(), game.canHold(),
+                game.getNextPieces(), -1, game.getCombo(), game.getPendingGarbageLines(), game.getHoldItemId());
+        participants.put("local", BattleSnapshots.participant(local.getId(), local.getName(),
+                local.getHp(), local.getMaxHp(), example, false, local.getCharacterId(),
+                local.getItemSlots(), Arrays.asList("line_cleaner", "damage_boost", "heal"),
+                Arrays.asList(2, 1, 2), local.getFever(), local.getFeverRemainingMillis(),
+                local.getTimeWarpRemainingMillis(), local.getPendingGarbageLines(),
+                local.getGarbageWaitRemainingMillis(), local.getGravityMillis(),
+                local.getMaxCombo(), local.getTotalDamage()));
+        return BattleSnapshots.battle(state.getStatus(), state.getVersion(), participants,
+                state.getWinnerId(), state.getReason(), state.getElapsedMillis());
     }
     /** 현 운영 서버와 같은 boardOrigins 없는 스냅샷을 재현한다. */
     private static BattleState withoutBoardOrigins(BattleState state) {

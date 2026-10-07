@@ -20,6 +20,7 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
     private final GameButton backButton = new GameButton("로비로");
     private final GameButton createRoomButton = new GameButton("방 만들기");
     private final GameButton joinByIdButton = new GameButton("방 번호로 입장");
+    private final GameButton retryButton = new GameButton("다시 연결");
     private final JPanel roomContainer = new JPanel();
     private final JScrollPane roomScroll;
     private final JLabel connectionLabel = new JLabel("서버 연결 중...");
@@ -42,16 +43,15 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
         connectionDot.setForeground(UniversityPixelTheme.GOLD);
         connectionLabel.setForeground(UniversityPixelTheme.TEXT);
         connectionLabel.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-        status.add(connectionDot); status.add(connectionLabel);
+        retryButton.setPreferredSize(new Dimension(112, 34));
+        status.add(connectionDot); status.add(connectionLabel); status.add(retryButton);
         center.add(status, BorderLayout.NORTH);
 
         JPanel choices = new JPanel(new GridLayout(1, 2, 16, 0)); choices.setOpaque(false);
-        choices.add(choice("HOST", "새 방 만들기", "방을 만들면 방 번호가 생깁니다.\n그 번호를 상대에게 알려 주세요.",
-                createRoomButton, UniversityPixelTheme.GOLD));
-        choices.add(choice("JOIN", "번호로 입장", "상대에게 받은 방 번호를 입력해\n바로 대기실로 들어갑니다.",
-                joinByIdButton, UniversityPixelTheme.MINT));
+        choices.add(choice("HOST", "새 방 만들기", createRoomButton, UniversityPixelTheme.GOLD));
+        choices.add(choice("JOIN", "번호로 입장", joinByIdButton, UniversityPixelTheme.MINT));
         JPanel choiceArea = new JPanel(new GridBagLayout()); choiceArea.setOpaque(false);
-        choices.setPreferredSize(new Dimension(640, 260));
+        choices.setPreferredSize(new Dimension(640, 220));
         choiceArea.add(choices);
         center.add(choiceArea, BorderLayout.CENTER);
 
@@ -66,15 +66,10 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
         center.add(roomScroll, BorderLayout.SOUTH);
         add(center, BorderLayout.CENTER);
 
-        JLabel hint = new JLabel("두 사람이 같은 서버에 있어야 합니다 · LAN 대전은 설정 화면에서 서버를 켜거나 연결하세요",
-                SwingConstants.CENTER);
-        hint.setForeground(UniversityPixelTheme.TEXT_SUB);
-        hint.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
-        add(hint, BorderLayout.SOUTH);
         setConnected(false);
     }
 
-    private static JPanel choice(String eyebrow, String title, String body, GameButton action, Color accent) {
+    private static JPanel choice(String eyebrow, String title, GameButton action, Color accent) {
         JPanel card = new JPanel(); card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBackground(UniversityPixelTheme.PANEL);
         card.setBorder(BorderFactory.createCompoundBorder(
@@ -83,16 +78,13 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
         tag.setForeground(accent); tag.setFont(UniversityPixelTheme.font(13, Font.BOLD));
         JLabel heading = new JLabel(title, SwingConstants.CENTER);
         heading.setForeground(UniversityPixelTheme.TEXT); heading.setFont(UniversityPixelTheme.font(22, Font.BOLD));
-        JLabel text = new JLabel("<html><center>" + body.replace("\n", "<br>") + "</center></html>", SwingConstants.CENTER);
-        text.setForeground(UniversityPixelTheme.TEXT_SUB); text.setFont(UniversityPixelTheme.font(13, Font.PLAIN));
         action.setAccent(accent);
         action.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         action.setMaximumSize(new Dimension(200, 44));
         action.setPreferredSize(new Dimension(200, 44));
-        for (JComponent item : new JComponent[] { tag, heading, text, action })
+        for (JComponent item : new JComponent[] { tag, heading, action })
             item.setAlignmentX(Component.CENTER_ALIGNMENT);
         card.add(tag); card.add(Box.createVerticalStrut(6)); card.add(heading);
-        card.add(Box.createVerticalStrut(10)); card.add(text);
         card.add(Box.createVerticalGlue()); card.add(action);
         return card;
     }
@@ -105,10 +97,13 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
         createRoomButton.addActionListener(listener);
     }
     public void setJoinByIdAction(ActionListener listener) { joinByIdButton.addActionListener(listener); }
+    public void setRetryAction(ActionListener listener) { retryButton.addActionListener(listener); }
+    public void setRetryLabel(String label) { retryButton.setText(label); }
     public void setConnected(boolean connected) {
         connectionDot.setForeground(connected ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
-        connectionLabel.setText(connected ? "서버 연결됨 · 방을 만들거나 번호로 입장하세요."
-                : "서버에 연결하는 중... 잠시 기다려 주세요.");
+        connectionLabel.setText(connected ? "서버 연결됨" : "서버 연결 중...");
+        retryButton.setVisible(false);
+        retryButton.setText("다시 연결");
         createRoomButton.setEnabled(connected);
         joinByIdButton.setEnabled(connected);
     }
@@ -117,8 +112,8 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
     public void setConnectionFailed(String reason) {
         setConnected(false);
         connectionDot.setForeground(UniversityPixelTheme.CORAL);
-        connectionLabel.setText("서버에 연결하지 못했습니다" + (reason == null ? "" : " (" + reason + ")")
-                + " · 로비로 돌아가 다시 시도하세요.");
+        connectionLabel.setText("서버 연결 실패" + (reason == null ? "" : " · " + reason));
+        retryButton.setVisible(true);
     }
 
     public void setRooms(List<RoomData> rooms, Consumer<RoomData> joinAction) {

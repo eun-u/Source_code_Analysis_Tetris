@@ -61,7 +61,8 @@ public final class ConcreteBlockSkin {
         graphics.setColor(ore ? new Color(255, 222, 116) : accent);
         graphics.drawLine(x + 1, y + 1, x + size - 2, y + 1);
         graphics.drawLine(x + 1, y + 1, x + 1, y + size - 2);
-        if (ore) paintOreMark(graphics, x, y, size, false);
+        // 광석 이미지 자체에 금맥이 있다. 작은 HOLD 칸이나 이미지 누락 때만 축약 표식을 더한다.
+        if (ore && (image == null || size < 15)) paintOreMark(graphics, x, y, size, false);
         graphics.setColor(new Color(18, 25, 32, 185));
         graphics.drawLine(x + 1, y + size - 2, x + size - 2, y + size - 2);
         graphics.drawLine(x + size - 2, y + 1, x + size - 2, y + size - 2);
@@ -70,22 +71,22 @@ public final class ConcreteBlockSkin {
     private static void paintOreMark(Graphics2D graphics, int x, int y, int size, boolean ghost) {
         if (size < 8) return;
         int cx = x + size / 2, cy = y + size / 2;
-        int radius = Math.max(2, size / 5);
-        graphics.setColor(ghost ? new Color(255, 209, 102, 170) : new Color(62, 39, 19));
-        graphics.fillPolygon(new int[] { cx, cx + radius + 1, cx, cx - radius - 1 },
-                new int[] { cy - radius - 1, cy, cy + radius + 1, cy }, 4);
-        graphics.setColor(ghost ? new Color(255, 246, 189, 220) : new Color(255, 225, 103));
-        graphics.fillPolygon(new int[] { cx, cx + radius, cx, cx - radius },
-                new int[] { cy - radius, cy, cy + radius, cy }, 4);
+        int pixel = Math.max(1, size / 8);
+        graphics.setColor(ghost ? new Color(255, 203, 75, 140) : new Color(81, 51, 25));
+        graphics.fillRect(cx - 2 * pixel, cy - pixel, 4 * pixel + 1, 3 * pixel + 1);
+        graphics.setColor(ghost ? new Color(255, 224, 114, 210) : new Color(236, 156, 36));
+        graphics.fillRect(cx - 2 * pixel, cy - pixel, 2 * pixel, 2 * pixel);
+        graphics.fillRect(cx, cy, 2 * pixel, 2 * pixel);
+        graphics.setColor(ghost ? new Color(255, 247, 184, 230) : new Color(255, 231, 100));
+        graphics.fillRect(cx - pixel, cy - pixel, 2 * pixel, pixel);
+        graphics.fillRect(cx, cy, pixel, pixel);
         if (ghost) return;
-        graphics.setColor(new Color(255, 253, 221));
-        graphics.fillRect(cx - 1, cy - 1, Math.max(2, size / 8), Math.max(2, size / 8));
         graphics.setColor(new Color(255, 228, 133));
         graphics.drawRect(x + 2, y + 2, size - 5, size - 5);
         if (size >= 16) {
             graphics.setColor(new Color(255, 249, 199));
-            graphics.fillRect(x + 1, y + 1, 3, 3);
-            graphics.fillRect(x + size - 4, y + size - 4, 2, 2);
+            graphics.fillRect(x + 2, y + 2, 2, 2);
+            graphics.fillRect(x + size - 5, y + size - 5, 2, 2);
         }
     }
 

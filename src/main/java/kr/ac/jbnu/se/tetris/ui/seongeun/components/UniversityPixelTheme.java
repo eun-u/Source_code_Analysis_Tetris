@@ -24,17 +24,19 @@ import javax.swing.plaf.FontUIResource;
 
 /** 한국 캠퍼스의 콘크리트·청록 그림자·따뜻한 광석 빛을 공유하는 UI 팔레트. */
 public final class UniversityPixelTheme {
-    public static final Color BG = new Color(0x101B21);
-    public static final Color PANEL = new Color(0x1C2B32);
-    public static final Color PANEL_LIGHT = new Color(0x2B4148);
-    public static final Color TEXT = new Color(0xF4F0E4);
-    public static final Color TEXT_SUB = new Color(0xC7D0CB);
-    public static final Color TEXT_MUTED = new Color(0x93A7A5);
-    public static final Color GOLD = new Color(0xEBC674);
-    public static final Color MINT = new Color(0x76C9A9);
-    public static final Color CORAL = new Color(0xE68E7D);
-    public static final Color LINE = new Color(0x58737A);
-    public static final Color BLACK = new Color(0x091116);
+    public static final Color BG = new Color(0xCBD0CB);
+    public static final Color PANEL = new Color(0xE3E5DE);
+    public static final Color PANEL_LIGHT = new Color(0xF1EFE6);
+    public static final Color TEXT = new Color(0x22333B);
+    public static final Color TEXT_SUB = new Color(0x45565D);
+    public static final Color TEXT_MUTED = new Color(0x637277);
+    public static final Color GOLD = new Color(0x96651F);
+    public static final Color MINT = new Color(0x28796F);
+    public static final Color CORAL = new Color(0xB45243);
+    public static final Color LINE = new Color(0x99A6A1);
+    public static final Color BLACK = new Color(0x17242A);
+    /** 어두운 보드·상태 배지에서만 쓰는 역상 글자색. */
+    public static final Color TEXT_ON_DARK = new Color(0xF4F0E6);
     /** 화면 바깥 여백과 머리글 아래 간격. 모든 메뉴 화면이 같은 값을 쓴다. */
     public static final int GUTTER = 22, HEADER_GAP = 16;
     private static final String FONT_FAMILY = chooseFont();
@@ -94,7 +96,7 @@ public final class UniversityPixelTheme {
         UIManager.put("TextField.caretForeground", text);
         UIManager.put("TextField.selectionBackground", new ColorUIResource(LINE));
         UIManager.put("TextField.font", body);
-        UIManager.put("ToolTip.background", new ColorUIResource(BLACK));
+        UIManager.put("ToolTip.background", light);
         UIManager.put("ToolTip.foreground", text);
         UIManager.put("ToolTip.font", new FontUIResource(font(12, Font.PLAIN)));
         UIManager.put("ToolTip.border", BorderFactory.createLineBorder(LINE, 2));
@@ -134,7 +136,7 @@ public final class UniversityPixelTheme {
         chip.setBackground(accent);
         chip.setForeground(readableOn(accent));
         chip.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BLACK, 2), new EmptyBorder(1, 6, 1, 6)));
+                BorderFactory.createLineBorder(LINE, 1), new EmptyBorder(2, 6, 2, 6)));
     }
 
     /** 입력칸 공통 모양. 포커스가 있는 칸은 금색 테두리로 바뀐다. */
@@ -159,9 +161,21 @@ public final class UniversityPixelTheme {
     }
 
     public static Color readableOn(Color background) {
-        double luminance = (0.299 * background.getRed() + 0.587 * background.getGreen()
-                + 0.114 * background.getBlue()) / 255d;
-        return luminance > 0.55 ? BLACK : TEXT;
+        double base = luminance(background);
+        double dark = luminance(BLACK), light = luminance(TEXT_ON_DARK);
+        double darkContrast = (Math.max(base, dark) + 0.05) / (Math.min(base, dark) + 0.05);
+        double lightContrast = (Math.max(base, light) + 0.05) / (Math.min(base, light) + 0.05);
+        return darkContrast >= lightContrast ? BLACK : TEXT_ON_DARK;
+    }
+
+    private static double luminance(Color color) {
+        return 0.2126 * linear(color.getRed()) + 0.7152 * linear(color.getGreen())
+                + 0.0722 * linear(color.getBlue());
+    }
+
+    private static double linear(int channel) {
+        double value = channel / 255d;
+        return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
 
     /**
@@ -196,7 +210,7 @@ public final class UniversityPixelTheme {
         return BG.equals(color) || PANEL.equals(color) || PANEL_LIGHT.equals(color)
                 || TEXT.equals(color) || TEXT_SUB.equals(color) || TEXT_MUTED.equals(color)
                 || GOLD.equals(color) || MINT.equals(color) || CORAL.equals(color)
-                || LINE.equals(color) || BLACK.equals(color);
+                || LINE.equals(color) || BLACK.equals(color) || TEXT_ON_DARK.equals(color);
     }
 
     private static String chooseFont() {

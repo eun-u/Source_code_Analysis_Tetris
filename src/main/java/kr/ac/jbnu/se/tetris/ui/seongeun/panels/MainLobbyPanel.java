@@ -24,19 +24,17 @@ public class MainLobbyPanel extends JPanel {
     private static final Color GOLD = UniversityPixelTheme.GOLD, MINT = UniversityPixelTheme.MINT;
 
     private final GameMenu menu = new GameMenu();
-    private final GameMenu.Item storyButton = menu.add("스토리 시작", "9개의 전투로 첫 출근까지", GOLD);
-    private final GameMenu.Item onlineButton = menu.add("온라인 대전", "계정으로 1:1 PvP", MINT);
-    private final GameMenu.Item localButton = menu.add("로컬 모드", "무한 · 40줄 스프린트", MINT);
-    private final GameMenu.Item tutorialButton = menu.add("튜토리얼", "다섯 동작을 직접 연습", MINT);
-    private final GameMenu.Item characterButton = menu.add("캐릭터 / 상점", "코인으로 전투 스타일 선택", GOLD);
-    private final GameMenu.Item serverButton = menu.add("PvP 랭킹", "공식 온라인 TOP 100", MINT);
+    private final GameMenu.Item storyButton = menu.add("스토리 시작", null, GOLD);
+    private final GameMenu.Item onlineButton = menu.add("온라인 대전", null, MINT);
+    private final GameMenu.Item localButton = menu.add("로컬 모드", null, MINT);
+    private final GameMenu.Item tutorialButton = menu.add("튜토리얼", null, MINT);
+    private final GameMenu.Item characterButton = menu.add("캐릭터 / 상점", null, GOLD);
+    private final GameMenu.Item serverButton = menu.add("PvP 랭킹", null, MINT);
     private final GameButton settingsButton = new GameButton("설정");
     private final JLabel account = UniversityPixelTheme.chip("로컬 플레이", UniversityPixelTheme.PANEL_LIGHT);
     private final JLabel coins = UniversityPixelTheme.chip("0 COINS", GOLD);
     private final Logo logo = new Logo();
     private final NextBattleCard nextCard = new NextBattleCard();
-    private final JLabel keys = UniversityPixelTheme.label("↑ ↓  메뉴 선택     ENTER  결정     게임 중  ← → 이동 · ↑ ↓ 회전 · SPACE 낙하 · C HOLD",
-            11, Font.PLAIN, UniversityPixelTheme.TEXT_SUB);
     private final Timer animation = new Timer(40, event -> repaint());
 
     public MainLobbyPanel() {
@@ -50,7 +48,7 @@ public class MainLobbyPanel extends JPanel {
         settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 · LAN 설정");
         account.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         coins.setFont(UniversityPixelTheme.font(12, Font.BOLD));
-        add(logo); add(menu); add(nextCard); add(account); add(coins); add(settingsButton); add(keys);
+        add(logo); add(menu); add(nextCard); add(account); add(coins); add(settingsButton);
         nextCard.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent event) { storyButton.doClick(); }
         });
@@ -81,27 +79,26 @@ public class MainLobbyPanel extends JPanel {
         int cardWidth = Math.max(230, Math.min(330, w * 30 / 100));
         int cardHeight = Math.max(250, Math.min(380, h * 46 / 100));
         nextCard.setBounds(w - pad - cardWidth, h - 40 - cardHeight, cardWidth, cardHeight);
-        keys.setBounds(pad, h - 28, w - pad * 2, 18);
     }
 
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             int w = getWidth(), h = getHeight();
-            g.setPaint(new GradientPaint(0, 0, new Color(0x11212A), 0, h, new Color(0x10191D)));
+            g.setPaint(new GradientPaint(0, 0, new Color(0xD9DBD2), 0, h, UniversityPixelTheme.BG));
             g.fillRect(0, 0, w, h);
             if (CAMPUS != null) {
                 int artWidth = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
                 g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
                 g.drawImage(CAMPUS, (w - artWidth) / 2, 0, artWidth, h, null);
             }
-            g.setColor(new Color(8, 17, 21, 65));
+            // 배경은 공간감을 주되 메뉴와 제목 뒤에서는 연한 콘크리트색으로 물러난다.
+            g.setPaint(new GradientPaint(0, 0, new Color(228, 229, 220, 205),
+                    Math.round(w * 0.67f), 0, new Color(228, 229, 220, 18)));
             g.fillRect(0, 0, w, h);
-            // 메뉴와 다음 전투 카드 사이에 풍경을 남기면서 글자를 읽기 쉽게 한다.
-            g.setPaint(new GradientPaint(0, 0, new Color(8, 17, 21, 222), Math.round(w * 0.57f), 0, new Color(8, 17, 21, 10)));
-            g.fillRect(0, 0, w, h);
-            g.setPaint(new GradientPaint(0, h - 120, new Color(8, 17, 21, 0), 0, h, new Color(8, 17, 21, 220)));
-            g.fillRect(0, h - 120, w, 120);
+            g.setPaint(new GradientPaint(0, h - 110, new Color(220, 222, 212, 0),
+                    0, h, new Color(220, 222, 212, 184)));
+            g.fillRect(0, h - 110, w, 110);
         } finally { g.dispose(); }
     }
 
@@ -119,7 +116,8 @@ public class MainLobbyPanel extends JPanel {
                 float drop = Math.min(1f, age / 380f);
                 float ease = 1 - (1 - drop) * (1 - drop);
                 int offset = Math.round((1 - ease) * -40);
-                Color[] blocks = { new Color(104, 221, 235), GOLD, new Color(201, 139, 255), MINT, UniversityPixelTheme.CORAL };
+                Color[] blocks = { new Color(105, 164, 170), new Color(193, 156, 90),
+                        new Color(157, 140, 174), MINT, UniversityPixelTheme.CORAL };
                 int bx = 0, by = 6 + offset;
                 for (int i = 0; i < blocks.length; i++) {
                     g.setColor(UniversityPixelTheme.BLACK);
@@ -136,24 +134,12 @@ public class MainLobbyPanel extends JPanel {
                 FontMetrics m = g.getFontMetrics();
                 int baseline = 22 + m.getAscent() + offset;
                 String text = "CAMPUS QUEST";
-                int depth = Math.max(3, big / 12);
-                for (int d = depth; d > 0; d--) {
-                    g.setColor(d == depth ? UniversityPixelTheme.BLACK : new Color(0x7A3B12));
-                    g.drawString(text, d, baseline + d);
-                }
-                // 금색 글자 위를 지나가는 빛 줄기.
+                g.setColor(new Color(111, 124, 123, 85));
+                g.drawString(text, 2, baseline + 2);
+                g.setColor(UniversityPixelTheme.TEXT);
+                g.drawString(text, 0, baseline);
                 g.setColor(GOLD);
-                g.drawString(text, 0, baseline);
-                int width = m.stringWidth(text);
-                float shine = ((now % 3200) / 3200f) * 2.2f - 0.6f;
-                Shape clip = g.getClip();
-                g.clipRect(Math.round(width * shine) - 30, 0, 26, h);
-                g.setColor(new Color(255, 255, 240));
-                g.drawString(text, 0, baseline);
-                g.setClip(clip);
-                g.setFont(UniversityPixelTheme.font(13, Font.PLAIN));
-                g.setColor(UniversityPixelTheme.TEXT_SUB);
-                g.drawString("블록을 지워 싸우는 캠퍼스 RPG  ·  대학교 → 졸업 → 취업", 2, baseline + 24);
+                g.fillRect(1, baseline + 5, Math.min(m.stringWidth(text), 156), 3);
             } finally { g.dispose(); }
         }
     }
@@ -180,13 +166,14 @@ public class MainLobbyPanel extends JPanel {
                 int w = getWidth(), h = getHeight();
                 long now = System.currentTimeMillis();
                 Color accent = boss ? UniversityPixelTheme.CORAL : GOLD;
-                g.setColor(new Color(0, 0, 0, 140));
+                g.setColor(new Color(61, 72, 72, 63));
                 g.fillRect(6, 6, w - 6, h - 6);
-                g.setColor(new Color(22, 38, 44, 232));
+                g.setColor(new Color(241, 239, 230, 247));
                 g.fillRect(0, 0, w - 6, h - 6);
-                g.setColor(accent);
+                g.setColor(UniversityPixelTheme.LINE);
                 g.drawRect(0, 0, w - 7, h - 7);
-                g.drawRect(1, 1, w - 9, h - 9);
+                g.setColor(accent);
+                g.fillRect(1, 1, w - 9, 3);
                 g.setFont(UniversityPixelTheme.font(11, Font.BOLD));
                 g.fillRect(12, 12, g.getFontMetrics().stringWidth(eyebrow) + 12, 17);
                 g.setColor(UniversityPixelTheme.BLACK);
@@ -196,7 +183,7 @@ public class MainLobbyPanel extends JPanel {
                 int ax = (w - 6 - art) / 2, ay = 34 + bob;
                 g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 40));
                 g.fillOval(ax + art / 8, ay + art / 8, art * 3 / 4, art * 3 / 4);
-                g.setColor(new Color(0, 0, 0, 120));
+                g.setColor(new Color(62, 70, 67, 52));
                 g.fillOval(ax + art / 4, 34 + art - 6, art / 2, 10);
                 String key = artKey + ":" + art;
                 if (!key.equals(cachedKey)) { cachedIcon = GameArt.icon(artKey, art, art); cachedKey = key; }
@@ -210,7 +197,7 @@ public class MainLobbyPanel extends JPanel {
                 g.setColor(UniversityPixelTheme.TEXT);
                 g.drawString(title, 14, ty + 25);
                 int barY = h - 24, barW = w - 34;
-                g.setColor(UniversityPixelTheme.BLACK);
+                g.setColor(UniversityPixelTheme.LINE);
                 g.fillRect(14, barY, barW, 10);
                 g.setColor(GOLD);
                 g.fillRect(16, barY + 2, Math.round((barW - 4) * (cleared / (float) Math.max(1, total))), 6);
@@ -218,10 +205,6 @@ public class MainLobbyPanel extends JPanel {
                 g.setColor(UniversityPixelTheme.TEXT_SUB);
                 String progress = cleared + " / " + total + " CLEAR";
                 g.drawString(progress, w - 20 - g.getFontMetrics().stringWidth(progress), barY - 6);
-                if ((now / 500) % 2 == 0) {
-                    g.setColor(UniversityPixelTheme.TEXT);
-                    g.drawString("▶ 클릭해서 지도로", 14, barY - 6);
-                }
             } finally { g.dispose(); }
         }
     }

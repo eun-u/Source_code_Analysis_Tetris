@@ -18,11 +18,10 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.*;
 public final class LeaderboardPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final PixelButton back = new PixelButton("로비로");
     private final PixelButton reload = new PixelButton("새로고침");
-    private final JLabel status = new JLabel("온라인 로그인 후 랭킹을 조회하세요.");
+    private final JLabel status = new JLabel("");
     private final CardLayout views = new CardLayout();
     private final JPanel body = new JPanel(views);
     private final JLabel emptyTitle = new JLabel("랭킹을 불러오지 않았습니다", SwingConstants.CENTER);
-    private final JLabel emptyDetail = new JLabel("온라인 계정으로 로그인하면 공식 PvP 순위를 볼 수 있습니다.", SwingConstants.CENTER);
     private final DefaultTableModel model = new DefaultTableModel(
             new Object[] {"순위", "이름", "Elo", "승", "패", "경기"}, 0) {
         @Override public boolean isCellEditable(int row, int column) { return false; }
@@ -87,10 +86,8 @@ public final class LeaderboardPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.com
         trophy.setForeground(UniversityPixelTheme.GOLD);
         emptyTitle.setFont(UniversityPixelTheme.font(18, Font.BOLD));
         emptyTitle.setForeground(UniversityPixelTheme.TEXT);
-        emptyDetail.setFont(UniversityPixelTheme.font(13, Font.PLAIN));
-        emptyDetail.setForeground(UniversityPixelTheme.TEXT_SUB);
         empty.add(Box.createVerticalGlue());
-        for (JLabel label : new JLabel[] { trophy, emptyTitle, emptyDetail }) {
+        for (JLabel label : new JLabel[] { trophy, emptyTitle }) {
             label.setAlignmentX(Component.CENTER_ALIGNMENT);
             empty.add(label); empty.add(Box.createVerticalStrut(8));
         }
@@ -103,11 +100,10 @@ public final class LeaderboardPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.com
         for (LeaderboardEntry entry : entries) model.addRow(new Object[] {entry.getRank(), entry.getDisplayName(),
                 entry.getRating(), entry.getWins(), entry.getLosses(), entry.getGames()});
         if (entries.isEmpty()) {
-            emptyTitle.setText("아직 공식 경기 전적이 없습니다");
-            emptyDetail.setText("온라인 대전에서 첫 승리를 거두면 이곳에 이름이 올라갑니다.");
+            emptyTitle.setText("전적 없음");
             views.show(body, "empty");
         } else views.show(body, "table");
-        setStatus(entries.isEmpty() ? "서버에 저장된 공식 전적이 없습니다." : "서버가 확정한 온라인 PvP 결과 · " + entries.size() + "명");
+        setStatus(entries.isEmpty() ? "" : entries.size() + "명");
     }
     public void setStatus(String text) { status.setText(text); }
     /** 조회 실패. 이전 목록이 없으면 빈 화면 안내도 실패 내용으로 바꾼다. */
@@ -115,7 +111,6 @@ public final class LeaderboardPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.com
         setStatus(text);
         if (model.getRowCount() == 0) {
             emptyTitle.setText("랭킹을 불러오지 못했습니다");
-            emptyDetail.setText("로그인 상태와 서버 연결을 확인한 뒤 새로고침을 눌러 주세요.");
             views.show(body, "empty");
         }
     }
@@ -125,7 +120,6 @@ public final class LeaderboardPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.com
             status.setText("랭킹을 불러오는 중...");
             if (model.getRowCount() == 0) {
                 emptyTitle.setText("랭킹을 불러오는 중...");
-                emptyDetail.setText("서버 응답을 기다리고 있습니다.");
             }
         }
     }

@@ -6,6 +6,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 첫 화면. 왼쪽은 계정 없이 바로 시작, 오른쪽은 온라인 PvP 계정 로그인. */
@@ -15,12 +16,22 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
     private final GameButton loginButton = new GameButton("로컬 시작");
     private final GameButton signUpButton = new GameButton("회원가입");
     private final GameButton onlineLoginButton = new GameButton("온라인 로그인");
+    private final PixelButton backButton = new PixelButton("취소");
     private final JLabel status = new JLabel();
+    private JPanel localCard;
+    private JPanel columns;
 
     public LoginPanel() {
         setLayout(new BorderLayout(0, 12));
         setBackground(UniversityPixelTheme.BG);
         setBorder(new EmptyBorder(20, 20, 18, 20));
+
+        JPanel navigation = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        navigation.setOpaque(false);
+        backButton.secondary();
+        backButton.setPreferredSize(new Dimension(100, 36));
+        navigation.add(backButton);
+        add(navigation, BorderLayout.NORTH);
 
         JPanel title = new JPanel(); title.setOpaque(false);
         title.setLayout(new BoxLayout(title, BoxLayout.Y_AXIS));
@@ -31,18 +42,15 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
         // 제목과 두 카드를 한 덩어리로 화면 가운데에 둔다.
         JPanel content = new JPanel(new GridBagLayout()); content.setOpaque(false);
         JPanel block = new JPanel(new BorderLayout(0, 24)); block.setOpaque(false);
-        JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
+        columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
         columns.setPreferredSize(new Dimension(700, 400));
-        columns.add(localCard()); columns.add(onlineCard());
+        localCard = localCard();
+        columns.add(localCard); columns.add(onlineCard());
         block.add(title, BorderLayout.NORTH);
         block.add(columns, BorderLayout.CENTER);
         content.add(block); add(content, BorderLayout.CENTER);
 
-        JLabel foot = new JLabel("대학교 → 졸업 → 취업  ·  테트리스로 싸우는 캠퍼스 RPG", SwingConstants.CENTER);
-        foot.setForeground(UniversityPixelTheme.TEXT_SUB);
-        foot.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
-        add(foot, BorderLayout.SOUTH);
-        setStatus("PvP와 랭킹은 온라인 계정이 필요합니다.");
+        setStatus("");
     }
 
     private JPanel localCard() {
@@ -51,7 +59,6 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
         card.add(Box.createVerticalStrut(4));
         card.add(label("스토리 · 로컬 모드", 21, UniversityPixelTheme.TEXT));
         card.add(Box.createVerticalStrut(6));
-        card.add(label("계정 없이 9개 전투와 연습 모드를 즐기세요.", 12, UniversityPixelTheme.TEXT_SUB));
         card.add(Box.createVerticalGlue());
         JPanel bosses = new JPanel(new GridLayout(1, 3, 8, 0)); bosses.setOpaque(false);
         String[] names = { "교수", "캡스톤", "기업" };
@@ -78,8 +85,6 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
         loginButton.setMaximumSize(new Dimension(240, 46));
         loginButton.setPreferredSize(new Dimension(240, 46));
         card.add(loginButton);
-        card.add(Box.createVerticalStrut(8));
-        card.add(label("진행은 이 PC에 자동 저장됩니다", 11, UniversityPixelTheme.TEXT_SUB));
         return card;
     }
 
@@ -134,6 +139,17 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
     }
 
     public void setLoginAction(ActionListener listener) { loginButton.addActionListener(listener); }
+    public void setBackAction(ActionListener listener) { backButton.addActionListener(listener); }
+    public void setBackLabel(String text) { backButton.setText(text); }
+    public void focusUsername() { idField.requestFocusInWindow(); }
+    /** 온라인 기능에서 왔을 때는 계정 작업만 보여 원래 선택한 행동에 집중시킨다. */
+    public void setOnlineOnly(boolean onlineOnly) {
+        if (onlineOnly && localCard.getParent() == columns) columns.remove(localCard);
+        else if (!onlineOnly && localCard.getParent() != columns) columns.add(localCard, 0);
+        columns.setPreferredSize(new Dimension(onlineOnly ? 380 : 700, onlineOnly ? 340 : 400));
+        columns.revalidate();
+        columns.repaint();
+    }
     public void setSignUpAction(ActionListener listener) { signUpButton.addActionListener(listener); }
     public String getUsername() { return idField.getText().trim(); }
     public char[] getPassword() { return passwordField.getPassword(); }
