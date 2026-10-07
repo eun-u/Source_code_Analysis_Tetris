@@ -252,9 +252,12 @@ public final class RenderGameServerTest {
             closer = new Thread(server::close, "test-close-during-room-action");
             closer.start();
             long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (!queue.isShutdown() && System.nanoTime() < until) Thread.sleep(10);
-            if (!queue.isShutdown()) throw new AssertionError("Close did not start room drain");
-            if (!closer.isAlive()) throw new AssertionError("Close skipped queued room action");
+            while (server.isAdmissionOpen() && System.nanoTime() < until) Thread.sleep(10);
+            if (server.isAdmissionOpen()) throw new AssertionError("Close did not start room drain");
+            Thread.sleep(100);
+            if (!closer.isAlive() || winner.isCancelled()) {
+                throw new AssertionError("Close cancelled queued room action");
+            }
             releaseRoom.countDown();
             winner.get(5, TimeUnit.SECONDS);
             closer.join(5000);

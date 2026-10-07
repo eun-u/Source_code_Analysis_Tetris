@@ -43,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -218,6 +219,7 @@ public final class RenderGameServer implements AutoCloseable {
         }
 
         @Override protected void channelRead0(ChannelHandlerContext ctx, Object message) throws Exception {
+            if (closed.get()) { ctx.close(); return; }
             if (message instanceof FullHttpRequest) {
                 handleHttp(ctx, (FullHttpRequest) message);
                 return;
@@ -454,6 +456,7 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void tickRooms() {
+        if (closed.get()) return;
         if (leaseOwned) {
             for (Room room : new ArrayList<Room>(rooms.values())) {
                 if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
@@ -1125,11 +1128,29 @@ public final class RenderGameServer implements AutoCloseable {
         Channel serverChannel = listener;
         if (serverChannel != null) serverChannel.close();
         for (Channel channel : sockets.keySet()) channel.close();
-        // Run already-queued player actions before deciding whether a match has a winner.
-        // Scheduled retries/ticks are not part of that drain and must not consume its budget.
-        roomsExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        // A barrier runs after already-queued player actions without cancelling them. Java 8
+        // also cancels queued execute/submit tasks when the delayed-task shutdown policy is false.
+        CountDownLatch roomBarrier = new CountDownLatch(1);
+        boolean reachedBarrier = false;
+        try {
+            roomsExecutor.execute(roomBarrier::countDown);
+            long left = Math.min(TimeUnit.SECONDS.toNanos(5), deadline - System.nanoTime());
+            reachedBarrier = left > 0 && roomBarrier.await(left, TimeUnit.NANOSECONDS);
+        } catch (RejectedExecutionException stopped) {
+            reachedBarrier = roomsExecutor.isTerminated();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
         roomsExecutor.shutdown();
-        boolean roomsDrained = awaitUntil(roomsExecutor, deadline, 5);
+        // Drop only future retries and disconnect timers. Immediate queued actions keep running.
+        for (Runnable queued : roomsExecutor.getQueue()) {
+            if (queued instanceof ScheduledFuture
+                    && ((ScheduledFuture<?>) queued).getDelay(TimeUnit.NANOSECONDS) > 0) {
+                ((ScheduledFuture<?>) queued).cancel(false);
+            }
+        }
+        boolean roomStopped = awaitUntil(roomsExecutor, deadline, 2);
+        boolean roomsDrained = reachedBarrier && roomStopped;
         authExecutor.shutdown();
         // Existing begin/finish/void RPCs must finish before shutdown settlements run. With two
         // persistence workers, a queued close void could otherwise race an in-flight begin.
