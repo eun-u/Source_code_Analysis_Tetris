@@ -29,7 +29,7 @@ import javax.swing.Timer;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 
 /**
- * 보드 옆 전투 무대. 왼쪽에 몬스터, 오른쪽 아래에 플레이어 초상을 두고
+ * 보드 옆 전투 무대. PvE에서는 몬스터, PvP에서는 양쪽 플레이어를 보여 주고
  * 공격 투사체·피격 섬광·화면 흔들림·데미지 숫자·지연 HP 바로 전투 상태를 보여 준다.
  * 피해와 승패는 계산하지 않고 전달받은 상태만 연출한다.
  */
@@ -57,7 +57,7 @@ public final class PixelArena extends JComponent {
     };
     private static final int EFFECT_LIMIT = 24;
     /** 투사체가 몬스터에 닿는 시각. 피해 숫자와 HP 감소도 이때 보인다. */
-    private static final int IMPACT_MS = 360;
+    public static final int IMPACT_MS = 360;
 
     private final ArrayDeque<Visual> visuals = new ArrayDeque<>();
     private final Timer animation;
@@ -70,6 +70,7 @@ public final class PixelArena extends JComponent {
     private boolean online;
     private MonsterTier pattern = MonsterTier.NORMAL;
     private long playerHitAt = -1, monsterHitAt = -1, playerAttackAt = -1, monsterAttackAt = -1;
+    private long playerPlacementAt = -1, monsterPlacementAt = -1;
     private long shakeAt = -1;
     private int shakePower;
     private boolean feverActive;
@@ -158,6 +159,7 @@ public final class PixelArena extends JComponent {
         playerTrailFrom = monsterTrailFrom = 100;
         playerTrailAt = monsterTrailAt = 0;
         playerHitAt = monsterHitAt = playerAttackAt = monsterAttackAt = shakeAt = -1;
+        playerPlacementAt = monsterPlacementAt = -1;
         finishedAt = -1;
         feverActive = false;
         introAt = effectsEnabled ? System.currentTimeMillis() : -1;
@@ -173,12 +175,21 @@ public final class PixelArena extends JComponent {
             animation.stop();
             visuals.clear();
             playerAttackAt = monsterAttackAt = playerHitAt = monsterHitAt = shakeAt = -1;
+            playerPlacementAt = monsterPlacementAt = -1;
         }
         repaint();
     }
 
     public void showEffect(Effect effect, int amount) {
         showEffect(effect, amount, false);
+    }
+
+    /** 피스가 놓일 때마다 발판과 자세가 잠깐 반응한다. 실제 공격 판정은 만들지 않는다. */
+    public void showPlacement(boolean opponent) {
+        if (!effectsEnabled || finishedAt >= 0) return;
+        if (opponent) monsterPlacementAt = System.currentTimeMillis();
+        else playerPlacementAt = System.currentTimeMillis();
+        repaint();
     }
 
     /** targetMonster는 효과를 받는 쪽이 몬스터(상대)인지 나타낸다. */
@@ -198,7 +209,9 @@ public final class PixelArena extends JComponent {
             // 투사체가 날아간 뒤에 숫자와 섬광이 보이도록 착탄 시각에 맞춘다.
             start = now + IMPACT_MS;
             if (targetMonster) monsterHitAt = start; else playerHitAt = start;
-            shake(targetMonster ? 5 + Math.min(8, amount / 3) : 8 + Math.min(10, amount / 2), start);
+            int power = online ? 6 + Math.min(9, amount / 3)
+                    : targetMonster ? 5 + Math.min(8, amount / 3) : 8 + Math.min(10, amount / 2);
+            shake(power, start);
         }
         add(new Visual(effect, Math.max(0, amount), targetMonster, start, serial++, null, 0, false));
     }
@@ -322,14 +335,16 @@ public final class PixelArena extends JComponent {
             bottom = h - 58;
             int span = Math.max(80, bottom - top);
             horizon = top + Math.round(span * 0.60f);
-            // 작은 창에서도 서로 겹치지 않도록 전투원마다 화면 절반을 확보한다.
-            monsterSize = Math.max(60, Math.min(Math.round((w - 20) * 0.56f), Math.round(span * 0.66f)));
-            monsterX = Math.round(w * 0.31f);
+            // PvP는 두 플레이어를 같은 크기와 거리로, PvE는 몬스터를 크게 보여 준다.
+            monsterSize = online
+                    ? Math.max(52, Math.min(Math.round(w * 0.37f), Math.round(span * 0.44f)))
+                    : Math.max(60, Math.min(Math.round((w - 20) * 0.56f), Math.round(span * 0.66f)));
+            monsterX = Math.round(w * (online ? 0.28f : 0.31f));
             monsterFoot = horizon + Math.round(monsterSize * 0.10f);
-            portraitW = Math.max(46, Math.min(Math.round(w * 0.30f), Math.round(span * 0.26f)));
-            portraitH = portraitW * 7 / 6;
-            portraitX = w - portraitW - 14;
-            portraitY = bottom - portraitH - 24;
+            portraitW = online ? monsterSize : Math.max(46, Math.min(Math.round(w * 0.30f), Math.round(span * 0.26f)));
+            portraitH = online ? portraitW : portraitW * 7 / 6;
+            portraitX = online ? Math.round(w * 0.72f) - portraitW / 2 : w - portraitW - 14;
+            portraitY = online ? monsterFoot - portraitH : bottom - portraitH - 24;
         }
 
         int monsterCenterY() { return monsterFoot - monsterSize / 2; }
@@ -382,12 +397,16 @@ public final class PixelArena extends JComponent {
             int y = s.horizon + Math.round((h - s.horizon) * t * t);
             g.drawLine(-20, y, w + 20, y);
         }
-        // 몬스터 쪽 스포트라이트.
-        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 26));
-        int beamTop = s.top - 10;
-        g.fillPolygon(new int[] { s.monsterX - 24, s.monsterX + 24, s.monsterX + s.monsterSize / 2 + 30,
-                s.monsterX - s.monsterSize / 2 - 30 },
-                new int[] { beamTop, beamTop, s.monsterFoot + 8, s.monsterFoot + 8 }, 4);
+        // PvE는 몬스터 조명을 키우고, PvP는 양쪽 선수에게 같은 크기의 조명을 준다.
+        paintSpotlight(g, s.monsterX, s.monsterFoot, s.monsterSize, s.top, accent);
+        if (online) {
+            paintSpotlight(g, s.playerCenterX(), s.monsterFoot, s.portraitW, s.top, MINT);
+            g.setColor(new Color(255, 247, 232, 85));
+            g.fillRect(w / 2 - 1, s.top + 18, 2, s.horizon - s.top - 26);
+        }
+        paintFighterMark(g, s.monsterX, s.monsterFoot, s.monsterSize, accent, now, monsterPlacementAt);
+        paintFighterMark(g, s.playerCenterX(), online ? s.monsterFoot : s.bottom - 12,
+                s.portraitW, MINT, now, playerPlacementAt);
         // 떠다니는 빛 먼지.
         if (effectsEnabled) {
             for (int i = 0; i < 14; i++) {
@@ -398,6 +417,35 @@ public final class PixelArena extends JComponent {
                 g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int) (120 * Math.sin(t * Math.PI))));
                 g.fillRect(x, y, 2, 2);
             }
+        }
+    }
+
+    private static void paintSpotlight(Graphics2D g, int centerX, int foot, int size, int top, Color color) {
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 23));
+        g.fillPolygon(new int[] { centerX - 18, centerX + 18, centerX + size / 2 + 20,
+                centerX - size / 2 - 20 },
+                new int[] { top - 10, top - 10, foot + 8, foot + 8 }, 4);
+    }
+
+    /** 입력이 느린 구간에도 두 전투원이 무대에 살아 있음을 보여 주는 낮은 대비의 발판. */
+    private void paintFighterMark(Graphics2D g, int x, int foot, int size, Color color,
+                                  long now, long placementAt) {
+        int half = Math.max(22, size * 2 / 5);
+        int glow = effectsEnabled && finishedAt < 0
+                ? Math.round(18 + 12 * (1f + (float) Math.sin(now / 680.0)) / 2f) : 18;
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), glow));
+        g.fillOval(x - half, foot - 8, half * 2, 19);
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 100));
+        g.drawLine(x - half, foot, x - half / 2, foot);
+        g.drawLine(x + half / 2, foot, x + half, foot);
+        long age = now - placementAt;
+        if (effectsEnabled && placementAt >= 0 && age >= 0 && age < 220) {
+            float progress = age / 220f;
+            int spread = half + Math.round(12 * progress);
+            g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(),
+                    Math.round(140 * (1f - progress))));
+            g.drawLine(x - spread, foot + 2, x - spread / 2, foot + 2);
+            g.drawLine(x + spread / 2, foot + 2, x + spread, foot + 2);
         }
     }
 
@@ -483,20 +531,20 @@ public final class PixelArena extends JComponent {
             }
         }
         Composite prior = g.getComposite();
-        if (fall > 0) {
-            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.15f, 1f - fall * 0.85f)));
-            y += Math.round(fall * size * 0.18f);
-        }
+        if (fall > 0)
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.30f, 1f - fall * 0.70f)));
         boolean mirrored = !online;
         BufferedImage scaled = scaled(art, size, size, mirrored);
         if (attackAge >= 130 && attackAge < IMPACT_MS)
             paintAfterimages(g, scaled, x, y, -1, (attackAge - 130) / (float) (IMPACT_MS - 130));
-        g.drawImage(scaled, x, y, null);
+        paintCombatPose(g, scaled, x, y, size, size, now, attackAge, hitAge, fall, 1,
+                finishedAt >= 0 && !won, CORAL);
         g.setComposite(prior);
         if (hit) {
             float flash = 1f - hitAge / 300f;
             g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.85f * flash));
-            g.drawImage(silhouette(scaled), x, y, null);
+            paintCombatPose(g, silhouette(scaled), x, y, size, size, now, attackAge, hitAge, fall, 1,
+                    false, WHITE);
             g.setComposite(prior);
         }
     }
@@ -505,15 +553,16 @@ public final class PixelArena extends JComponent {
         int x = s.portraitX, y = s.portraitY, pw = s.portraitW, ph = s.portraitH;
         long attackAge = now - playerAttackAt;
         float pose = effectsEnabled ? attackPose(attackAge) : 0f;
-        int advance = Math.min(Math.round(s.w * 0.21f), Math.round((s.portraitX - s.monsterX) * 0.63f));
+        int advance = online ? Math.min(Math.round(s.w * 0.17f), Math.round(pw * 0.30f))
+                : Math.min(Math.round(s.w * 0.21f), Math.round((s.portraitX - s.monsterX) * 0.63f));
         x -= Math.round(pose * advance);
         y -= attackLift(attackAge, ph);
         if (effectsEnabled && (attackAge < 0 || attackAge >= 720))
-            y += Math.round(Math.sin(now / 430.0) * 2);
+            y += Math.round(Math.sin(now / (online ? 380.0 : 430.0)) * (online ? 4 : 2));
         long hitAge = now - playerHitAt;
         boolean hit = playerHitAt >= 0 && hitAge >= 0 && hitAge < 300;
         if (hit) {
-            x += hitRecoil(hitAge, Math.max(12, pw / 5));
+            x += hitRecoil(hitAge, online ? Math.max(12, pw / 9) : Math.max(12, pw / 5));
             x += (int) Math.round(Math.sin(hitAge / 14.0) * 3 * (1f - hitAge / 300f));
             y += hitRecoil(hitAge, Math.max(5, ph / 9)) / 2;
         }
@@ -531,9 +580,9 @@ public final class PixelArena extends JComponent {
         g.setColor(UniversityPixelTheme.BLACK);
         g.fillRect(x - 1, y - 1, pw + 2, ph + 2);
         Composite prior = g.getComposite();
-        if (fall > 0) g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.25f, 1f - fall * 0.75f)));
-        if (sprite != null) g.drawImage(sprite, x, y, null);
-        else { g.setColor(MINT); g.fillRect(x, y, pw, ph); }
+        if (fall > 0) g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.30f, 1f - fall * 0.70f)));
+        paintCombatPose(g, sprite, x, y, pw, ph, now, attackAge, hitAge, fall, -1,
+                finishedAt >= 0 && won, MINT);
         g.setComposite(prior);
         if (hit) {
             g.setColor(new Color(255, 92, 122, (int) (150 * (1f - hitAge / 300f))));
@@ -547,6 +596,69 @@ public final class PixelArena extends JComponent {
         g.fillRect(x - 3, y + ph + 3, m.stringWidth(label) + 10, 15);
         g.setColor(UniversityPixelTheme.BLACK);
         g.drawString(label, x + 2, y + ph + 14);
+    }
+
+    /** 같은 일러스트를 발 고정 변형으로 그려 준비·돌진·경직·회복을 구분한다. */
+    private void paintCombatPose(Graphics2D g, BufferedImage sprite, int x, int y, int width, int height,
+                                 long now, long attackAge, long hitAge, float knockout,
+                                 int facing, boolean victor, Color fallback) {
+        float breathe = effectsEnabled && finishedAt < 0 ? (float) Math.sin(now / 520.0) : 0f;
+        float scaleX = 1f + breathe * 0.014f;
+        float scaleY = 1f - breathe * 0.018f;
+        float lean = facing * breathe * 0.012f;
+        long placementAt = facing > 0 ? monsterPlacementAt : playerPlacementAt;
+        long placementAge = now - placementAt;
+        if (effectsEnabled && placementAt >= 0 && placementAge >= 0 && placementAge < 220
+                && (attackAge < 0 || attackAge >= 720) && (hitAge < 0 || hitAge >= 300)) {
+            float tap = (float) Math.sin(placementAge * Math.PI / 220f);
+            scaleX += 0.025f * tap;
+            scaleY -= 0.055f * tap;
+        }
+        if (effectsEnabled && attackAge >= 0 && attackAge < 100) {
+            float windup = smooth(attackAge / 100f);
+            scaleX += 0.08f * windup;
+            scaleY -= 0.11f * windup;
+            lean -= facing * 0.075f * windup;
+        } else if (effectsEnabled && attackAge >= 100 && attackAge < IMPACT_MS) {
+            float strike = smooth((attackAge - 100) / (float) (IMPACT_MS - 100));
+            scaleX += 0.06f * (1f - strike);
+            scaleY += 0.07f * (float) Math.sin(strike * Math.PI);
+            lean += facing * 0.11f * (1f - strike);
+        } else if (effectsEnabled && attackAge >= IMPACT_MS && attackAge < 720) {
+            float settle = 1f - smooth((attackAge - IMPACT_MS) / (720f - IMPACT_MS));
+            scaleX += 0.035f * settle;
+            scaleY -= 0.035f * settle;
+            lean += facing * 0.045f * settle;
+        }
+        if (effectsEnabled && hitAge >= 0 && hitAge < 300) {
+            float stagger = 1f - smooth(hitAge / 300f);
+            scaleX += 0.11f * stagger;
+            scaleY -= 0.16f * stagger;
+            lean -= facing * 0.12f * stagger;
+        }
+        if (knockout > 0f) {
+            float collapse = smooth(knockout);
+            scaleX += 0.16f * collapse;
+            scaleY *= 1f - 0.55f * collapse;
+            lean = -facing * 0.18f * collapse;
+        }
+        int hop = 0;
+        if (victor && effectsEnabled && finishedAt >= 0 && now - finishedAt < 900) {
+            float progress = (now - finishedAt) / 900f;
+            hop = Math.round((float) Math.pow(Math.sin(progress * Math.PI * 2), 2) * height * 0.11f * (1f - progress));
+            scaleY += hop / (float) height * 0.3f;
+        }
+        Graphics2D posed = (Graphics2D) g.create();
+        try {
+            posed.translate(x + width / 2.0, y + height - hop);
+            posed.shear(lean, 0);
+            posed.scale(scaleX, scaleY);
+            if (sprite != null) posed.drawImage(sprite, -width / 2, -height, null);
+            else {
+                posed.setColor(fallback);
+                posed.fillRect(-width / 2, -height, width, height);
+            }
+        } finally { posed.dispose(); }
     }
 
     private void paintVisuals(Graphics2D g, Stage s, long now) {
@@ -588,31 +700,48 @@ public final class PixelArena extends JComponent {
 
     /** 충전된 빛줄기를 따라 테트로미노 조각이 날아가고, 착탄 시 충격파가 퍼진다. */
     private void paintPlayerAttack(Graphics2D g, Stage s, long age, int seed) {
-        int fromX = s.portraitX + 5, fromY = s.portraitY + s.portraitH / 3;
-        int toX = s.monsterX, toY = s.monsterCenterY();
-        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, CYAN, seed, 24);
-        paintArcStreak(g, fromX, fromY, toX, toY, age, 140, seed, CYAN, 42);
+        paintHumanAttack(g, s, age, seed, false);
+    }
+
+    /** PvP의 두 선수는 동일한 공격 프레임을 좌우 반전해 쓴다. */
+    private void paintHumanAttack(Graphics2D g, Stage s, long age, int seed, boolean rival) {
+        int fromX = rival ? s.monsterX + s.monsterSize / 3 : s.portraitX + 5;
+        int fromY = rival ? s.monsterCenterY() : s.portraitY + s.portraitH / 3;
+        int toX = rival ? s.playerCenterX() : s.monsterX;
+        int toY = rival ? s.playerCenterY() : s.monsterCenterY();
+        Color color = rival ? CORAL : CYAN;
+        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, color, seed, 24);
+        paintArcStreak(g, fromX, fromY, toX, toY, age, 140, seed, color, rival ? -42 : 42);
         paintShards(g, fromX, fromY, toX, toY, age, 60, IMPACT_MS, seed, -1, clampSize(s.w / 16, 12, 22));
         if (age >= IMPACT_MS) {
             float p = Math.min(1f, (age - IMPACT_MS) / 340f);
             if (p < 0.25f) {
-                int r = Math.round(s.monsterSize * (0.18f + p * 0.9f));
+                int targetSize = rival ? s.portraitW : s.monsterSize;
+                int r = Math.round(targetSize * (0.18f + p * 0.9f));
                 g.setColor(new Color(255, 255, 255, (int) (220 * (1 - p / 0.25f))));
                 g.fillOval(toX - r, toY - r, r * 2, r * 2);
             }
-            paintBurst(g, toX, toY, p, seed, CYAN, 22);
+            paintBurst(g, toX, toY, p, seed, color, 22);
             paintBlockDebris(g, toX, toY, p, seed);
-            paintShockwave(g, toX, toY, p, Math.round(s.monsterSize * 0.64f), CYAN, seed);
-            paintSlash(g, toX, toY, Math.round(s.monsterSize * 0.45f), p, WHITE, false);
+            int targetSize = rival ? s.portraitW : s.monsterSize;
+            paintShockwave(g, toX, toY, p, Math.round(targetSize * 0.64f), color, seed);
+            paintSlash(g, toX, toY, Math.round(targetSize * 0.45f), p, WHITE, false);
         }
     }
 
-    /** 몬스터가 어두운 구체를 던지고, 맞으면 초상 위에 세 줄 발톱 자국이 남는다. */
+    /** PvE는 과정별 공격 모티프를 쓰고, PvP는 선수끼리 같은 공격 프레임을 쓴다. */
     private void paintMonsterAttack(Graphics2D g, Stage s, long age, int seed) {
+        if (online) {
+            paintHumanAttack(g, s, age, seed, true);
+            return;
+        }
+        Color motif = "graduation".equals(chapter) ? PINK
+                : "employment".equals(chapter) ? CYAN : GOLD;
+        boolean boss = pattern == MonsterTier.BOSS;
         int fromX = s.monsterX + s.monsterSize / 4, fromY = s.monsterCenterY();
         int toX = s.playerCenterX(), toY = s.playerCenterY();
-        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, CORAL, seed, 27);
-        paintArcStreak(g, fromX, fromY, toX, toY, age, 140, seed, CORAL, -30);
+        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, motif, seed, boss ? 32 : 27);
+        paintArcStreak(g, fromX, fromY, toX, toY, age, 140, seed, motif, -30);
         if (age >= 80 && age < IMPACT_MS) {
             float t = (age - 80) / (float) (IMPACT_MS - 80);
             float ease = t * t;
@@ -623,25 +752,56 @@ public final class PixelArena extends JComponent {
                 int tx = Math.round(fromX + (toX - fromX) * te);
                 int ty = Math.round(fromY + (toY - fromY) * te - (float) Math.sin(tt * Math.PI) * 30);
                 int size = 20 - trail * 3;
-                g.setColor(new Color(255, 92, 122, 200 - trail * 30));
+                g.setColor(new Color(motif.getRed(), motif.getGreen(), motif.getBlue(), 200 - trail * 30));
                 g.fillRect(tx - size / 2, ty - size / 2, size, size);
             }
             int orb = clampSize(s.w / 14, 16, 28);
-            g.setColor(new Color(255, 92, 122, 70));
+            g.setColor(new Color(motif.getRed(), motif.getGreen(), motif.getBlue(), 70));
             g.fillOval(x - orb, y - orb, orb * 2, orb * 2);
-            g.setColor(new Color(40, 6, 30));
-            g.fillRect(x - orb / 2, y - orb / 2, orb, orb);
-            g.setColor(CORAL);
-            g.drawRect(x - orb / 2, y - orb / 2, orb, orb);
-            g.drawRect(x - orb / 2 + 1, y - orb / 2 + 1, orb - 2, orb - 2);
-            g.setColor(WHITE);
-            g.fillRect(x - 3, y - 3, 6, 6);
+            paintMonsterProjectile(g, x, y, orb, motif, boss);
         }
         if (age >= IMPACT_MS) {
             float p = Math.min(1f, (age - IMPACT_MS) / 360f);
-            paintShockwave(g, toX, toY, p, Math.round(s.portraitW * 1.15f), CORAL, seed);
-            paintSlash(g, toX, toY, Math.round(s.portraitW * 0.75f), p, CORAL, true);
-            paintBurst(g, toX, toY, p, seed, CORAL, 12);
+            paintShockwave(g, toX, toY, p, Math.round(s.portraitW * (boss ? 1.32f : 1.15f)), motif, seed);
+            paintSlash(g, toX, toY, Math.round(s.portraitW * 0.75f), p, motif,
+                    "university".equals(chapter));
+            paintBurst(g, toX, toY, p, seed, motif, boss ? 20 : 12);
+            if ("graduation".equals(chapter)) paintBlockDebris(g, toX, toY, p, seed);
+        }
+    }
+
+    private void paintMonsterProjectile(Graphics2D g, int x, int y, int size, Color motif, boolean boss) {
+        int half = size / 2;
+        if ("graduation".equals(chapter)) {
+            // 논문/재수강 F를 상징하는 접힌 문서.
+            g.setColor(WHITE);
+            g.fillRect(x - half, y - half, size, size);
+            g.setColor(motif);
+            g.drawRect(x - half, y - half, size, size);
+            g.fillRect(x - half + 4, y - half + 4, size / 2, 3);
+            g.fillRect(x - half + 4, y - half + 8, 3, size / 2);
+        } else if ("employment".equals(chapter)) {
+            // 코딩 테스트/면접의 꺾쇠 기호.
+            g.setColor(new Color(6, 16, 39));
+            g.fillRect(x - half, y - half, size, size);
+            g.setColor(motif);
+            g.drawRect(x - half, y - half, size, size);
+            g.drawLine(x - 3, y - 7, x - 9, y);
+            g.drawLine(x - 9, y, x - 3, y + 7);
+            g.drawLine(x + 3, y - 7, x + 9, y);
+            g.drawLine(x + 9, y, x + 3, y + 7);
+        } else {
+            // 교정 분필과 강의 보드의 가장 짧은 형태.
+            g.setColor(new Color(27, 20, 48));
+            g.fillRect(x - half, y - half, size, size);
+            g.setColor(motif);
+            g.drawRect(x - half, y - half, size, size);
+            g.setColor(WHITE);
+            g.fillRect(x - half + 3, y - 3, size - 6, 6);
+        }
+        if (boss) {
+            g.setColor(CORAL);
+            drawDiamond(g, x, y, half + 7);
         }
     }
 
@@ -850,12 +1010,15 @@ public final class PixelArena extends JComponent {
     private void paintHitFlash(Graphics2D g, int w, int h, long now) {
         if (playerHitAt >= 0 && now - playerHitAt >= 0 && now - playerHitAt < 220) {
             float t = 1f - (now - playerHitAt) / 220f;
-            g.setColor(new Color(255, 40, 80, (int) (90 * t)));
-            g.fillRect(0, 0, w, h);
+            g.setColor(online ? new Color(255, 247, 232, (int) (75 * t))
+                    : new Color(255, 40, 80, (int) (90 * t)));
+            g.fillRect(online ? w / 2 : 0, 0, online ? w - w / 2 : w, h);
         }
-        if (monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < 120) {
-            g.setColor(new Color(255, 255, 255, (int) (70 * (1f - (now - monsterHitAt) / 120f))));
-            g.fillRect(0, 0, w, h);
+        if (monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < (online ? 220 : 120)) {
+            float t = 1f - (now - monsterHitAt) / (online ? 220f : 120f);
+            g.setColor(online ? new Color(255, 247, 232, Math.max(0, (int) (75 * t)))
+                    : new Color(255, 255, 255, Math.max(0, (int) (70 * t))));
+            g.fillRect(0, 0, online ? w / 2 : w, h);
         }
     }
 
@@ -880,7 +1043,7 @@ public final class PixelArena extends JComponent {
                 CORAL, now - monsterHitAt >= 0 && now - monsterHitAt < 200 && monsterHitAt >= 0);
         int playerMain = shownMain(playerTrailFrom, playerHp, playerTrailAt, now);
         int playerTrail = shownTrail(playerTrailFrom, playerHp, playerTrailAt, now);
-        paintHpPlate(g, 8, s.h - 52, s.w - 16, 44, playerName, feverActive ? "FEVER" : "HP", playerMain, playerTrail,
+        paintHpPlate(g, 8, s.h - 52, s.w - 16, 44, playerName, feverActive ? "FEVER" : online ? "YOU" : "HP", playerMain, playerTrail,
                 playerHp, playerMax, feverActive ? PINK : MINT,
                 now - playerHitAt >= 0 && now - playerHitAt < 200 && playerHitAt >= 0);
     }
@@ -898,14 +1061,22 @@ public final class PixelArena extends JComponent {
         g.fillRect(x + 6, y + 6, tagWidth, 14);
         g.setColor(UniversityPixelTheme.BLACK);
         g.drawString(tag, x + 11, y + 17);
-        g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        boolean compact = width < 200;
+        g.setFont(UniversityPixelTheme.font(compact ? 11 : 13, Font.BOLD));
         FontMetrics metrics = g.getFontMetrics();
-        String numbers = main + " / " + max;
+        String numbers = compact ? main + "/" + max : main + " / " + max;
         int numbersWidth = metrics.stringWidth(numbers);
-        g.setColor(UniversityPixelTheme.TEXT);
-        g.drawString(fit(name, metrics, width - tagWidth - numbersWidth - 30), x + tagWidth + 12, y + 18);
+        int numbersX = x + width - numbersWidth - 8;
+        int nameX = x + tagWidth + 12;
+        if (!compact && numbersX > nameX) {
+            String fittedName = fit(name, metrics, numbersX - nameX - 5);
+            if (!fittedName.isEmpty()) {
+                g.setColor(UniversityPixelTheme.TEXT);
+                g.drawString(fittedName, nameX, y + 18);
+            }
+        }
         g.setColor(main * 10 <= max * 3 ? CORAL : UniversityPixelTheme.TEXT_SUB);
-        g.drawString(numbers, x + width - numbersWidth - 8, y + 18);
+        g.drawString(numbers, numbersX, y + 18);
         int barX = x + 6, barY = y + 24, barW = width - 12, barH = height - 30;
         g.setColor(UniversityPixelTheme.BLACK);
         g.fillRect(barX, barY, barW, barH);
@@ -1162,11 +1333,12 @@ public final class PixelArena extends JComponent {
     }
 
     private static String fit(String text, FontMetrics metrics, int maxWidth) {
+        if (maxWidth <= 0) return "";
         String value = text == null ? "" : text;
         if (metrics.stringWidth(value) <= maxWidth) return value;
-        while (value.length() > 1 && metrics.stringWidth(value + "…") > maxWidth)
+        while (!value.isEmpty() && metrics.stringWidth(value + "…") > maxWidth)
             value = value.substring(0, value.length() - 1);
-        return value + "…";
+        return value.isEmpty() ? "" : value + "…";
     }
 
     /** 크기·좌우 반전별로 축소한 그림을 보관해 매 프레임 큰 원본을 다시 줄이지 않는다. */

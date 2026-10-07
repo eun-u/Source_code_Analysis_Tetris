@@ -9,6 +9,7 @@ import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.battle.*;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.core.BoardState;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.audio.AudioService;
 import kr.ac.jbnu.se.tetris.core.PieceType;
@@ -65,6 +66,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private long lastEventId;
     private ParticipantState previousLocal, previousEnemy;
     private boolean online;
+    private int feedbackGeneration;
 
     public BattlePanel() {
         setLayout(null);
@@ -95,6 +97,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         add(leftColumn);
         add(garbage);
         add(playerBoard);
+        playerName.setForeground(UniversityPixelTheme.MINT);
+        playerName.setHorizontalAlignment(SwingConstants.CENTER);
+        add(playerName);
         buildRightColumn();
         add(rightColumn);
         add(arena);
@@ -214,6 +219,11 @@ public class BattlePanel extends JPanel implements Scrollable {
         topBar.setBounds(PAD, 8, width - PAD * 2, 36);
         status.setBounds(PAD + 4, height - BOTTOM + 2, width - PAD * 2, 22);
         int areaTop = TOP, areaHeight = Math.max(100, height - TOP - BOTTOM);
+        if (online) {
+            layoutOnline(width, areaTop, areaHeight);
+            resultTestButton.setVisible(false);
+            return;
+        }
         int leftWidth = clamp(Math.round(width * 0.115f), 92, 130);
         int rightWidth = clamp(Math.round(width * 0.095f), 80, 108);
         int enemyWidth = clamp(Math.round(width * 0.13f), 96, 150);
@@ -229,6 +239,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         leftColumn.setBounds(leftX, boardY, leftWidth, boardHeight);
         int boardX = leftX - GAP - boardWidth;
         playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
+        playerName.setVisible(false);
         int meterX = boardX - METER - 2;
         garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
 
@@ -243,6 +254,38 @@ public class BattlePanel extends JPanel implements Scrollable {
         enemyBoard.setBounds((enemyWidth - enemyBoardWidth) / 2, enemyTop, enemyBoardWidth, enemyBoardHeight);
         enemyStatus.setBounds(0, enemyTop + enemyBoardHeight + 4, enemyWidth, 34);
         resultTestButton.setVisible(false);
+    }
+
+    /** 온라인에서는 양쪽 보드가 같은 크기이고 무대가 공격 교차로가 된다. */
+    private void layoutOnline(int width, int areaTop, int areaHeight) {
+        int leftWidth = clamp(Math.round(width * 0.115f), 86, 120);
+        int rightWidth = clamp(Math.round(width * 0.105f), 80, 108);
+        int minimumArena = Math.max(120, Math.round(width * 0.16f));
+        int fixed = PAD * 2 + leftWidth + rightWidth + METER + 2 + GAP * 4 + minimumArena;
+        // 상대의 이름과 두 줄 기록이 보드 위아래에 들어갈 세로 여백을 남긴다.
+        int cell = Math.max(9, Math.min((areaHeight - 76) / 22, (width - fixed - 24) / 20));
+        int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
+        int boardY = areaTop + (areaHeight - boardHeight) / 2;
+        int arenaWidth = Math.max(minimumArena, width - (PAD * 2 + leftWidth + rightWidth
+                + METER + 2 + GAP * 4 + boardWidth * 2));
+
+        int enemyX = PAD;
+        int arenaX = enemyX + boardWidth + GAP;
+        int meterX = arenaX + arenaWidth + GAP;
+        int playerX = meterX + METER + 2;
+        int leftX = playerX + boardWidth + GAP;
+        int rightX = leftX + leftWidth + GAP;
+        leftColumn.setBounds(leftX, boardY, leftWidth, boardHeight);
+        playerBoard.setBounds(playerX, boardY, boardWidth, boardHeight);
+        playerName.setBounds(playerX, boardY - 20, boardWidth, 17);
+        playerName.setVisible(true);
+        garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
+        arena.setBounds(arenaX, areaTop, arenaWidth, areaHeight);
+        enemyColumn.setBounds(enemyX, boardY - 20, boardWidth, boardHeight + 57);
+        enemyName.setBounds(0, 0, boardWidth, 17);
+        enemyBoard.setBounds(0, 20, boardWidth, boardHeight);
+        enemyStatus.setBounds(0, boardHeight + 23, boardWidth, 34);
+        rightColumn.setBounds(rightX, boardY, rightWidth, boardHeight);
     }
 
     private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
@@ -272,6 +315,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setPlayers(PlayerData player, PlayerData enemy) {
         playerName.setText(player.getNickname());
         enemyName.setText(enemy.getNickname());
+        feedbackGeneration++;
         arena.resetForEncounter();
     }
     /** 기존 미리보기 API 호환. 실제 아이템은 setState의 스냅샷으로 표시한다. */
@@ -281,23 +325,31 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setItemAction(IntConsumer action) { itemAction = action; }
     public void setBackAction(ActionListener action) { backButton.addActionListener(action); }
     public void setMode(boolean online) {
+        if (this.online == online) return;
         this.online = online;
         if (online) {
             UniversityPixelTheme.setChip(levelChip, "ONLINE", UniversityPixelTheme.MINT);
             title.setText("1:1 PvP 대전");
+            arena.setChapter("university");
         }
         arena.setOnline(online);
+        revalidate();
+        repaint();
     }
     public void setAudio(AudioService service) { audio = service; }
     public void setEncounter(String chapter, int level, MonsterTier pattern, String art) {
+        online = false;
         UniversityPixelTheme.setChip(levelChip, "LV " + level,
                 pattern == MonsterTier.BOSS ? UniversityPixelTheme.CORAL : UniversityPixelTheme.GOLD);
         String course = "graduation".equals(chapter) ? "졸업 과정" : "employment".equals(chapter) ? "취업 과정" : "대학교 과정";
         String tier = pattern == MonsterTier.BOSS ? "BOSS BATTLE" : pattern == MonsterTier.ELITE ? "ELITE" : "BATTLE";
         title.setText(course + "  ·  " + tier);
         arena.setChapter(chapter); arena.setMonsterPattern(pattern); arena.setMonsterArt(art); arena.setOnline(false);
+        revalidate();
+        repaint();
     }
     public void resetFeedback() {
+        feedbackGeneration++;
         previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
         playerBoard.resetEffects(); enemyBoard.resetEffects();
         arena.resetForEncounter();
@@ -305,6 +357,15 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
     public void finish(boolean won) { arena.showEffect(won ? PixelArena.Effect.VICTORY : PixelArena.Effect.DEFEAT, 0); }
     private void sound(AudioService.Event event) { if (audio != null) audio.play(event); }
+    private void soundAtImpact(AudioService.Event event) {
+        if (audio == null) return;
+        final int generation = feedbackGeneration;
+        Timer timer = new Timer(PixelArena.IMPACT_MS, action -> {
+            if (generation == feedbackGeneration) sound(event);
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
     public void applyEvents(List<BattleEvent> events, String localId) {
         for (BattleEvent event : events) {
             if (event.getEventId() <= lastEventId) continue;
@@ -314,7 +375,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             if (event.getType() == BattleEvent.Type.DAMAGE) {
                 arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
                         event.getAmount(), local);
-                sound(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+                soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
             } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
                 board.showGarbage(event.getAmount());
             } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
@@ -330,6 +391,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                 GameEvent core = event.getCoreEvent();
                 if (core.getType() == GameEvent.Type.PIECE_PLACED) {
                     board.showPlacement(core.getPiece(), core.getX(), core.getY());
+                    arena.showPlacement(!local);
                     if (local) sound(AudioService.Event.DROP);
                 } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
                     board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
@@ -428,6 +490,12 @@ public class BattlePanel extends JPanel implements Scrollable {
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
         if (previous == null) return;
         int lines = current.getGameState().getLinesCleared() - previous.getGameState().getLinesCleared();
+        BoardState before = previous.getGameState().getBoard();
+        BoardState after = current.getGameState().getBoard();
+        // 구 서버는 출처 ID를 보내지 않는다. 4칸 정착 또는 줄 삭제도 착지로 인정한다.
+        if (latestPlacedOrigin(after) > latestPlacedOrigin(before) || lines > 0
+                || oldWirePlacement(before, after))
+            arena.showPlacement(monster);
         if (lines > 0) {
             board.showLineClear(lines, current.getGameState().getCombo(), false);
             arena.showClear(lines, current.getGameState().getCombo(), false, monster);
@@ -436,8 +504,28 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (current.getHp() < previous.getHp()) {
             arena.showEffect(monster ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
                     previous.getHp() - current.getHp(), monster);
-            sound(monster ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+            soundAtImpact(monster ? AudioService.Event.ATTACK : AudioService.Event.HIT);
         }
+    }
+    private static long latestPlacedOrigin(BoardState board) {
+        long latest = 0;
+        for (int y = 0; y < board.getHeight(); y++)
+            for (int x = 0; x < board.getWidth(); x++)
+                if (board.getCell(x, y) != PieceType.EMPTY)
+                    latest = Math.max(latest, board.getOriginId(x, y));
+        return latest;
+    }
+    private static boolean oldWirePlacement(BoardState before, BoardState after) {
+        if (latestPlacedOrigin(before) != 0 || latestPlacedOrigin(after) != 0) return false;
+        int newlyFilled = 0, oldGarbage = 0, newGarbage = 0;
+        for (int y = 0; y < before.getHeight(); y++) for (int x = 0; x < before.getWidth(); x++) {
+            PieceType oldCell = before.getCell(x, y), newCell = after.getCell(x, y);
+            if (oldCell == PieceType.GARBAGE) oldGarbage++;
+            if (newCell == PieceType.GARBAGE) newGarbage++;
+            if (oldCell == PieceType.EMPTY && newCell != PieceType.EMPTY
+                    && newCell != PieceType.GARBAGE) newlyFilled++;
+        }
+        return newlyFilled == 4 && newGarbage <= oldGarbage;
     }
     private static String itemName(String id) {
         switch (id) {
