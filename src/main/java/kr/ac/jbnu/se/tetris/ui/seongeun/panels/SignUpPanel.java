@@ -29,7 +29,7 @@ public class SignUpPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
         box.add(Box.createVerticalStrut(4));
         box.add(UniversityPixelTheme.label("회원가입", 24, Font.BOLD, UniversityPixelTheme.TEXT));
         box.add(Box.createVerticalStrut(18));
-        addField(box, "이메일", idField, null);
+        addField(box, "아이디", idField, "영문 시작 · 3~20자");
         addField(box, "비밀번호", passwordField, "8자 이상");
         addField(box, "비밀번호 확인", passwordConfirmField, null);
         idField.addActionListener(event -> passwordField.requestFocusInWindow());
@@ -62,7 +62,7 @@ public class SignUpPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
 
     public void setRegisterAction(ActionListener listener) { registerButton.addActionListener(listener); }
     public void setBackAction(ActionListener listener) { backButton.addActionListener(listener); }
-    public String getEmail() { return idField.getText().trim(); }
+    public String getUsername() { return idField.getText().trim(); }
     public char[] getPassword() { return passwordField.getPassword(); }
     public char[] getPasswordConfirmation() { return passwordConfirmField.getPassword(); }
     public void clearPasswords() { passwordField.setText(""); passwordConfirmField.setText(""); }

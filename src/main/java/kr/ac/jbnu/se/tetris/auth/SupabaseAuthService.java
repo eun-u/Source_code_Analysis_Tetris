@@ -18,7 +18,24 @@ public final class SupabaseAuthService {
     public synchronized SignUpResult signUp(String email, String password) throws AuthException, IOException {
         session = null;
         JsonObject request = credentials(email, password);
-        JsonObject result = request("POST", "/auth/v1/signup", request, null);
+        return signUpRequest(request);
+    }
+
+    /** Email stays inside the Auth protocol; players provide only an ID and password. */
+    public synchronized SignUpResult signUpUsername(String username, String password) throws AuthException, IOException {
+        String normalized = UsernameIdentity.normalize(username);
+        if (password == null || password.length() < 8)
+            throw new IllegalArgumentException("password must have at least 8 characters");
+        session = null;
+        JsonObject request = credentials(UsernameIdentity.emailFor(normalized), password);
+        JsonObject metadata = new JsonObject();
+        metadata.addProperty("display_name", normalized);
+        request.add("data", metadata);
+        return signUpRequest(request);
+    }
+
+    private SignUpResult signUpRequest(JsonObject body) throws AuthException, IOException {
+        JsonObject result = request("POST", "/auth/v1/signup", body, null);
         JsonObject user = result.has("user") && result.get("user").isJsonObject()
                 ? result.getAsJsonObject("user") : result;
         String userId = AuthJson.string(user, "id");
@@ -35,6 +52,10 @@ public final class SupabaseAuthService {
         session = parseSession(request("POST", "/auth/v1/token?grant_type=password",
                 credentials(email, password), null));
         return session;
+    }
+
+    public synchronized AuthSession signInUsername(String username, String password) throws AuthException, IOException {
+        return signIn(UsernameIdentity.emailFor(username), password);
     }
 
     public synchronized AuthSession refresh() throws AuthException, IOException {

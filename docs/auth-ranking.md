@@ -2,10 +2,22 @@
 
 Java 8 데스크톱은 Supabase publishable key로 Auth와 읽기 전용 랭킹 RPC에 접근한다. Render 게임 서버는 별도 환경 변수의 secret key로 경기 시작·종료·무효화 RPC만 호출한다. 이 키를 데스크톱 배포물, Git 또는 로그에 넣으면 안 된다. 코드는 값이 없으면 서비스 시작을 거부한다.
 
+## 아이디·비밀번호 로그인
+
+새 클라이언트는 영문자로 시작하는 3~20자의 영문·숫자·밑줄 아이디를 소문자로 정규화하고, Auth 내부에서만 `<아이디>@players.campus-quest.invalid`로 변환한다. 로그인 화면에는 아이디와 비밀번호만 보인다. 기존 이메일 계정은 로그인 칸에서 이메일을 그대로 입력하면 접속할 수 있다. 아이디 계정은 실제 이메일이 없으므로 셀프 비밀번호 복구가 불가능하다.
+
+랭킹 프로필은 `supabase/migrations/202610070001_username_profiles.sql` 적용 후 새로 생성되는 계정부터 Auth 식별자의 아이디를 표시한다. 사용자가 수정 가능한 메타데이터는 프로필 이름의 신뢰 근거로 사용하지 않는다. `202610070002_username_signup_policy.sql`은 아이디 외 가입을 거절하는 Auth Hook과 아이디 주소 변경 방지를 설치하고, 랭킹 표시명 수정을 막는다.
+
+대전 화면의 아이디도 서버가 확인한 Auth 이메일에서 추출한다. 직접 바꿀 수 있는 `user_metadata.display_name`은 아이디 계정의 대전 이름으로 사용하지 않는다.
+
+2026-10-07 운영 Supabase에서 위 두 마이그레이션을 적용하고 Before User Created Hook을 활성화했다. 프로젝트의 이메일 확인은 껐으며, 새 가입은 훅이 아이디 전용 주소·이메일 제공자만 허용한다. 일반 이메일 가입은 실제 403으로 거절됐다. 임시 아이디 두 개의 가입 직후 세션, Java 클라이언트의 아이디·비밀번호 재로그인, Render WebSocket 대전, FINALIZED 결과와 Elo 984/1016 및 랭킹 표시명을 운영에서 확인했다. 검증 계정·경기는 삭제했다. 새 클라이언트는 로컬 빌드 산출물이며 GitHub/Render 서버 갱신 상태는 별도로 확인한다.
+
+아이디 계정은 복구 메일을 받을 주소가 없으므로 셀프 비밀번호 복구가 불가능하다. 비밀번호 분실 계정의 복구·재설정 정책이 필요하다. 가입 남용 제한도 서비스 출시 전 보완해야 한다.
+
 ## 설정과 적용 순서
 
 1. Supabase 프로젝트를 만들고 `supabase/migrations/202609290001_ranked_pvp.sql`을 SQL Editor에 적용한다. `profiles`, `player_stats`, `matches`, `match_participants`와 RPC가 생성된다.
-2. 이메일 확인을 켜고 실제 사용자 4명의 메일이 수신되는 custom SMTP를 연결한다. 기본 SMTP만으로는 프로젝트 조직 밖 사용자에 대한 출시 검증이 끝나지 않는다.
+2. 아이디 전용 계정은 위 두 마이그레이션과 Before User Created Hook을 적용한 다음 이메일 확인을 끈다. 기존 이메일 기반 계정을 운영한다면 별도의 확인·복구 메일 정책을 설계한다.
 3. Auth의 비밀번호 복구 이메일 템플릿에 `{{ .Token }}`을 표시한다. 데스크톱의 `completePasswordRecovery(email, otp, newPassword)`는 메일의 일회용 코드를 `/auth/v1/verify`에 제출한 뒤 새 비밀번호를 설정한다. 템플릿이 링크만 보내면 이 화면을 통해 복구할 수 없다.
 4. 데스크톱에는 프로젝트 URL과 publishable key만 설정한다. 예: `new SupabaseConfig(url, publishableKey)`. Render 서버에는 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`를 비밀 환경 변수로 설정한다. 게임 서버의 `SupabaseConfig.fromEnvironment()`가 이를 읽는다.
 5. 로그인·랭킹·서버 연결을 실제 계정 네 개로 확인한다. 메일 확인, 복구 코드, 토큰 만료/갱신, 2개 방의 경기 확정과 랭킹 1회 반영, 서버 재시작 후 조회를 각각 점검한다.

@@ -63,7 +63,7 @@ public final class RankedApplicationFlowTest {
             SeongeunApplication[] app = new SeongeunApplication[1];
             try {
                 onEdt(() -> app[0] = new SeongeunApplication(new Random(7), null));
-                login(app[0], "a@example.test", "password-a");
+                login(app[0], "Player_01", "password-a");
                 await(() -> "LOBBY".equals(app[0].getCurrentScreen()), "First account login");
                 onEdt(() -> app[0].openOnline(new ConnectionOptions(
                         URI.create("ws://127.0.0.1:" + socket.getLocalPort() + "/ws"), "token-A")));
@@ -110,6 +110,9 @@ public final class RankedApplicationFlowTest {
         String path = exchange.getRequestURI().getPath();
         String response;
         if ("/auth/v1/token".equals(path)) {
+            if (!body.contains("b@example.test"))
+                check(body.contains("player_01@players.campus-quest.invalid"),
+                        "ID login must use stable internal Auth address");
             boolean second = body.contains("b@example.test");
             String id = second ? USER_B : USER_A;
             String name = second ? "B" : "A";

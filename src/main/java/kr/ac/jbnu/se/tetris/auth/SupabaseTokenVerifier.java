@@ -51,8 +51,8 @@ public final class SupabaseTokenVerifier implements TokenVerifier {
             throw e;
         } catch (IllegalStateException e) { throw new IOException("Invalid Auth user response", e); }
         if (!userId.equals(AuthJson.string(latest, "id"))) throw new AuthException("IDENTITY_MISMATCH");
-        String displayName = null;
-        if (latest.has("user_metadata") && latest.get("user_metadata").isJsonObject())
+        String displayName = UsernameIdentity.fromEmail(AuthJson.string(latest, "email"));
+        if (displayName == null && latest.has("user_metadata") && latest.get("user_metadata").isJsonObject())
             displayName = AuthJson.string(latest.getAsJsonObject("user_metadata"), "display_name");
         if (displayName == null || displayName.length() > 32) displayName = "Player";
         return new AuthIdentity(userId, displayName, expiry);

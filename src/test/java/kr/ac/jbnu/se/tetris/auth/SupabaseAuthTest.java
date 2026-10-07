@@ -31,6 +31,22 @@ public final class SupabaseAuthTest {
             SupabaseAuthService auth = new SupabaseAuthService(config);
             SignUpResult signup = auth.signUp("a@example.test", "password123");
             check(signup.isPendingEmailVerification() && signup.getSession() == null, "Signup awaits email");
+            check("player_01".equals(UsernameIdentity.normalize(" Player_01 ")), "ID canonicalization");
+            check("player_01@players.campus-quest.invalid".equals(UsernameIdentity.emailFor("PLAYER_01")),
+                    "Stable internal Auth email");
+            check("player_01".equals(UsernameIdentity.fromEmail("player_01@players.campus-quest.invalid")),
+                    "Canonical ID from Auth email");
+            check(UsernameIdentity.fromEmail("player_01@example.com") == null,
+                    "Unreserved email has no canonical ID");
+            for (String invalid : new String[] {"ab", "1player", "player-name", "한글아이디", "player@example.com"}) {
+                try { UsernameIdentity.emailFor(invalid); throw new AssertionError("Invalid ID accepted: " + invalid); }
+                catch (IllegalArgumentException expected) { /* expected */ }
+            }
+            SignUpResult usernameSignup = auth.signUpUsername("Player_01", "password123");
+            check(!usernameSignup.isPendingEmailVerification() && usernameSignup.getSession() != null,
+                    "Username signup with autoconfirm response");
+            AuthSession usernameSession = auth.signInUsername("PLAYER_01", "password123");
+            check(USER.equals(usernameSession.getUserId()), "Username password login");
             AuthSession signedIn = auth.signIn("a@example.test", "  surrounding spaces  ");
             check(USER.equals(signedIn.getUserId()) && signedIn.getAccessToken().equals("first"), "Password login");
             check(!signedIn.toString().contains("first"), "Token redaction");
@@ -62,7 +78,9 @@ public final class SupabaseAuthTest {
 
             SupabaseTokenVerifier verifier = new SupabaseTokenVerifier(config);
             String token = jwt(base, USER, "authenticated", Instant.now().getEpochSecond() + 3600);
-            check(USER.equals(verifier.verify(token).getUserId()), "Auth server validated identity");
+            AuthIdentity verified = verifier.verify(token);
+            check(USER.equals(verified.getUserId()) && "player_01".equals(verified.getDisplayName()),
+                    "Auth server validated identity and ignored mutable display metadata");
             int verifiedCalls = userCalls.get();
             rejected(verifier, jwt(base + "/other", USER, "authenticated", Instant.now().getEpochSecond() + 3600));
             rejected(verifier, jwt(base, USER, "anon", Instant.now().getEpochSecond() + 3600));
@@ -96,13 +114,22 @@ public final class SupabaseAuthTest {
         check("public-test-key".equals(request.getRequestHeaders().getFirst("apikey")), "Public key header");
         if (path.equals("/auth/v1/user") && method.equals("GET")) {
             userCalls.incrementAndGet();
-            answer(request, 200, "{\"id\":\"" + USER + "\",\"user_metadata\":{\"display_name\":\"A\"}}");
+            answer(request, 200, "{\"id\":\"" + USER + "\",\"email\":\"player_01@players.campus-quest.invalid\",\"user_metadata\":{\"display_name\":\"forged\"}}");
         } else if (path.equals("/auth/v1/user") && method.equals("PUT")) {
             check(body.contains("password"), "Password update body");
             answer(request, 200, "{\"id\":\"" + USER + "\"}");
         } else if (path.equals("/auth/v1/signup")) {
-            answer(request, 200, "{\"user\":{\"id\":\"" + USER + "\"}}");
+            if (body.contains("players.campus-quest.invalid")) {
+                check(body.contains("\"email\":\"player_01@players.campus-quest.invalid\""),
+                        "Username signup internal email");
+                check(body.contains("\"data\":{\"display_name\":\"player_01\"}"),
+                        "Username signup display metadata");
+                answer(request, 200, session("username"));
+            } else answer(request, 200, "{\"user\":{\"id\":\"" + USER + "\"}}");
         } else if (path.equals("/auth/v1/token") && request.getRequestURI().getQuery().contains("password")) {
+            if (body.contains("players.campus-quest.invalid"))
+                check(body.contains("\"email\":\"player_01@players.campus-quest.invalid\""),
+                        "Username login internal email");
             if (body.contains("a@example.test"))
                 check(body.contains("\"password\":\"  surrounding spaces  \""),
                         "Password bytes preserve spaces");

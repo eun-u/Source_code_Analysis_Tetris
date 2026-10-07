@@ -70,6 +70,8 @@ def run():
             for filename in (
                 "supabase/tests/bootstrap.sql",
                 "supabase/migrations/202609290001_ranked_pvp.sql",
+                "supabase/migrations/202610070001_username_profiles.sql",
+                "supabase/migrations/202610070002_username_signup_policy.sql",
                 "supabase/tests/ranking.sql",
             ):
                 with conn.transaction():

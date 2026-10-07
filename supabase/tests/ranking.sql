@@ -1,13 +1,40 @@
 -- Run after bootstrap.sql and the migration, in a fresh isolated database.
-insert into auth.users(id) values
- ('00000000-0000-4000-8000-000000000001'),
- ('00000000-0000-4000-8000-000000000002'),
- ('00000000-0000-4000-8000-000000000003'),
- ('00000000-0000-4000-8000-000000000004');
+set role supabase_auth_admin;
+do $$ begin
+  if public.before_username_user_created('{"user":{"email":"student_01@players.campus-quest.invalid","app_metadata":{"provider":"email"}}}'::jsonb) <> '{}'::jsonb then
+    raise exception 'username signup denied'; end if;
+  if public.before_username_user_created('{"user":{"email":"user@example.com","app_metadata":{"provider":"email"}}}'::jsonb)->'error'->>'http_code' <> '403' then
+    raise exception 'email signup accepted'; end if;
+  if public.before_username_user_created('{"user":{"email":"student_01@players.campus-quest.invalid","app_metadata":{"provider":"google"}}}'::jsonb)->'error'->>'http_code' <> '403' then
+    raise exception 'non-email signup accepted'; end if;
+end $$;
+reset role;
+
+insert into auth.users(id, email) values
+ ('00000000-0000-4000-8000-000000000001', 'student_01@players.campus-quest.invalid'),
+ ('00000000-0000-4000-8000-000000000002', null),
+ ('00000000-0000-4000-8000-000000000003', null),
+ ('00000000-0000-4000-8000-000000000004', null);
 
 do $$ begin
   if (select count(*) from public.player_stats) <> 4 then
     raise exception 'profile/stats signup trigger failed'; end if;
+  if (select display_name from public.profiles
+      where user_id = '00000000-0000-4000-8000-000000000001') <> 'student_01' then
+    raise exception 'username profile name not derived from Auth identity'; end if;
+end $$;
+
+do $$ begin
+  begin
+    update auth.users set email = 'other@players.campus-quest.invalid'
+      where id = '00000000-0000-4000-8000-000000000001';
+    raise exception 'username changed email';
+  exception when check_violation then null; end;
+  begin
+    update auth.users set email = 'other@players.campus-quest.invalid'
+      where id = '00000000-0000-4000-8000-000000000002';
+    raise exception 'non-username reserved the namespace';
+  exception when check_violation then null; end;
 end $$;
 
 set role authenticated;
@@ -21,6 +48,10 @@ do $$ begin
   begin
     update public.player_stats set rating = 9999;
     raise exception 'client edited rating';
+  exception when insufficient_privilege then null; end;
+  begin
+    update public.profiles set display_name = 'forged';
+    raise exception 'client edited ranked username';
   exception when insufficient_privilege then null; end;
   begin
     update public.server_runs set state = 'ACTIVE';

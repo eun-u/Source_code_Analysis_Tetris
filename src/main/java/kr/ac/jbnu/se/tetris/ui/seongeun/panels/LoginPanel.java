@@ -89,14 +89,14 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
         card.add(Box.createVerticalStrut(4));
         card.add(UniversityPixelTheme.label("온라인 계정", 21, Font.BOLD, UniversityPixelTheme.TEXT));
         card.add(Box.createVerticalStrut(14));
-        card.add(fieldLabel("이메일"));
+        card.add(fieldLabel("아이디"));
         card.add(Box.createVerticalStrut(4));
         UniversityPixelTheme.styleField(idField); card.add(idField);
         card.add(Box.createVerticalStrut(10));
         card.add(fieldLabel("비밀번호"));
         card.add(Box.createVerticalStrut(4));
         UniversityPixelTheme.styleField(passwordField); card.add(passwordField);
-        // 이메일에서 Enter는 비밀번호 칸으로, 비밀번호에서 Enter는 로그인으로 이어진다.
+        // 아이디에서 Enter는 비밀번호 칸으로, 비밀번호에서 Enter는 로그인으로 이어진다.
         idField.addActionListener(event -> passwordField.requestFocusInWindow());
         passwordField.addActionListener(event -> { if (onlineLoginButton.isEnabled()) onlineLoginButton.doClick(); });
         card.add(Box.createVerticalStrut(14));
@@ -135,7 +135,7 @@ public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Scen
 
     public void setLoginAction(ActionListener listener) { loginButton.addActionListener(listener); }
     public void setSignUpAction(ActionListener listener) { signUpButton.addActionListener(listener); }
-    public String getEmail() { return idField.getText().trim(); }
+    public String getUsername() { return idField.getText().trim(); }
     public char[] getPassword() { return passwordField.getPassword(); }
     public void clearPassword() { passwordField.setText(""); }
     public void setOnlineLoginAction(ActionListener listener) { onlineLoginButton.addActionListener(listener); }

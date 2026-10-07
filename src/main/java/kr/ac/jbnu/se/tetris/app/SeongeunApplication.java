@@ -54,6 +54,7 @@ import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
 import kr.ac.jbnu.se.tetris.network.RankedOnlineConfig;
 import kr.ac.jbnu.se.tetris.auth.AuthSession;
 import kr.ac.jbnu.se.tetris.auth.SupabaseAuthService;
+import kr.ac.jbnu.se.tetris.auth.UsernameIdentity;
 import kr.ac.jbnu.se.tetris.auth.SignUpResult;
 import kr.ac.jbnu.se.tetris.ranking.LeaderboardService;
 import kr.ac.jbnu.se.tetris.ranking.LeaderboardEntry;
@@ -828,19 +829,29 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void loginOnline() {
         if (auth == null || authBusy) return;
-        final String email = login.getEmail();
+        final String username = login.getUsername();
         final char[] password = login.getPassword();
         login.clearPassword();
-        if (!email.contains("@") || password.length == 0) {
-            java.util.Arrays.fill(password, '\0'); login.setStatus("이메일과 비밀번호를 입력하세요."); return;
+        final boolean legacyEmail = username.contains("@");
+        if (password.length == 0 || (legacyEmail && (username.length() > 254 || username.indexOf('@') < 1))) {
+            java.util.Arrays.fill(password, '\0'); login.setStatus("아이디와 비밀번호를 입력하세요."); return;
         }
+        if (!legacyEmail) {
+            try { UsernameIdentity.normalize(username); }
+            catch (IllegalArgumentException invalid) {
+                java.util.Arrays.fill(password, '\0');
+                login.setStatus("아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요."); return;
+            }
+        }
+        final String accountLabel = legacyEmail ? username : UsernameIdentity.normalize(username);
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
         accountSession = null; lobby.setAccountStatus("로컬 플레이");
         authBusy = true; login.setBusy(true); login.setStatus("로그인 중...");
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception {
-                try { return auth.signIn(email, new String(password)); }
+                try { return legacyEmail ? auth.signIn(username, new String(password))
+                        : auth.signInUsername(username, new String(password)); }
                 finally { java.util.Arrays.fill(password, '\0'); }
             }
             @Override protected void done() {
@@ -849,7 +860,7 @@ public final class SeongeunApplication implements AutoCloseable {
                 try {
                     accountSession = get();
                     login.setStatus("온라인 로그인 완료");
-                    lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + email);
+                    lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + accountLabel);
                     if (LOGIN.equals(currentScreen)) show(LOBBY);
                 } catch (Exception failed) { accountSession = null; login.setStatus("로그인 실패 · 계정 또는 서버 연결을 확인하세요."); }
             }
@@ -858,13 +869,18 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void registerOnline() {
         if (auth == null || authBusy) return;
-        final String email = signUp.getEmail();
+        final String username = signUp.getUsername();
         final char[] password = signUp.getPassword();
         char[] confirmation = signUp.getPasswordConfirmation();
         boolean matches = java.util.Arrays.equals(password, confirmation);
         java.util.Arrays.fill(confirmation, '\0'); signUp.clearPasswords();
-        if (!email.contains("@") || password.length < 8 || !matches) {
-            java.util.Arrays.fill(password, '\0'); message("이메일, 8자 이상 비밀번호와 확인란을 확인하세요."); return;
+        try { UsernameIdentity.normalize(username); }
+        catch (IllegalArgumentException invalid) {
+            java.util.Arrays.fill(password, '\0');
+            message("아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요."); return;
+        }
+        if (password.length < 8 || !matches) {
+            java.util.Arrays.fill(password, '\0'); message("8자 이상 비밀번호와 확인란을 확인하세요."); return;
         }
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
@@ -872,7 +888,7 @@ public final class SeongeunApplication implements AutoCloseable {
         authBusy = true; signUp.setBusy(true);
         new javax.swing.SwingWorker<SignUpResult, Void>() {
             @Override protected SignUpResult doInBackground() throws Exception {
-                try { return auth.signUp(email, new String(password)); }
+                try { return auth.signUpUsername(username, new String(password)); }
                 finally { java.util.Arrays.fill(password, '\0'); }
             }
             @Override protected void done() {
@@ -882,10 +898,10 @@ public final class SeongeunApplication implements AutoCloseable {
                     SignUpResult registered = get();
                     accountSession = registered.getSession();
                     if (accountSession == null) {
-                        login.setStatus("이메일 인증을 완료한 계정으로 로그인하세요.");
+                        login.setStatus("가입은 접수됐지만 서버의 계정 확인 설정 때문에 로그인할 수 없습니다. 운영자에게 알려주세요.");
                         if (SIGN_UP.equals(currentScreen)) show(LOGIN);
                     } else {
-                        lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + email);
+                        lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + UsernameIdentity.normalize(username));
                         if (SIGN_UP.equals(currentScreen)) show(LOBBY);
                     }
                 } catch (Exception failed) { message("가입 실패 · 계정 정보 또는 서버 연결을 확인하세요."); }
