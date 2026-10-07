@@ -4,7 +4,12 @@ $taskRoot = Split-Path $PSScriptRoot -Parent
 $taskOut = Join-Path $taskRoot 'out'
 $taskJar = Join-Path $taskOut 'tetris.jar'
 if (-not (Test-Path -LiteralPath $taskJar)) { throw 'Build the game before packaging.' }
-if (-not $PublicConfigPath) { $PublicConfigPath = Join-Path $taskOut 'tetris-client.properties' }
+if (-not $PublicConfigPath) {
+    $PublicConfigPath = Join-Path $taskRoot 'tetris-client.properties'
+    if (-not (Test-Path -LiteralPath $PublicConfigPath)) {
+        $PublicConfigPath = Join-Path $taskOut 'tetris-client.properties'
+    }
+}
 $publicValues = @{}
 foreach ($line in [IO.File]::ReadAllLines($PublicConfigPath)) {
     if ($line -match '^\s*[#!]' -or -not $line.Trim()) { continue }
@@ -32,7 +37,9 @@ Copy-Item -LiteralPath $taskJar -Destination (Join-Path $packageRoot 'tetris.jar
 $configLines = @(('server.url=' + $publicValues['server.url']),
     ('supabase.url=' + $publicValues['supabase.url']),
     ('supabase.publishableKey=' + $publicKey))
-[IO.File]::WriteAllLines((Join-Path $packageRoot 'tetris-client.properties'), $configLines, [Text.UTF8Encoding]::new($false))
+$jarConfig = Join-Path $taskOut 'tetris-client.properties'
+[IO.File]::WriteAllLines($jarConfig, $configLines, [Text.UTF8Encoding]::new($false))
+Copy-Item -LiteralPath $jarConfig -Destination (Join-Path $packageRoot 'tetris-client.properties') -Force
 $launcher = @'
 @echo off
 cd /d "%~dp0"
