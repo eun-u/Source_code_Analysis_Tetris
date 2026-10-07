@@ -110,9 +110,9 @@ public final class GameMenu extends JPanel {
                     g.setColor(UniversityPixelTheme.GOLD);
                     g.fillPolygon(new int[] { ax, ax + 12, ax }, new int[] { ay - 9, ay, ay + 9 }, 3);
                 } else {
-                    g.setColor(new Color(11, 11, 46, 150));
+                    g.setColor(new Color(12, 28, 33, 188));
                     g.fillRect(0, 0, w, h);
-                    g.setColor(new Color(81, 72, 166, 120));
+                    g.setColor(new Color(98, 131, 134, 150));
                     g.fillRect(0, 0, 3, h);
                 }
                 int textX = on ? 38 : 24;
@@ -124,7 +124,7 @@ public final class GameMenu extends JPanel {
                 int top = (h - blockHeight) / 2;
                 g.setColor(UniversityPixelTheme.BLACK);
                 g.drawString(getText(), textX + 2, top + title.getAscent() + 2);
-                g.setColor(on ? UniversityPixelTheme.TEXT : new Color(0xD8D2F5));
+                g.setColor(on ? UniversityPixelTheme.TEXT : UniversityPixelTheme.TEXT_SUB);
                 g.drawString(getText(), textX, top + title.getAscent());
                 if (description != null) {
                     g.setFont(small);

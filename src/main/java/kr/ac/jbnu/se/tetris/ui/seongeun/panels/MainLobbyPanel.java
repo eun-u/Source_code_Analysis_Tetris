@@ -15,7 +15,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameMenu;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /**
- * 게임 타이틀 화면. 화면 전체에 천천히 흐르는 캠퍼스 야경을 깔고, 왼쪽에 로고와 세로 메뉴,
+ * 게임 타이틀 화면. 화면 전체에 한국 캠퍼스 야경을 깔고, 왼쪽에 로고와 세로 메뉴,
  * 오른쪽 아래에 다음 스토리 전투 카드를 둔다. ↑↓·Enter로도 고를 수 있다.
  */
 public class MainLobbyPanel extends JPanel {
@@ -89,32 +89,19 @@ public class MainLobbyPanel extends JPanel {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             int w = getWidth(), h = getHeight();
-            long now = System.currentTimeMillis();
-            g.setPaint(new GradientPaint(0, 0, new Color(0x05061A), 0, h, new Color(0x161246)));
+            g.setPaint(new GradientPaint(0, 0, new Color(0x11212A), 0, h, new Color(0x10191D)));
             g.fillRect(0, 0, w, h);
-            for (int i = 0; i < 70; i++) {
-                int x = Math.floorMod(i * 151 + 17, Math.max(1, w));
-                int y = Math.floorMod(i * 67 + 9, Math.max(1, h / 2));
-                boolean bright = (now / 280 + i) % 9 == 0;
-                g.setColor(new Color(255, 247, 232, bright ? 230 : 60 + (i % 4) * 25));
-                g.fillRect(x, y, bright ? 3 : 2, bright ? 3 : (i % 3 == 0 ? 2 : 1));
-            }
             if (CAMPUS != null) {
-                // 캠퍼스 파노라마를 화면 아래 62% 높이로 키우고 천천히 좌우로 흘려 보낸다.
-                int artHeight = Math.round(h * 0.62f);
-                int artWidth = CAMPUS.getWidth() * artHeight / CAMPUS.getHeight();
-                int travel = Math.max(0, artWidth - w);
-                double phase = (Math.sin(now / 9000.0) + 1) / 2;
-                int x = -(int) Math.round(travel * phase);
+                int artWidth = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
                 g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-                g.drawImage(CAMPUS, x, h - artHeight, artWidth, artHeight, null);
-                g.setPaint(new GradientPaint(0, h - artHeight, new Color(5, 6, 26, 255), 0, h - artHeight + 60, new Color(5, 6, 26, 0)));
-                g.fillRect(0, h - artHeight, w, 60);
+                g.drawImage(CAMPUS, (w - artWidth) / 2, 0, artWidth, h, null);
             }
-            // 왼쪽 메뉴 쪽을 어둡게 해서 글자가 그림 위에서도 읽히게 한다.
-            g.setPaint(new GradientPaint(0, 0, new Color(5, 4, 22, 225), Math.round(w * 0.55f), 0, new Color(5, 4, 22, 0)));
+            g.setColor(new Color(8, 17, 21, 65));
             g.fillRect(0, 0, w, h);
-            g.setPaint(new GradientPaint(0, h - 120, new Color(5, 4, 22, 0), 0, h, new Color(5, 4, 22, 220)));
+            // 메뉴와 다음 전투 카드 사이에 풍경을 남기면서 글자를 읽기 쉽게 한다.
+            g.setPaint(new GradientPaint(0, 0, new Color(8, 17, 21, 222), Math.round(w * 0.57f), 0, new Color(8, 17, 21, 10)));
+            g.fillRect(0, 0, w, h);
+            g.setPaint(new GradientPaint(0, h - 120, new Color(8, 17, 21, 0), 0, h, new Color(8, 17, 21, 220)));
             g.fillRect(0, h - 120, w, 120);
         } finally { g.dispose(); }
     }
@@ -196,7 +183,7 @@ public class MainLobbyPanel extends JPanel {
                 Color accent = boss ? UniversityPixelTheme.CORAL : GOLD;
                 g.setColor(new Color(0, 0, 0, 140));
                 g.fillRect(6, 6, w - 6, h - 6);
-                g.setColor(new Color(20, 15, 60, 225));
+                g.setColor(new Color(22, 38, 44, 232));
                 g.fillRect(0, 0, w - 6, h - 6);
                 g.setColor(accent);
                 g.drawRect(0, 0, w - 7, h - 7);
@@ -242,11 +229,7 @@ public class MainLobbyPanel extends JPanel {
 
     private static BufferedImage loadCampus() {
         try {
-            BufferedImage banner = ImageIO.read(MainLobbyPanel.class.getResource("/ui/university/campus-opening.png"));
-            // 원본 왼쪽의 'WEEK 1 개강!' 글씨와 둥근 테두리를 빼고 캠퍼스 풍경만 쓴다.
-            int left = banner.getWidth() * 470 / 1385, right = banner.getWidth() * 1360 / 1385;
-            int top = banner.getHeight() * 10 / 230;
-            return banner.getSubimage(left, top, right - left, banner.getHeight() - top);
+            return ImageIO.read(MainLobbyPanel.class.getResource("/ui/campus-rpg/university-bg.png"));
         } catch (IOException | IllegalArgumentException unavailable) {
             return null;
         }

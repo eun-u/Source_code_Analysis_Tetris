@@ -394,8 +394,9 @@ public final class RenderGameServer implements AutoCloseable {
         for (Room room : new ArrayList<Room>(rooms.values())) {
             if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
             try {
-                room.battle.tick();
+                BattleResult tick = room.battle.tick();
                 broadcastSnapshot(room);
+                broadcastPickups(room, tick);
                 finishIfNeeded(room);
             } catch (RuntimeException failure) {
                 invalidate(room, "SERVER_TICK_FAILED");
@@ -708,6 +709,7 @@ public final class RenderGameServer implements AutoCloseable {
         outcome(peer, request.getRequestId(), result.isAccepted(),
                 result.isAccepted() ? null : result.getReason());
         if (result.getState().getVersion() != version) broadcastSnapshot(room);
+        broadcastPickups(room, result);
         finishIfNeeded(room);
     }
 
@@ -931,6 +933,18 @@ public final class RenderGameServer implements AutoCloseable {
         if (room.battle == null || room.matchId == null) return;
         NetworkUpdate snapshot = NetworkUpdate.snapshot(room.id, room.matchId, room.battle.getState());
         for (Peer member : room.members.values()) member.send(snapshot);
+    }
+
+    private void broadcastPickups(Room room, BattleResult result) {
+        if (result == null || room.matchId == null) return;
+        List<kr.ac.jbnu.se.tetris.battle.BattleEvent> pickups =
+                new ArrayList<kr.ac.jbnu.se.tetris.battle.BattleEvent>();
+        for (kr.ac.jbnu.se.tetris.battle.BattleEvent event : result.getEvents())
+            if (event.getType() == kr.ac.jbnu.se.tetris.battle.BattleEvent.Type.ITEM_ACQUIRED)
+                pickups.add(event);
+        if (pickups.isEmpty()) return;
+        NetworkUpdate update = NetworkUpdate.events(room.id, room.matchId, pickups);
+        for (Peer member : room.members.values()) member.send(update);
     }
 
     private final class Peer {

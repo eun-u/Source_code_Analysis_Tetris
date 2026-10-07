@@ -6,6 +6,27 @@ import java.util.List;
 
 /** 게임에서 확정된 사실을 담는 불변 이벤트와 종류별 선택 필드 */
 public final class GameEvent {
+    /** 줄 압축 이전 채굴 위치. 보드 좌표는 왼쪽 x=0, 맨 아래 y=0이다. */
+    public static final class ItemExtraction {
+        private final String itemId;
+        private final int x;
+        private final int y;
+        private final long originId;
+
+        public ItemExtraction(String itemId, int x, int y, long originId) {
+            if (itemId == null || itemId.isEmpty() || x < 0 || x >= Board.WIDTH
+                    || y < 0 || y >= Board.HEIGHT || originId <= 0)
+                throw new IllegalArgumentException("Invalid item extraction");
+            this.itemId = itemId;
+            this.x = x;
+            this.y = y;
+            this.originId = originId;
+        }
+        public String getItemId() { return itemId; }
+        public int getX() { return x; }
+        public int getY() { return y; }
+        public long getOriginId() { return originId; }
+    }
     public enum Type {
         GAME_STARTED, PIECE_SPAWNED, PIECE_MOVED, PIECE_ROTATED, PIECE_PLACED,
         LINE_CLEAR, COMBO, T_SPIN, PIECE_HELD, GARBAGE_QUEUED, GARBAGE_RECEIVED,
@@ -26,6 +47,7 @@ public final class GameEvent {
     private final boolean tSpin;
     private final boolean perfectClear;
     private final List<String> collectedItems;
+    private final List<ItemExtraction> itemExtractions;
 
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason) {
@@ -47,6 +69,13 @@ public final class GameEvent {
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
               boolean perfectClear, List<String> collectedItems) {
+        this(type, eventId, stateVersion, tick, actorId, piece, x, y, lineCount, reason,
+                combo, tSpin, perfectClear, collectedItems, Collections.<ItemExtraction>emptyList());
+    }
+
+    GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
+              Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
+              boolean perfectClear, List<String> collectedItems, List<ItemExtraction> itemExtractions) {
         if (type == null || actorId == null || eventId <= 0 || stateVersion < 0 || tick < 0) {
             throw new IllegalArgumentException("Invalid event identity");
         }
@@ -78,6 +107,17 @@ public final class GameEvent {
         if (collectedItems == null || (type != Type.LINE_CLEAR && !collectedItems.isEmpty())) {
             throw new IllegalArgumentException("Only LINE_CLEAR can collect items");
         }
+        if (itemExtractions == null || (type != Type.LINE_CLEAR && !itemExtractions.isEmpty())) {
+            throw new IllegalArgumentException("Only LINE_CLEAR can extract items");
+        }
+        if (!itemExtractions.isEmpty()) {
+            if (collectedItems.size() != itemExtractions.size())
+                throw new IllegalArgumentException("Extracted item count mismatch");
+            for (int i = 0; i < itemExtractions.size(); i++)
+                if (itemExtractions.get(i) == null
+                        || !collectedItems.get(i).equals(itemExtractions.get(i).getItemId()))
+                    throw new IllegalArgumentException("Extracted item mismatch");
+        }
         this.type = type;
         this.eventId = eventId;
         this.stateVersion = stateVersion;
@@ -92,6 +132,7 @@ public final class GameEvent {
         this.tSpin = tSpin;
         this.perfectClear = perfectClear;
         this.collectedItems = Collections.unmodifiableList(new ArrayList<String>(collectedItems));
+        this.itemExtractions = Collections.unmodifiableList(new ArrayList<ItemExtraction>(itemExtractions));
     }
 
     public Type getType() { return type; }
@@ -109,4 +150,5 @@ public final class GameEvent {
     /** 줄 제거 직후 가비지 삽입 전 보드가 완전히 비었는지 여부, LINE_CLEAR에서만 true */
     public boolean isPerfectClear() { return perfectClear; }
     public List<String> getCollectedItems() { return collectedItems; }
+    public List<ItemExtraction> getItemExtractions() { return itemExtractions; }
 }

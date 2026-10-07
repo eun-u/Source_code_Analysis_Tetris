@@ -65,6 +65,15 @@ public final class RpgWireStateTest {
         oldPlayer.remove("itemCharges");
         check(WireSnapshots.decode(legacy).getParticipant("p").getItemCharges()
                 .equals(Arrays.asList(1, 1, 1)), "구버전 패킷은 슬롯마다 1회로 복원");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldGame = (Map<String, Object>) oldPlayer.get("game");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldActive = (Map<String, Object>) oldGame.get("activePiece");
+        oldActive.remove("oreCellIndex");
+        oldGame.remove("holdOreCellIndex");
+        check(WireSnapshots.decode(legacy).getParticipant("p").getGameState()
+                .getActivePiece().getOreCellIndex() == 0,
+                "구버전 미노 패킷은 기본 광석 칸으로 복원");
         oldPlayer.put("itemCharges", Arrays.asList(3L, 1L, 1L));
         try {
             WireSnapshots.decode(legacy);
@@ -77,8 +86,11 @@ public final class RpgWireStateTest {
                 "가비지·속도·결과 통계 보존");
         GameState decoded = p.getGameState();
         check(game.getHoldItemId().equals(decoded.getHoldItemId()), "HOLD 메타데이터 보존");
+        check(game.getHoldOreCellIndex() == decoded.getHoldOreCellIndex(), "HOLD 광석 위치 보존");
         check(game.getActivePiece().getItemId().equals(decoded.getActivePiece().getItemId()),
                 "활성 미노 메타데이터 보존");
+        check(game.getActivePiece().getOreCellIndex() == decoded.getActivePiece().getOreCellIndex(),
+                "활성 미노 광석 위치 보존");
         int marks = 0;
         for (int y = 0; y < 22; y++) for (int x = 0; x < 10; x++) {
             String before = game.getBoard().getItemId(x, y);
@@ -86,7 +98,7 @@ public final class RpgWireStateTest {
             check(before == null ? after == null : before.equals(after), "정착 미노 메타데이터 보존");
             if (before != null) marks++;
         }
-        check(marks == 4, "정착 미노 네 칸의 아이템 표시 유지");
+        check(marks == 1, "정착 미노 한 칸에만 광석 표시");
         System.out.println("PASS RpgWireStateTest");
     }
 

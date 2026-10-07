@@ -86,7 +86,8 @@ public final class GameEngine implements GameActionSink {
         return new GameState(actorId, version, tick, status, board.snapshot(),
                 activePiece, pieceX, pieceY, linesCleared, awaitingSpawn,
                 holdPiece, status == GameState.Status.RUNNING && activePiece != null && !holdUsed,
-                nextTypes(), ghostY, combo, pendingGarbageLines, getHoldItemId());
+                nextTypes(), ghostY, combo, pendingGarbageLines, getHoldItemId(),
+                heldPiece == null ? -1 : heldPiece.getOreCellIndex());
     }
 
     public synchronized String getHoldItemId() { return heldPiece == null ? null : heldPiece.getItemId(); }
@@ -176,9 +177,11 @@ public final class GameEngine implements GameActionSink {
                 if (next.reason != null) return reject(next.reason);
                 replacement = consumePreparedPiece();
             } else {
-                replacement = new Piece(heldPiece.getType(), heldPiece.getIdentity(), heldPiece.getItemId());
+                replacement = new Piece(heldPiece.getType(), heldPiece.getIdentity(),
+                        heldPiece.getItemId(), heldPiece.getOreCellIndex());
             }
-            heldPiece = new Piece(previous.getType(), previous.getIdentity(), previous.getItemId());
+            heldPiece = new Piece(previous.getType(), previous.getIdentity(),
+                    previous.getItemId(), previous.getOreCellIndex());
             holdPiece = previous.getType();
             holdUsed = true;
             lastSuccessfulRotation = false;
@@ -272,7 +275,7 @@ public final class GameEngine implements GameActionSink {
         detached.place(activePiece, pieceX, landingY);
         boolean tSpin = rotatedAtLock && activePiece.getType() == PieceType.T
                 && occupiedCorners(detached, pieceX, landingY) >= 3;
-        Map<Long, String> collected = detached.itemsOnCompletedRows(collectedItemOrigins);
+        Map<Long, GameEvent.ItemExtraction> collected = detached.itemsOnCompletedRows(collectedItemOrigins);
         int cleared = detached.removeFullLines();
         detached.clearCollectedItemMarkers(collected.keySet());
         // 퍼펙트 클리어는 줄 제거 직후 가비지를 올리기 전에 보드가 완전히 비었는지로 판정
@@ -361,7 +364,7 @@ public final class GameEngine implements GameActionSink {
             collectedItemOrigins.addAll(preview.collected.keySet());
             events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
                     preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
-                    new ArrayList<String>(preview.collected.values())));
+                    itemIds(preview.collected), new ArrayList<GameEvent.ItemExtraction>(preview.collected.values())));
             if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
                     preview.linesCleared, null, combo, preview.tSpin));
             // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
@@ -426,7 +429,13 @@ public final class GameEngine implements GameActionSink {
         long origin = ++issuedPieces;
         String item = itemEveryPieces > 0 && origin % itemEveryPieces == 0
                 ? itemPool.get(itemRandom.nextInt(itemPool.size())) : null;
-        return new Piece(type, origin, item);
+        return new Piece(type, origin, item, item == null ? -1 : itemRandom.nextInt(4));
+    }
+
+    private static List<String> itemIds(Map<Long, GameEvent.ItemExtraction> collected) {
+        List<String> ids = new ArrayList<String>();
+        for (GameEvent.ItemExtraction extraction : collected.values()) ids.add(extraction.getItemId());
+        return ids;
     }
 
     private static final class LockPreview {
@@ -435,10 +444,10 @@ public final class GameEngine implements GameActionSink {
         private final boolean tSpin;
         private final boolean perfectClear;
         private final boolean overflow;
-        private final Map<Long, String> collected;
+        private final Map<Long, GameEvent.ItemExtraction> collected;
 
         private LockPreview(Board board, int linesCleared, boolean tSpin, boolean perfectClear,
-                            boolean overflow, Map<Long, String> collected) {
+                            boolean overflow, Map<Long, GameEvent.ItemExtraction> collected) {
             this.board = board;
             this.linesCleared = linesCleared;
             this.tSpin = tSpin;
@@ -470,8 +479,15 @@ public final class GameEngine implements GameActionSink {
     private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
                             String reason, int eventCombo, boolean tSpin, boolean perfectClear,
                             List<String> collectedItems) {
+        return event(type, piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear,
+                collectedItems, Collections.<GameEvent.ItemExtraction>emptyList());
+    }
+
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
+                            String reason, int eventCombo, boolean tSpin, boolean perfectClear,
+                            List<String> collectedItems, List<GameEvent.ItemExtraction> extractions) {
         return new GameEvent(type, ++lastEventId, version, tick, actorId,
-                piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear, collectedItems);
+                piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear, collectedItems, extractions);
     }
 
     private ActionResult accepted(List<GameEvent> events) {

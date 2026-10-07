@@ -17,6 +17,7 @@ import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GarbageMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.OreFlightLayer;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
@@ -34,6 +35,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final int PAD = 10, GAP = 8, TOP = 50, BOTTOM = 28, METER = 12;
 
     private final PixelArena arena = new PixelArena();
+    private final OreFlightLayer oreFlights = new OreFlightLayer();
     private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
     private final JLabel playerStatus = label("LINES 0"), enemyStatus = label("LINES 0");
     private final JLabel hold = label("HOLD"), next = label("NEXT");
@@ -108,6 +110,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         status.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         status.setForeground(UniversityPixelTheme.TEXT_SUB);
         add(status);
+        add(oreFlights);
+        // Swing은 인덱스 0을 맨 앞에 그린다. 채굴 광원이 보드와 슬롯 위를 지나야 한다.
+        setComponentZOrder(oreFlights, 0);
     }
 
     private void buildLeftColumn() {
@@ -218,6 +223,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (width <= 0 || height <= 0) return;
         topBar.setBounds(PAD, 8, width - PAD * 2, 36);
         status.setBounds(PAD + 4, height - BOTTOM + 2, width - PAD * 2, 22);
+        oreFlights.setBounds(0, 0, width, height);
         int areaTop = TOP, areaHeight = Math.max(100, height - TOP - BOTTOM);
         if (online) {
             layoutOnline(width, areaTop, areaHeight);
@@ -352,6 +358,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         feedbackGeneration++;
         previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
         playerBoard.resetEffects(); enemyBoard.resetEffects();
+        oreFlights.reset();
         arena.resetForEncounter();
         garbage.setPending(0, 0);
     }
@@ -379,8 +386,12 @@ public class BattlePanel extends JPanel implements Scrollable {
             } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
                 board.showGarbage(event.getAmount());
             } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
-                arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
-                if (local) { sound(AudioService.Event.ITEM_ACQUIRE); setFeedback("아이템 획득 · " + itemName(event.getReason())); }
+                boolean mined = local && showOreFlight(event);
+                if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
+                if (local) {
+                    sound(AudioService.Event.ITEM_ACQUIRE);
+                    setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + itemName(event.getReason()));
+                }
             } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
                 boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
                 arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
@@ -400,6 +411,17 @@ public class BattlePanel extends JPanel implements Scrollable {
                 } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
             }
         }
+    }
+    private boolean showOreFlight(BattleEvent event) {
+        int x = event.getItemSourceX(), y = event.getItemSourceY();
+        int index = event.getItemSlotIndex();
+        if (x < 0 || x >= 10 || y < 0 || y >= 22 || index < 0 || index >= slots.length
+                || playerBoard.getWidth() <= 0 || slots[index].getWidth() <= 0) return false;
+        Point from = SwingUtilities.convertPoint(playerBoard, playerBoard.cellCenter(x, y), this);
+        Point to = SwingUtilities.convertPoint(slots[index],
+                new Point(slots[index].getWidth() / 2, slots[index].getHeight() / 2), this);
+        oreFlights.launch(from, to);
+        return true;
     }
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;

@@ -45,28 +45,15 @@ public final class MiniPiecePreview extends JComponent {
             }
             int cell = 11, width = (maxX - minX + 1) * cell, height = (maxY - minY + 1) * cell;
             int left = (getWidth() - width) / 2, top = 22 + (getHeight() - 22 - height) / 2;
-            Color color = color(type);
             for (int index = 0; index < 4; index++) {
                 int x = left + (piece.x(index) - minX) * cell;
                 int y = top + (maxY - piece.y(index)) * cell;
-                g.setColor(color.darker()); g.fillRect(x, y, cell, cell);
-                g.setColor(color); g.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+                ConcreteBlockSkin.paint(g, x, y, cell, type, false, false);
             }
             if (item) {
                 g.setColor(UniversityPixelTheme.GOLD);
                 g.fillRect(getWidth() - 12, 3, 6, 6);
             }
         } finally { g.dispose(); }
-    }
-    private static Color color(PieceType type) {
-        switch (type) {
-            case I: return new Color(104, 221, 235);
-            case O: return new Color(255, 221, 115);
-            case T: return new Color(201, 139, 255);
-            case S: return new Color(112, 217, 155);
-            case Z: return new Color(255, 139, 113);
-            case J: return new Color(114, 157, 255);
-            default: return new Color(253, 183, 97);
-        }
     }
 }

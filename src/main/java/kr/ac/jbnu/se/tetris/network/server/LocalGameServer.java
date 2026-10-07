@@ -106,8 +106,9 @@ public final class LocalGameServer implements AutoCloseable {
         for (Room room : new ArrayList<Room>(rooms.values())) {
             if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
             try {
-                advanceRoom(room);
+                List<kr.ac.jbnu.se.tetris.battle.BattleEvent> pickups = advanceRoom(room);
                 broadcastSnapshot(room);
+                broadcastPickups(room, pickups);
             } catch (RuntimeException failure) {
                 for (Peer peer : room.members.values()) peer.send(NetworkUpdate.error("SERVER_TICK_FAILED"));
             }
@@ -115,18 +116,21 @@ public final class LocalGameServer implements AutoCloseable {
     }
 
     /** 참가자별 중력과 지속 효과는 서버의 단조 경과 시간을 공유한다. */
-    private void advanceRoom(Room room) {
+    private List<kr.ac.jbnu.se.tetris.battle.BattleEvent> advanceRoom(Room room) {
+        List<kr.ac.jbnu.se.tetris.battle.BattleEvent> pickups = new ArrayList<kr.ac.jbnu.se.tetris.battle.BattleEvent>();
         long now = System.nanoTime();
         long elapsedMillis = Math.max(0L, (now - room.lastAdvanceNanos) / 1_000_000L);
-        if (elapsedMillis == 0) return;
+        if (elapsedMillis == 0) return pickups;
         room.lastAdvanceNanos += elapsedMillis * 1_000_000L;
         long remaining = elapsedMillis;
         while (remaining > 0 && room.battle.getState().getStatus() == BattleState.Status.RUNNING) {
             long step = Math.min(600000L, remaining);
             BattleResult result = room.battle.advance(step);
             if (!result.isAccepted()) throw new IllegalStateException(result.getReason());
+            pickups.addAll(itemPickups(result));
             remaining -= step;
         }
+        return pickups;
     }
 
     private void handle(Peer peer, WireRequest request) {
@@ -263,10 +267,11 @@ public final class LocalGameServer implements AutoCloseable {
         }
         PlayerIntent intent = request.getIntent();
         if (intent == null) { outcome(peer, request.getRequestId(), false, "INVALID_INTENT"); return; }
-        advanceRoom(room);
+        List<kr.ac.jbnu.se.tetris.battle.BattleEvent> timedPickups = advanceRoom(room);
         if (room.battle.getState().getStatus() != BattleState.Status.RUNNING) {
             outcome(peer, request.getRequestId(), false, "MATCH_NOT_RUNNING");
             broadcastSnapshot(room);
+            broadcastPickups(room, timedPickups);
             return;
         }
         long beforeVersion = room.battle.getState().getVersion();
@@ -276,6 +281,8 @@ public final class LocalGameServer implements AutoCloseable {
         outcome(peer, request.getRequestId(), result.isAccepted(),
                 result.isAccepted() ? null : result.getReason());
         if (result.getState().getVersion() != beforeVersion) broadcastSnapshot(room);
+        broadcastPickups(room, timedPickups);
+        broadcastPickups(room, itemPickups(result));
     }
 
     private void handleSnapshot(Peer peer, WireRequest request) {
@@ -342,6 +349,23 @@ public final class LocalGameServer implements AutoCloseable {
         if (room.battle == null || room.matchId == null) return;
         NetworkUpdate snapshot = NetworkUpdate.snapshot(room.id, room.matchId, room.battle.getState());
         for (Peer member : room.members.values()) member.send(snapshot);
+    }
+
+    private static List<kr.ac.jbnu.se.tetris.battle.BattleEvent> itemPickups(BattleResult result) {
+        List<kr.ac.jbnu.se.tetris.battle.BattleEvent> pickups = new ArrayList<kr.ac.jbnu.se.tetris.battle.BattleEvent>();
+        for (kr.ac.jbnu.se.tetris.battle.BattleEvent event : result.getEvents())
+            if (event.getType() == kr.ac.jbnu.se.tetris.battle.BattleEvent.Type.ITEM_ACQUIRED)
+                pickups.add(event);
+        return pickups;
+    }
+
+    private void broadcastPickups(Room room, List<kr.ac.jbnu.se.tetris.battle.BattleEvent> pickups) {
+        if (room.matchId == null || pickups.isEmpty()) return;
+        for (int start = 0; start < pickups.size(); start += 32) {
+            NetworkUpdate update = NetworkUpdate.events(room.id, room.matchId,
+                    pickups.subList(start, Math.min(pickups.size(), start + 32)));
+            for (Peer member : room.members.values()) member.send(update);
+        }
     }
 
     private void disconnect(Peer peer) {

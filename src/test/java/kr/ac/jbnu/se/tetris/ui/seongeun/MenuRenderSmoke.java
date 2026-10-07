@@ -18,6 +18,11 @@ public final class MenuRenderSmoke {
         Path folder = Paths.get(args[0]);
         SwingUtilities.invokeAndWait(() -> {
             try {
+                java.nio.file.Files.createDirectories(folder);
+                MainLobbyPanel lobby = new MainLobbyPanel();
+                lobby.setStoryProgress(0, 9);
+                write(lobby, folder.resolve("lobby.png"));
+                write(lobby, folder.resolve("lobby-small.png"), 820, 650);
                 StageCatalog catalog = StageCatalog.loadDefault();
                 StoryStageSelectPanel story = new StoryStageSelectPanel();
                 story.updateProgress(new StoryProgressService(catalog).getCampaignProgress(), catalog);

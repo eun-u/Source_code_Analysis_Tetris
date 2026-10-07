@@ -18,6 +18,7 @@ public final class Piece {
     private final int[][] cells;
     private final long identity;
     private final String itemId;
+    private final int oreCellIndex;
 
     public Piece(PieceType type) {
         if (type == null || type == PieceType.EMPTY || type == PieceType.GARBAGE) {
@@ -28,30 +29,44 @@ public final class Piece {
         this.cells = copy(SHAPES[type.ordinal()]);
         this.identity = 0;
         this.itemId = null;
+        this.oreCellIndex = -1;
     }
 
     Piece(PieceType type, long identity, String itemId) {
-        this(type, 0, copy(SHAPES[type.ordinal()]), identity, itemId);
+        this(type, identity, itemId, itemId == null ? -1 : 0);
+    }
+
+    Piece(PieceType type, long identity, String itemId, int oreCellIndex) {
+        this(type, 0, copy(SHAPES[type.ordinal()]), identity, itemId, oreCellIndex);
     }
 
     /** 네트워크 표시 스냅샷에서 아이템 미노를 복원한다. */
     public static Piece withItem(PieceType type, String itemId, long identity) {
+        return withItem(type, itemId, identity, itemId == null ? -1 : 0);
+    }
+
+    public static Piece withItem(PieceType type, String itemId, long identity, int oreCellIndex) {
         Piece base = new Piece(type);
         if (identity < 0) throw new IllegalArgumentException("Invalid piece identity");
-        return new Piece(base.type, base.rotation, copy(base.cells), identity, itemId);
+        return new Piece(base.type, base.rotation, copy(base.cells), identity, itemId, oreCellIndex);
     }
 
     public Piece withItem(String itemId, long identity) {
         if (identity < 0) throw new IllegalArgumentException("Invalid piece identity");
-        return new Piece(type, rotation, copy(cells), identity, itemId);
+        return new Piece(type, rotation, copy(cells), identity, itemId, itemId == null ? -1 : 0);
     }
 
-    private Piece(PieceType type, int rotation, int[][] cells, long identity, String itemId) {
+    private Piece(PieceType type, int rotation, int[][] cells, long identity, String itemId, int oreCellIndex) {
+        if ((itemId == null && oreCellIndex != -1)
+                || (itemId != null && (oreCellIndex < 0 || oreCellIndex > 3))) {
+            throw new IllegalArgumentException("Invalid ore cell index");
+        }
         this.type = type;
         this.rotation = rotation;
         this.cells = cells;
         this.identity = identity;
         this.itemId = itemId;
+        this.oreCellIndex = oreCellIndex;
     }
 
     private static int[][] copy(int[][] source) {
@@ -67,6 +82,8 @@ public final class Piece {
     public int getRotation() { return rotation; }
     public long getIdentity() { return identity; }
     public String getItemId() { return itemId; }
+    public int getOreCellIndex() { return oreCellIndex; }
+    public boolean hasOreAt(int index) { return itemId != null && index == oreCellIndex; }
 
     public int x(int index) { return cells[index][0]; }
     public int y(int index) { return cells[index][1]; }
@@ -84,7 +101,7 @@ public final class Piece {
             rotated[i][0] = cells[i][1];
             rotated[i][1] = -cells[i][0];
         }
-        return new Piece(type, (rotation + 3) % 4, rotated, identity, itemId);
+        return new Piece(type, (rotation + 3) % 4, rotated, identity, itemId, oreCellIndex);
     }
 
     public Piece rotateRight() {
@@ -94,6 +111,6 @@ public final class Piece {
             rotated[i][0] = -cells[i][1];
             rotated[i][1] = cells[i][0];
         }
-        return new Piece(type, (rotation + 1) % 4, rotated, identity, itemId);
+        return new Piece(type, (rotation + 1) % 4, rotated, identity, itemId, oreCellIndex);
     }
 }

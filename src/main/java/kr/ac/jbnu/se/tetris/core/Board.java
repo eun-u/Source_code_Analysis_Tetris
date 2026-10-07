@@ -72,7 +72,7 @@ public final class Board {
             int index = y * WIDTH + x;
             cells[index] = piece.getType();
             origins[index] = piece.getIdentity();
-            itemIds[index] = piece.getItemId();
+            itemIds[index] = piece.hasOreAt(i) ? piece.getItemId() : null;
         }
     }
 
@@ -91,9 +91,9 @@ public final class Board {
         System.arraycopy(source.itemIds, 0, itemIds, 0, itemIds.length);
     }
 
-    /** 완성 행에 닿은 원본 미노별 아이템을 하나씩만 추출한다. */
-    Map<Long, String> itemsOnCompletedRows(Set<Long> previouslyCollected) {
-        Map<Long, String> found = new LinkedHashMap<Long, String>();
+    /** 완성 행 안의 실제 광석 칸만 추출한다. 좌표는 압축 전 보드 좌표다. */
+    Map<Long, GameEvent.ItemExtraction> itemsOnCompletedRows(Set<Long> previouslyCollected) {
+        Map<Long, GameEvent.ItemExtraction> found = new LinkedHashMap<Long, GameEvent.ItemExtraction>();
         for (int y = 0; y < HEIGHT; y++) {
             boolean full = true;
             for (int x = 0; x < WIDTH; x++) {
@@ -104,7 +104,8 @@ public final class Board {
                 int index = y * WIDTH + x;
                 if (origins[index] > 0 && itemIds[index] != null
                         && !previouslyCollected.contains(origins[index])) {
-                    found.put(origins[index], itemIds[index]);
+                    found.put(origins[index], new GameEvent.ItemExtraction(
+                            itemIds[index], x, y, origins[index]));
                 }
             }
         }

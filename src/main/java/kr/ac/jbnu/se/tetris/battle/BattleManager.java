@@ -83,7 +83,9 @@ public final class BattleManager {
             GameEngine engine = new GameEngine(spec.getId(), generator);
             engine.setBattleManaged(true);
             int itemLevel = !pvp && index > 0 ? monsterItemLevel : -1;
-            if (itemLevel < 0) engine.configureItemSpawns(5, seed ^ (long) spec.getId().hashCode());
+            if (itemLevel < 0) engine.configureItemSpawns(
+                    !pvp && "utility".equals(spec.getCharacter().getId()) ? 3 : 5,
+                    seed ^ (long) spec.getId().hashCode());
             else engine.configureItemSpawns(itemLevel == 0 ? 0 : 10 - itemLevel,
                     seed ^ (long) spec.getId().hashCode(), monsterItems(itemLevel));
             int gravity = pvp ? 500 : index == 0 ? playerGravityMillis : monsterGravityMillis;
@@ -296,7 +298,7 @@ public final class BattleManager {
     private void processCore(Participant p, ActionResult action, List<BattleEvent> events) {
         boolean placed = false;
         boolean cleared = false;
-        List<String> acquired = new ArrayList<String>();
+        List<GameEvent.ItemExtraction> acquired = new ArrayList<GameEvent.ItemExtraction>();
         for (GameEvent core : action.getEvents()) {
             events.add(event(BattleEvent.Type.CORE_EVENT, core.getActorId(), null,
                     core.getLineCount(), core.getReason(), core));
@@ -305,7 +307,7 @@ public final class BattleManager {
                 cleared = true;
                 attack(p, core, events);
                 p.maxCombo = Math.max(p.maxCombo, Math.max(0, core.getCombo()));
-                acquired.addAll(core.getCollectedItems());
+                acquired.addAll(core.getItemExtractions());
             }
             if (core.getType() == GameEvent.Type.TOP_OUT && !p.eliminated) {
                 p.eliminated = true; p.eliminationReason = "TOP_OUT";
@@ -314,7 +316,7 @@ public final class BattleManager {
                 events.add(event(BattleEvent.Type.GARBAGE_RECEIVED, p.spec.getId(), null,
                         core.getLineCount(), core.getReason(), core));
         }
-        for (String id : acquired) acquire(p, id, events);
+        for (GameEvent.ItemExtraction ore : acquired) acquire(p, ore, events);
         if (placed && !p.eliminated && p.controller.getState().isAwaitingSpawn()) {
             if (!cleared) {
                 List<GameAction.Garbage> due = p.tank.drainForPlacement(elapsedMillis);
@@ -374,8 +376,6 @@ public final class BattleManager {
         if (target.hp == 0) {
             target.eliminated = true; target.eliminationReason = "HP_DEPLETED";
         } else sendGarbage(source, target, garbage, clear, events);
-        if (!perfect && "utility".equals(source.spec.getCharacter().getId())
-                && clear.getLineCount() >= 2) acquire(source, randomItem(), events);
         chargeFever(source, feverGain(clear.getLineCount()));
     }
 
@@ -386,15 +386,17 @@ public final class BattleManager {
         events.add(event(BattleEvent.Type.GARBAGE_SENT, source.spec.getId(), target.spec.getId(),
                 lines, null, core));
     }
-    private void acquire(Participant p, String id, List<BattleEvent> events) {
+    private void acquire(Participant p, GameEvent.ItemExtraction ore, List<BattleEvent> events) {
+        String id = ore.getItemId();
         if (ITEM_IDS.contains(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) {
+            int slot = p.items.size();
             p.items.add(id);
             p.itemCharges.add(ItemSpec.initialChargesOf(id));
-            events.add(event(BattleEvent.Type.ITEM_ACQUIRED, p.spec.getId(),
-                    p.spec.getId(), 1, id, null));
+            events.add(new BattleEvent(BattleEvent.Type.ITEM_ACQUIRED, ++lastEventId,
+                    p.spec.getId(), p.spec.getId(), 1, id, null,
+                    ore.getX(), ore.getY(), slot));
         }
     }
-    private String randomItem() { return ITEM_IDS.get(itemRandom.nextInt(ITEM_IDS.size())); }
     private static boolean consumeItem(Participant p, String id) {
         int index = p.items.indexOf(id);
         if (index < 0) return false;

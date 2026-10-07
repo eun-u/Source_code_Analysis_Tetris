@@ -34,6 +34,10 @@ public class StoryStageSelectPanel extends JPanel {
     };
     private static final String[] CHAPTERS = { "대학교 과정", "졸업 과정", "취업 과정" };
     private static final BufferedImage PLAYER = readPlayer();
+    private static final BufferedImage[] REGIONS = {
+        readRegion("university-bg.png"), readRegion("graduation-bg.png"),
+        readRegion("employment-bg.png")
+    };
 
     private final PixelButton back = new PixelButton("로비로");
     private final StageCatalog catalog = StageCatalog.loadDefault();
@@ -200,6 +204,11 @@ public class StoryStageSelectPanel extends JPanel {
         catch (Exception unavailable) { return null; }
     }
 
+    private static BufferedImage readRegion(String name) {
+        try { return ImageIO.read(StoryStageSelectPanel.class.getResource("/ui/campus-rpg/" + name)); }
+        catch (Exception unavailable) { return null; }
+    }
+
     /** 지도 그림. 지역 배경, 길, 전투 점, 플레이어 말을 그린다. */
     private final class MapView extends JComponent {
         private final Timer timer = new Timer(40, event -> repaint());
@@ -269,45 +278,26 @@ public class StoryStageSelectPanel extends JPanel {
 
         private void paintRegions(Graphics2D g, int w, int h, long now) {
             Color[][] skies = {
-                { new Color(0x0B0B2E), new Color(0x2E2470) },
-                { new Color(0x170C34), new Color(0x4A2152) },
-                { new Color(0x061128), new Color(0x1E3A5F) }
+                { new Color(0x182B32), new Color(0x40575A) },
+                { new Color(0x17232B), new Color(0x34424C) },
+                { new Color(0x273037), new Color(0x66746C) }
             };
             for (int region = 0; region < 3; region++) {
                 int x0 = region * w / 3, x1 = (region + 1) * w / 3;
                 g.setPaint(new GradientPaint(0, 0, skies[region][0], 0, h, skies[region][1]));
                 g.fillRect(x0, 0, x1 - x0, h);
-                int base = h - 18;
-                g.setColor(new Color(0, 0, 0, 90));
-                if (region == 0) {
-                    g.fillRect(x0, base - 40, x1 - x0, 58);
-                    int tx = x0 + (x1 - x0) * 3 / 5;
-                    g.fillRect(tx, base - 110, 30, 110);
-                    g.fillPolygon(new int[] { tx - 4, tx + 15, tx + 34 }, new int[] { base - 110, base - 136, base - 110 }, 3);
-                    g.setColor(new Color(255, 209, 102, 110));
-                    g.fillOval(tx + 7, base - 100, 16, 16);
-                } else if (region == 1) {
-                    int hx = x0 + 20, hw = x1 - x0 - 40;
-                    g.fillPolygon(new int[] { hx, hx + hw / 2, hx + hw }, new int[] { base - 70, base - 100, base - 70 }, 3);
-                    g.fillRect(hx, base - 70, hw, 88);
-                } else {
-                    for (int x = x0 + 4, i = 0; x < x1; x += 30, i++) {
-                        int height = 50 + Math.floorMod(i * 41, 80);
-                        g.setColor(new Color(0, 0, 0, 100));
-                        g.fillRect(x, base - height, 26, height + 18);
-                        g.setColor(new Color(255, 209, 102, 60));
-                        for (int y = base - height + 6; y < base; y += 11)
-                            if (Math.floorMod(y + i * 5, 3) == 0) g.fillRect(x + 5, y, 4, 4);
-                    }
+                BufferedImage scene = REGIONS[region];
+                if (scene != null) {
+                    int sourceWidth = Math.max(1, scene.getWidth() / 3);
+                    int sourceX = Math.min(scene.getWidth() - sourceWidth,
+                            Math.max(0, scene.getWidth() / 2 - sourceWidth / 2));
+                    g.drawImage(scene, x0, 0, x1, h, sourceX, 0,
+                            sourceX + sourceWidth, scene.getHeight(), null);
                 }
-                for (int s = 0; s < 14; s++) {
-                    int sx = x0 + Math.floorMod(s * 71 + region * 13, Math.max(1, x1 - x0));
-                    int sy = Math.floorMod(s * 43 + region * 29, Math.max(1, h / 2));
-                    g.setColor(new Color(255, 247, 232, (now / 300 + s + region) % 6 == 0 ? 220 : 70));
-                    g.fillRect(sx, sy, 2, 2);
-                }
+                g.setColor(new Color(8, 18, 22, 105));
+                g.fillRect(x0, 0, x1 - x0, h);
                 if (region > 0) {
-                    g.setColor(new Color(0, 0, 0, 120));
+                    g.setColor(new Color(9, 17, 22, 175));
                     g.fillRect(x0 - 1, 0, 3, h);
                 }
                 g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
@@ -332,7 +322,7 @@ public class StoryStageSelectPanel extends JPanel {
                         boolean done = cleared[i];
                         g.setStroke(new BasicStroke(5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND,
                                 1f, new float[] { 10f, 7f }, 0f));
-                        g.setColor(done ? UniversityPixelTheme.GOLD : new Color(0x6D64B8));
+                        g.setColor(done ? UniversityPixelTheme.GOLD : UniversityPixelTheme.LINE);
                     }
                     g.drawLine(a.x, a.y, b.x, b.y);
                 }

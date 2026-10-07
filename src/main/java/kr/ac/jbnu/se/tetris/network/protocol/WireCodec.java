@@ -153,7 +153,10 @@ public final class WireCodec {
                 value.put("reasonCode", text(update.getReasonCode(), 256));
                 break;
             case EVENTS:
-                throw new IOException("EVENTS wire messages are unsupported in protocol v1");
+                value.put("roomId", id(update.getRoomId()));
+                value.put("matchId", id(update.getMatchId()));
+                value.put("events", WireItemEvents.encode(update.getEvents()));
+                break;
             default:
                 throw new IOException("Unknown network update type");
         }
@@ -201,7 +204,10 @@ public final class WireCodec {
                     return NetworkUpdate.rankedSaveStatus(id(value.get("roomId")), id(value.get("matchId")),
                             text(value.get("reasonCode"), 256));
                 case EVENTS:
-                    throw new IOException("EVENTS wire messages are unsupported in protocol v1");
+                    keys(value, new String[] { "version", "message", "type", "roomId", "matchId", "events" },
+                            new String[0]);
+                    return NetworkUpdate.events(id(value.get("roomId")), id(value.get("matchId")),
+                            WireItemEvents.decode(value.get("events")));
                 default:
                     throw new IOException("Unknown network update type");
             }

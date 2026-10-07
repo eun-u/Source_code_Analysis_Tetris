@@ -22,19 +22,19 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.plaf.ColorUIResource;
 import javax.swing.plaf.FontUIResource;
 
-/** University_Simulation의 임시 픽셀 UI 토큰을 Swing에 옮긴 공통 테마. */
+/** 한국 캠퍼스의 콘크리트·청록 그림자·따뜻한 광석 빛을 공유하는 UI 팔레트. */
 public final class UniversityPixelTheme {
-    public static final Color BG = new Color(0x0B0B2E);
-    public static final Color PANEL = new Color(0x1E174D);
-    public static final Color PANEL_LIGHT = new Color(0x2B2166);
-    public static final Color TEXT = new Color(0xFFF7E8);
-    public static final Color TEXT_SUB = new Color(0xC9C1F2);
-    public static final Color TEXT_MUTED = new Color(0x8C84BF);
-    public static final Color GOLD = new Color(0xFFD166);
-    public static final Color MINT = new Color(0x4EE39A);
-    public static final Color CORAL = new Color(0xFF5C7A);
-    public static final Color LINE = new Color(0x5148A6);
-    public static final Color BLACK = new Color(0x03030D);
+    public static final Color BG = new Color(0x101B21);
+    public static final Color PANEL = new Color(0x1C2B32);
+    public static final Color PANEL_LIGHT = new Color(0x2B4148);
+    public static final Color TEXT = new Color(0xF4F0E4);
+    public static final Color TEXT_SUB = new Color(0xC7D0CB);
+    public static final Color TEXT_MUTED = new Color(0x93A7A5);
+    public static final Color GOLD = new Color(0xEBC674);
+    public static final Color MINT = new Color(0x76C9A9);
+    public static final Color CORAL = new Color(0xE68E7D);
+    public static final Color LINE = new Color(0x58737A);
+    public static final Color BLACK = new Color(0x091116);
     /** 화면 바깥 여백과 머리글 아래 간격. 모든 메뉴 화면이 같은 값을 쓴다. */
     public static final int GUTTER = 22, HEADER_GAP = 16;
     private static final String FONT_FAMILY = chooseFont();

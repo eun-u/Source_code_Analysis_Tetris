@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.*;
 import kr.ac.jbnu.se.tetris.core.*;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.ConcreteBlockSkin;
 
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
@@ -15,12 +16,6 @@ public class Board extends JPanel {
     private static final Color GRID = new Color(0x254558);
     private static final Color PLAYER_FRAME = new Color(0x4EE39A);
     private static final Color ENEMY_FRAME = new Color(0xFF5C7A);
-    private static final Color[] COLORS = {
-        EMPTY, new Color(255, 139, 113), new Color(112, 217, 155),
-        new Color(114, 157, 255), new Color(255, 221, 115),
-        new Color(201, 139, 255), new Color(104, 221, 235),
-        new Color(253, 183, 97), new Color(132, 146, 164)
-    };
     private final JLabel statusbar;
     private GameState state;
     private Consumer<GameAction.Type> inputHandler;
@@ -89,6 +84,16 @@ public class Board extends JPanel {
     }
     public void setAutomaticEffects(boolean enabled) { automaticEffects = enabled; }
     public GameState getGameState() { return state; }
+    /** 채굴 이펙트의 출발점. 코어 보드는 아래에서 위로 y가 증가한다. */
+    public Point cellCenter(int x, int y) {
+        if (x < 0 || x >= COLUMNS || y < 0 || y >= ROWS)
+            throw new IllegalArgumentException("Cell outside board");
+        int cell = Math.max(1, Math.min(getWidth() / COLUMNS, getHeight() / ROWS));
+        int left = (getWidth() - cell * COLUMNS) / 2;
+        int top = (getHeight() - cell * ROWS) / 2;
+        return new Point(left + x * cell + cell / 2,
+                top + (ROWS - 1 - y) * cell + cell / 2);
+    }
     public void resetEffects() {
         effects.stop(); placementAt = clearAt = garbageAt = 0; effectPiece = null; repaint();
     }
@@ -161,44 +166,23 @@ public class Board extends JPanel {
             for (int y = 0; y <= ROWS; y++) g.drawLine(left, top + y * cell, left + width, top + y * cell);
             if (state != null && state.getBoard() != null) {
                 BoardState board = state.getBoard();
-                Map<Long, int[]> badges = new LinkedHashMap<Long, int[]>();
                 for (int y = 0; y < ROWS; y++) for (int x = 0; x < COLUMNS; x++) {
                     PieceType type = board.getCell(x, y);
-                    if (type != PieceType.EMPTY) {
-                        drawCell(g, left, top, cell, x, y, type, false, null);
-                        String itemId = board.getItemId(x, y);
-                        if (itemId != null) {
-                            long origin = board.getOriginId(x, y);
-                            if (origin == 0) origin = -1L - itemId.hashCode();
-                            int[] center = badges.get(origin);
-                            if (center == null) { center = new int[3]; badges.put(origin, center); }
-                            center[0] += left + x * cell + cell / 2;
-                            center[1] += top + (ROWS - 1 - y) * cell + cell / 2;
-                            center[2]++;
-                        }
-                    }
+                    if (type != PieceType.EMPTY)
+                        drawCell(g, left, top, cell, x, y, type, false, board.getItemId(x, y) != null);
                 }
-                for (int[] center : badges.values())
-                    drawBadge(g, center[0] / center[2], center[1] / center[2], cell);
                 Piece piece = state.getActivePiece();
                 if (piece != null) {
                     for (int i = 0; i < 4; i++) {
                         int x = state.getPieceX() + piece.x(i), y = state.getGhostY() - piece.y(i);
                         if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS && board.getCell(x, y) == PieceType.EMPTY)
-                            drawCell(g, left, top, cell, x, y, piece.getType(), true, null);
+                            drawCell(g, left, top, cell, x, y, piece.getType(), true, piece.hasOreAt(i));
                     }
-                    int badgeX = 0, badgeY = 0, visible = 0;
                     for (int i = 0; i < 4; i++) {
                         int x = state.getPieceX() + piece.x(i), y = state.getPieceY() - piece.y(i);
-                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS) {
-                            drawCell(g, left, top, cell, x, y, piece.getType(), false, null);
-                            badgeX += left + x * cell + cell / 2;
-                            badgeY += top + (ROWS - 1 - y) * cell + cell / 2;
-                            visible++;
-                        }
+                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS)
+                            drawCell(g, left, top, cell, x, y, piece.getType(), false, piece.hasOreAt(i));
                     }
-                    if (piece.getItemId() != null && visible > 0)
-                        drawBadge(g, badgeX / visible, badgeY / visible, cell);
                 }
             }
             g.setColor(keyboardEnabled ? PLAYER_FRAME : ENEMY_FRAME);
@@ -261,29 +245,8 @@ public class Board extends JPanel {
         }
     }
     private static void drawCell(Graphics2D g, int left, int top, int size, int x, int y,
-                                 PieceType type, boolean ghost, String itemId) {
+                                 PieceType type, boolean ghost, boolean ore) {
         int px = left + x * size, py = top + (ROWS - 1 - y) * size;
-        Color color = COLORS[type.ordinal()];
-        if (ghost) {
-            g.setColor(color.darker());
-            g.drawRect(px + 2, py + 2, Math.max(1, size - 5), Math.max(1, size - 5));
-            return;
-        }
-        g.setColor(color.darker());
-        g.fillRect(px + 1, py + 1, size - 2, size - 2);
-        g.setColor(color);
-        g.fillRect(px + 2, py + 2, Math.max(1, size - 5), Math.max(1, size - 5));
-        g.setColor(color.brighter());
-        g.fillRect(px + 3, py + 3, Math.max(1, size - 8), Math.max(2, size / 5));
-    }
-    private static void drawBadge(Graphics2D g, int x, int y, int size) {
-        int badge = Math.max(7, size / 2);
-        g.setColor(new Color(27, 32, 48));
-        g.fillRect(x - badge / 2 - 1, y - badge / 2 - 1, badge + 2, badge + 2);
-        g.setColor(new Color(255, 233, 144));
-        g.fillRect(x - badge / 2, y - badge / 2, badge, badge);
-        g.setColor(new Color(148, 84, 62));
-        g.fillRect(x - 1, y - badge / 3, 2, badge * 2 / 3);
-        g.fillRect(x - badge / 3, y - 1, badge * 2 / 3, 2);
+        ConcreteBlockSkin.paint(g, px, py, size, type, ghost, ore);
     }
 }

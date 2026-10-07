@@ -372,8 +372,13 @@ public final class RpgBattleRulesTest {
     private static void itemEventsTrackConsumptionAndReacquisition() {
         BattleManager boost = squares(seedForRepeats("a", "damage_boost", 2), 10000);
         BattleResult first = fillRows(boost, "a", false);
-        check(itemEvent(first, BattleEvent.Type.ITEM_ACQUIRED, "a", "a", "damage_boost") != null,
+        BattleEvent firstPickup = itemEvent(first, BattleEvent.Type.ITEM_ACQUIRED,
+                "a", "a", "damage_boost");
+        check(firstPickup != null,
                 "actual mino pickup emits acquisition");
+        check(firstPickup.getItemSourceX() >= 0 && firstPickup.getItemSourceY() >= 0
+                && firstPickup.getItemSlotIndex() == 0,
+                "pickup carries its mined cell and destination slot");
         BattleResult next = fillRows(boost, "a", true);
         BattleEvent used = itemEvent(next, BattleEvent.Type.ITEM_USED,
                 "a", "a", "damage_boost");
@@ -395,8 +400,17 @@ public final class RpgBattleRulesTest {
                 "full inventory rejects pickup without false event");
 
         BattleManager utility = squares(15, CharacterCatalog.loadDefault().utility(), 10000);
-        check(count(fillRows(utility, "a", true), BattleEvent.Type.ITEM_ACQUIRED) == 2,
-                "utility bonus and mino pickup each emit an acquisition");
+        BattleResult utilityClear = fillRows(utility, "a", true);
+        int mined = 0;
+        for (BattleEvent event : utilityClear.getEvents()) {
+            if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null)
+                mined += event.getCoreEvent().getItemExtractions().size();
+            if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED)
+                check(event.getItemSourceX() >= 0 && event.getItemSourceY() >= 0,
+                        "utility pickup must come from a visible ore cell");
+        }
+        check(mined > 0 && count(utilityClear, BattleEvent.Type.ITEM_ACQUIRED) == mined,
+                "utility can only acquire actually mined ore");
     }
 
     private static void feverAndTimeWarpExpire() {
@@ -458,10 +472,11 @@ public final class RpgBattleRulesTest {
                 "defender maximum HP is 150");
 
         BattleManager utility = squares(15, catalog.utility(), 10000);
-        fillRows(utility, "a", true);
+        BattleResult utilityClear = fillRows(utility, "a", true);
         check(utility.getState().getParticipant("a").getItemSlots() == 4
-                && utility.getState().getParticipant("a").getItems().size() == 2,
-                "utility gets four slots and one extra item on ordinary double clear");
+                && utility.getState().getParticipant("a").getItems().size()
+                        == count(utilityClear, BattleEvent.Type.ITEM_ACQUIRED),
+                "utility gets four slots but no unmined bonus item");
     }
 
     private static BattleManager squares(long seed, int targetHp) {
@@ -503,6 +518,7 @@ public final class RpgBattleRulesTest {
             boolean all = true;
             for (int index = 0; index < repeats; index++) {
                 if (!itemId.equals(items.get(random.nextInt(items.size())))) { all = false; break; }
+                random.nextInt(4); // 광석 위치도 같은 난수열에서 고정된다.
             }
             if (all) return seed;
         }
@@ -516,6 +532,7 @@ public final class RpgBattleRulesTest {
             int a = new Random(seed ^ (long) "a".hashCode()).nextInt(8);
             Random b = new Random(seed ^ (long) "b".hashCode());
             b.nextInt(8);
+            b.nextInt(4);
             String second = items.get(b.nextInt(8));
             if ("nullify".equals(items.get(a)) && ("garbage_bomb".equals(second)
                     || "heal".equals(second) || "line_cleaner".equals(second))

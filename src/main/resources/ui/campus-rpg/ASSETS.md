@@ -1,0 +1,23 @@
+# Campus RPG bitmap assets
+
+Generated with the built-in image_gen tool for the Korean university Tetris RPG. These are original project-bound concept/game assets. No text, HUD, characters, or embedded game boards appear in the backgrounds.
+
+| File | Size | Use |
+| --- | --- | --- |
+| concrete-tile.png | 1254 × 1254, transparent outside tile | Ordinary aged reinforced-concrete block; warm grey with a faint dusty-coral edge tint. Add restrained per-piece color in code. |
+| ore-tile.png | 1254 × 1254, transparent outside tile | Matching mineable item cell with a central golden crack. Preserve the crack when coloring the concrete. |
+| university-bg.png | 1672 × 941 | Korean concrete lecture hall courtyard at dusk; broad dark foreground for combat UI. |
+| graduation-bg.png | 1672 × 941 | Korean university concrete library/research annex at rainy night. |
+| employment-bg.png | 1672 × 941 | Korean office district and pedestrian plaza before dawn. |
+| poses/player-idle.png | transparent | Full-body Korean student fighter facing right, ready stance with backpack and notes. |
+| poses/player-windup.png | transparent | Matching student crouching to prepare a melee strike. |
+| poses/player-strike.png | transparent | Matching student lunging forward with a direct attack. |
+| poses/player-hurt.png | transparent | Matching student recoiling from a hit. |
+| poses/professor-strike.png | transparent | Full-body professor striking in the same combat style. |
+| poses/professor-hurt.png | transparent | Matching professor recoiling from a hit. |
+
+Prompt set: isolated top-down aged Korean-campus concrete square tile with sparse aggregate and no windows or text; edit the same tile to add readable jagged golden cracks for the item; wide low-detail-center backgrounds showing a late-20th-century concrete Korean campus, a night library annex, and a dawn Korean office district respectively. All prompts excluded Western Gothic architecture, HUD, grids, characters, logos, labels, and text.
+
+Combat pose prompt set: transparent full-body pixel-art Korean university student in a dark-purple hoodie, dark trousers and backpack, facing right with consistent proportions across idle, windup, lunge, and hurt frames; transparent full-body Korean professor for strike and hurt frames. Generated with image_gen for this game; no third-party character art was copied. Existing non-professor enemies retain their earlier static sprites and use code-driven movement until dedicated pose sheets are made.
+
+At runtime these full-resolution images should be sampled to the target cell and panel dimensions. The block images are source art, not pre-baked tetromino shapes.

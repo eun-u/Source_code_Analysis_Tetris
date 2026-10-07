@@ -132,6 +132,7 @@ final class WireSnapshots {
             if (game.getActivePiece().getItemId() != null) {
                 piece.put("itemId", game.getActivePiece().getItemId());
                 piece.put("identity", game.getActivePiece().getIdentity());
+                piece.put("oreCellIndex", game.getActivePiece().getOreCellIndex());
             }
             value.put("activePiece", piece);
         }
@@ -140,7 +141,10 @@ final class WireSnapshots {
         value.put("linesCleared", game.getLinesCleared());
         value.put("awaitingSpawn", game.isAwaitingSpawn());
         value.put("holdPiece", game.getHoldPiece().name());
-        if (game.getHoldItemId() != null) value.put("holdItemId", game.getHoldItemId());
+        if (game.getHoldItemId() != null) {
+            value.put("holdItemId", game.getHoldItemId());
+            value.put("holdOreCellIndex", game.getHoldOreCellIndex());
+        }
         value.put("canHold", game.canHold());
         List<Object> next = new ArrayList<Object>();
         for (PieceType piece : game.getNextPieces()) next.add(piece.name());
@@ -156,7 +160,7 @@ final class WireSnapshots {
         WireCodec.keys(value, new String[] { "actorId", "version", "tick", "status", "board",
                 "pieceX", "pieceY", "linesCleared", "awaitingSpawn", "holdPiece", "canHold",
                 "nextPieces", "ghostY", "combo", "pendingGarbageLines" },
-                new String[] { "activePiece", "boardItems", "boardOrigins", "holdItemId" });
+                new String[] { "activePiece", "boardItems", "boardOrigins", "holdItemId", "holdOreCellIndex" });
         String actorId = WireCodec.id(value.get("actorId"));
         long version = WireCodec.nonnegative(value.get("version"));
         long tick = WireCodec.nonnegative(value.get("tick"));
@@ -181,13 +185,16 @@ final class WireSnapshots {
         Piece active = null;
         if (value.containsKey("activePiece")) {
             Map<String, Object> piece = WireCodec.object(value.get("activePiece"));
-            WireCodec.keys(piece, new String[] { "type", "rotation" }, new String[] { "itemId", "identity" });
+            WireCodec.keys(piece, new String[] { "type", "rotation" },
+                    new String[] { "itemId", "identity", "oreCellIndex" });
             PieceType type = WireCodec.enumeration(PieceType.class, piece.get("type"));
             int rotation = WireCodec.integer(piece.get("rotation"));
             if (rotation < 0 || rotation > 3) throw new IOException("Invalid piece rotation");
             active = new Piece(type);
             if (piece.containsKey("itemId")) active = Piece.withItem(type, itemId(piece.get("itemId")),
-                    piece.containsKey("identity") ? WireCodec.positive(piece.get("identity")) : 1L);
+                    piece.containsKey("identity") ? WireCodec.positive(piece.get("identity")) : 1L,
+                    optionalInt(piece, "oreCellIndex", 0));
+            else if (piece.containsKey("oreCellIndex")) throw new IOException("Ore index without item");
             for (int index = 0; index < rotation; index++) active = active.rotateRight();
             if (active.getRotation() != rotation) throw new IOException("Invalid piece rotation");
         }
@@ -201,7 +208,8 @@ final class WireSnapshots {
                 WireCodec.enumeration(PieceType.class, value.get("holdPiece")),
                 WireCodec.bool(value.get("canHold")), next, WireCodec.integer(value.get("ghostY")),
                 WireCodec.integer(value.get("combo")), WireCodec.integer(value.get("pendingGarbageLines")),
-                value.containsKey("holdItemId") ? itemId(value.get("holdItemId")) : null);
+                value.containsKey("holdItemId") ? itemId(value.get("holdItemId")) : null,
+                optionalInt(value, "holdOreCellIndex", value.containsKey("holdItemId") ? 0 : -1));
     }
 
     private static int optionalInt(Map<String, Object> value, String key, int fallback) throws IOException {

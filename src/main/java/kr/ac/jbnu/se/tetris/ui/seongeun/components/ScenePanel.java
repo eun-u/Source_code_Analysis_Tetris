@@ -1,24 +1,21 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
-import java.awt.*;
+import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.LayoutManager;
 import java.awt.event.HierarchyEvent;
-import javax.swing.*;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import javax.imageio.ImageIO;
+import javax.swing.JPanel;
+import javax.swing.Timer;
 
-/**
- * 메뉴 화면 공통 배경. 짙은 밤하늘, 깜박이는 별, 천천히 떨어지는 반투명 테트로미노,
- * 아래쪽 원근 격자를 그린다. 화면이 보일 때만 타이머가 돈다.
- */
+/** 메뉴 화면 공통 배경. 한국 캠퍼스 풍경과 작게 흘러내리는 콘크리트 조각을 그린다. */
 public class ScenePanel extends JPanel {
-    private static final int[][][] SHAPES = {
-        {{0, 0}, {1, 0}, {2, 0}, {3, 0}}, {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
-        {{0, 0}, {1, 0}, {2, 0}, {1, 1}}, {{1, 0}, {2, 0}, {0, 1}, {1, 1}},
-        {{0, 0}, {1, 0}, {1, 1}, {2, 1}}, {{0, 0}, {0, 1}, {1, 1}, {2, 1}},
-        {{2, 0}, {0, 1}, {1, 1}, {2, 1}}
-    };
-    private static final Color[] COLORS = {
-        new Color(104, 221, 235), new Color(255, 221, 115), new Color(201, 139, 255),
-        new Color(112, 217, 155), new Color(255, 139, 113), new Color(114, 157, 255), new Color(253, 183, 97)
-    };
+    private static final BufferedImage CAMPUS = readCampus();
     private final Timer timer = new Timer(50, event -> repaint());
     private boolean animated = true;
 
@@ -50,43 +47,34 @@ public class ScenePanel extends JPanel {
     }
 
     public static void paintBackdrop(Graphics2D g, int w, int h, long now) {
-        g.setPaint(new GradientPaint(0, 0, new Color(0x07071F), 0, h, new Color(0x1A1350)));
+        g.setPaint(new GradientPaint(0, 0, new Color(0x16272E), 0, h, UniversityPixelTheme.BG));
         g.fillRect(0, 0, w, h);
-        for (int i = 0; i < 60; i++) {
-            int x = Math.floorMod(i * 137 + 29, Math.max(1, w));
-            int y = Math.floorMod(i * 89 + 11, Math.max(1, h * 2 / 3));
-            boolean bright = (now / 300 + i) % 7 == 0;
-            g.setColor(new Color(255, 247, 232, bright ? 200 : 55 + (i % 3) * 20));
-            int size = bright ? 3 : i % 4 == 0 ? 2 : 1;
-            g.fillRect(x, y, size, size);
+        if (CAMPUS != null && w > 0 && h > 0) {
+            int width = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
+            g.drawImage(CAMPUS, (w - width) / 2, 0, width, h, null);
         }
-        // 떨어지는 블록: 열마다 속도와 모양이 다르고 아주 옅게 그린다.
-        int cell = Math.max(10, Math.min(18, w / 60));
-        for (int i = 0; i < 9; i++) {
-            long cycle = 14000 + i * 2300L;
-            float t = ((now + i * 3911L) % cycle) / (float) cycle;
-            int x = Math.floorMod(i * 211 + 40, Math.max(1, w - cell * 4));
-            int y = Math.round(-cell * 4 + (h + cell * 8) * t);
-            int[][] shape = SHAPES[i % SHAPES.length];
-            Color color = COLORS[i % COLORS.length];
-            for (int[] block : shape) {
-                int bx = x + block[0] * cell, by = y + block[1] * cell;
-                g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 34));
-                g.fillRect(bx, by, cell - 1, cell - 1);
-                g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 60));
-                g.drawRect(bx, by, cell - 2, cell - 2);
-            }
+        g.setColor(new Color(8, 17, 21, 178));
+        g.fillRect(0, 0, w, h);
+        g.setPaint(new GradientPaint(0, 0, new Color(7, 15, 19, 115), w, 0,
+                new Color(7, 15, 19, 28)));
+        g.fillRect(0, 0, w, h);
+        int cell = Math.max(8, Math.min(15, w / 80));
+        for (int i = 0; i < 8; i++) {
+            long cycle = 17000 + i * 1900L;
+            float t = ((now + i * 3711L) % cycle) / (float) cycle;
+            int x = Math.floorMod(i * 211 + 40, Math.max(1, w - cell));
+            int y = Math.round(-cell + (h + cell * 2) * t);
+            g.setColor(new Color(191, 194, 182, 31));
+            g.fillRect(x, y, cell, cell);
+            g.setColor(new Color(235, 195, 112, 43));
+            g.drawLine(x, y, x + cell - 1, y);
         }
-        int horizon = h * 3 / 4;
-        g.setColor(new Color(81, 72, 166, 50));
-        for (int i = -10; i <= 10; i++) g.drawLine(w / 2 + i * 30, horizon, w / 2 + i * w / 4, h);
-        float scroll = (now % 3000) / 3000f;
-        for (int i = 0; i < 6; i++) {
-            float t = (i + scroll) / 6f;
-            int y = horizon + Math.round((h - horizon) * t * t);
-            g.drawLine(0, y, w, y);
-        }
-        g.setColor(new Color(81, 72, 166, 110));
-        g.fillRect(0, horizon, w, 1);
+    }
+
+    private static BufferedImage readCampus() {
+        try {
+            java.net.URL resource = ScenePanel.class.getResource("/ui/campus-rpg/university-bg.png");
+            return resource == null ? null : ImageIO.read(resource);
+        } catch (IOException unavailable) { return null; }
     }
 }

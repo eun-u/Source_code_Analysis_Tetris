@@ -40,12 +40,22 @@ public final class CoreSnapshots {
             BoardState board, Piece activePiece, int pieceX, int pieceY, int linesCleared,
             boolean awaitingSpawn, PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
             int ghostY, int combo, int pendingGarbageLines, String holdItemId) {
+        return game(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
+                linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY, combo,
+                pendingGarbageLines, holdItemId, holdItemId == null ? -1 : 0);
+    }
+
+    public static GameState game(String actorId, long version, long tick, GameState.Status status,
+            BoardState board, Piece activePiece, int pieceX, int pieceY, int linesCleared,
+            boolean awaitingSpawn, PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
+            int ghostY, int combo, int pendingGarbageLines, String holdItemId, int holdOreCellIndex) {
         if (actorId == null || actorId.trim().isEmpty() || actorId.length() > 128
                 || version < 0 || tick < 0 || status == null || board == null
                 || board.getWidth() != 10 || board.getHeight() != 22 || linesCleared < 0
                 || holdPiece == null || holdPiece == PieceType.GARBAGE || nextPieces == null
                 || nextPieces.size() > 3 || ghostY < -1 || ghostY >= 22 || combo < -1
-                || pendingGarbageLines < 0) {
+                || pendingGarbageLines < 0 || (holdItemId == null && holdOreCellIndex != -1)
+                || (holdItemId != null && (holdOreCellIndex < 0 || holdOreCellIndex > 3))) {
             throw new IllegalArgumentException("Invalid game snapshot");
         }
         for (PieceType next : nextPieces) {
@@ -73,7 +83,7 @@ public final class CoreSnapshots {
         }
         return new GameState(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
                 linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY, combo,
-                pendingGarbageLines, holdItemId);
+                pendingGarbageLines, holdItemId, holdOreCellIndex);
     }
 
     /** 외부 사본의 불변식 확인 및 컬렉션 방어 복사 */
@@ -95,6 +105,6 @@ public final class CoreSnapshots {
                 board(10, 22, cells, origins, itemIds), state.getActivePiece(), state.getPieceX(), state.getPieceY(),
                 state.getLinesCleared(), state.isAwaitingSpawn(), state.getHoldPiece(), state.canHold(),
                 state.getNextPieces(), state.getGhostY(), state.getCombo(), state.getPendingGarbageLines(),
-                state.getHoldItemId());
+                state.getHoldItemId(), state.getHoldOreCellIndex());
     }
 }

@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import kr.ac.jbnu.se.tetris.battle.BattleSnapshots;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.PlayerIntent;
@@ -22,9 +24,42 @@ public final class OnlineMatchSessionTest {
     public static void main(String[] args) {
         inputContract();
         onlineLifecycle();
+        oreEventsFollowSnapshotAndDeduplicate();
         failedSessionIgnoresLateMessages();
         concurrentCallbacksDoNotDeadlock(false);
         concurrentCallbacksDoNotDeadlock(true);
+    }
+
+    private static void oreEventsFollowSnapshotAndDeduplicate() {
+        FakeNetworkClient fake = new FakeNetworkClient();
+        OnlineMatchSession session = new OnlineMatchSession("ore-session", fake);
+        List<SessionUpdate> observed = new ArrayList<SessionUpdate>();
+        session.subscribe(observed::add);
+        fake.emit(NetworkUpdate.connected());
+        fake.emit(NetworkUpdate.roomState(room(1)));
+        fake.emit(NetworkUpdate.matchStarted("room", 2, "match-ore", "p"));
+        fake.emit(NetworkUpdate.snapshot("room", "match-ore", runningVersionZero()));
+        BattleState initial = runningVersionZero();
+        BattleState afterMining = BattleSnapshots.battle(BattleState.Status.RUNNING, 1,
+                initial.getParticipants(), null, null);
+        BattleEvent pickup = BattleEvent.fromWire(BattleEvent.Type.ITEM_ACQUIRED, 18,
+                "p", "p", 1, "heal", null, 3, 5, 0);
+        fake.emit(NetworkUpdate.snapshot("room", "match-ore", afterMining));
+        fake.emit(NetworkUpdate.events("room", "match-ore", Arrays.asList(pickup)));
+        fake.emit(NetworkUpdate.events("room", "match-ore", Arrays.asList(pickup)));
+        fake.emit(NetworkUpdate.events("room", "stale-match", Arrays.asList(
+                BattleEvent.fromWire(BattleEvent.Type.ITEM_ACQUIRED, 19,
+                        "p", "p", 1, "shield", null, 4, 6, 1))));
+        fake.drain();
+        int deliveries = 0;
+        for (SessionUpdate update : observed) if (!update.getEvents().isEmpty()) {
+            deliveries++;
+            check(update.getSnapshot().getBattleState().getVersion() == 1
+                    && update.getEvents().get(0).getItemSourceX() == 3,
+                    "Pickup is delivered after its authoritative snapshot");
+        }
+        check(deliveries == 1, "Repeated or stale item event is ignored");
+        session.close();
     }
 
     private static void inputContract() {

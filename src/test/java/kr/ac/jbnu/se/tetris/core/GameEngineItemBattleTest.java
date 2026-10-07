@@ -8,9 +8,44 @@ import java.util.List;
 public final class GameEngineItemBattleTest {
     public static void main(String[] args) throws Exception {
         fifthPieceGetsItem();
+        oreOnlyMinedWhenItsOwnRowClears();
         holdKeepsItemIdentity();
+        rotationKeepsOreCell();
         clearsTwoOriginalPiecesOnceEach();
         managedLockAndGarbageBoundary();
+    }
+
+    private static void oreOnlyMinedWhenItsOwnRowClears() {
+        Board board = new Board();
+        for (int x = 0; x < 10; x++) if (x != 4 && x != 5) board.setCell(x, 0, PieceType.T);
+        Piece ore = Piece.withItem(PieceType.O, "heal", 17, 0);
+        board.place(ore, 4, 1);
+        check(board.snapshot().getItemId(4, 1).equals("heal")
+                && board.snapshot().getItemId(4, 0) == null, "Only designated cell is marked");
+        check(board.itemsOnCompletedRows(java.util.Collections.<Long>emptySet()).isEmpty(),
+                "Clearing other cells from ore mino does not mine it");
+        board.removeFullLines();
+        for (int x = 0; x < 10; x++) if (x != 4 && x != 5) board.setCell(x, 0, PieceType.T);
+        GameEvent.ItemExtraction mined = board.itemsOnCompletedRows(
+                java.util.Collections.<Long>emptySet()).get(17L);
+        check(mined != null && mined.getX() == 4 && mined.getY() == 0
+                && mined.getItemId().equals("heal"), "Ore extraction has pre-compression board coordinate");
+        board.clearCollectedItemMarkers(java.util.Collections.singleton(17L));
+        check(board.itemsOnCompletedRows(java.util.Collections.<Long>emptySet()).isEmpty(),
+                "Mined origin cannot award twice");
+    }
+
+    private static void rotationKeepsOreCell() {
+        Piece ore = Piece.withItem(PieceType.T, "shield", 31, 3);
+        Piece rotated = ore.rotateRight().rotateRight().rotateLeft();
+        check(rotated.getOreCellIndex() == 3 && rotated.hasOreAt(3)
+                && !rotated.hasOreAt(0), "Rotation preserves original ore cell index");
+        Board board = new Board();
+        board.place(rotated, 5, 3);
+        int marked = 0;
+        for (int y = 0; y < 22; y++) for (int x = 0; x < 10; x++)
+            if (board.snapshot().getItemId(x, y) != null) marked++;
+        check(marked == 1, "Rotated piece still places one ore cell");
     }
 
     private static void fifthPieceGetsItem() {
@@ -41,7 +76,9 @@ public final class GameEngineItemBattleTest {
         send(engine, GameAction.Type.HOLD, 3);
         Piece restored = engine.getState().getActivePiece();
         check(restored.getIdentity() == first.getIdentity()
-                && first.getItemId().equals(restored.getItemId()), "Swap retains original identity");
+                && first.getItemId().equals(restored.getItemId())
+                && first.getOreCellIndex() == restored.getOreCellIndex(),
+                "Swap retains original identity and ore index");
     }
 
     private static void clearsTwoOriginalPiecesOnceEach() throws Exception {
@@ -54,8 +91,10 @@ public final class GameEngineItemBattleTest {
         }
         Piece first = engine.getState().getActivePiece();
         send(engine, GameAction.Type.HARD_DROP, 1);
-        check(engine.getState().getBoard().getItemId(6, 0).equals(first.getItemId()),
-                "Placed item metadata follows board cell");
+        int oreCells = 0;
+        for (int y = 0; y < 22; y++) for (int x = 0; x < 10; x++)
+            if (engine.getState().getBoard().getItemId(x, y) != null) oreCells++;
+        check(oreCells == 1, "Placed item metadata belongs to one cell");
         Piece second = engine.getState().getActivePiece();
         send(engine, GameAction.Type.MOVE_LEFT, 2);
         send(engine, GameAction.Type.MOVE_LEFT, 3);
@@ -65,6 +104,8 @@ public final class GameEngineItemBattleTest {
                 "Both source pieces collect once when rows clear");
         check(event.getCollectedItems().contains(first.getItemId())
                 && event.getCollectedItems().contains(second.getItemId()), "Correct item IDs collected");
+        check(event.getItemExtractions().size() == 2,
+                "LINE_CLEAR identifies each mined cell before line compression");
         boolean immutable = false;
         try { event.getCollectedItems().clear(); }
         catch (UnsupportedOperationException expected) { immutable = true; }

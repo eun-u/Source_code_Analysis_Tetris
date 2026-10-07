@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Arrays;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
@@ -115,8 +117,21 @@ public final class WireCodecTest {
         WireCodec.writeUpdate(finished, NetworkUpdate.snapshot("room-2", "match-1", result));
         compareBattle(result, WireCodec.readUpdate(new ByteArrayInputStream(finished.toByteArray()))
                 .getBattleState());
+        BattleEvent pickup = BattleEvent.fromWire(BattleEvent.Type.ITEM_ACQUIRED, 41,
+                "student-a", "student-a", 1, "heal", null, 4, 8, 2);
+        ByteArrayOutputStream mined = new ByteArrayOutputStream();
+        WireCodec.writeUpdate(mined, NetworkUpdate.events("room-2", "match-1",
+                Arrays.asList(pickup)));
+        NetworkUpdate received = WireCodec.readUpdate(new ByteArrayInputStream(mined.toByteArray()));
+        BattleEvent restored = received.getEvents().get(0);
+        check(received.getType() == NetworkUpdate.Type.EVENTS
+                && restored.getEventId() == 41 && restored.getReason().equals("heal")
+                && restored.getItemSourceX() == 4 && restored.getItemSourceY() == 8
+                && restored.getItemSlotIndex() == 2, "광석 획득 출발 칸과 도착 슬롯 왕복");
         expectIo(() -> WireCodec.writeUpdate(new ByteArrayOutputStream(),
-                NetworkUpdate.events("room-2", "match-1", Collections.emptyList())));
+                NetworkUpdate.events("room-2", "match-1", Arrays.asList(
+                        BattleEvent.fromWire(BattleEvent.Type.ITEM_ACQUIRED, 42,
+                                "student-a", "student-a", 1, "heal", null, -1, -1, -1)))));
     }
 
     private static void compareBattle(BattleState expected, BattleState actual) {
