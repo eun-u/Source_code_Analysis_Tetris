@@ -8,14 +8,15 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import kr.ac.jbnu.se.tetris.core.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.ConcreteBlockSkin;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
     private static final int COLUMNS = 10, ROWS = 22;
     private static final Color EMPTY = new Color(0x091E2B);
     private static final Color GRID = new Color(0x254558);
-    private static final Color PLAYER_FRAME = new Color(0x4EE39A);
-    private static final Color ENEMY_FRAME = new Color(0xFF5C7A);
+    private static final Color PLAYER_FRAME = UniversityPixelTheme.MINT;
+    private static final Color ENEMY_FRAME = UniversityPixelTheme.CORAL;
     private final JLabel statusbar;
     private GameState state;
     private Consumer<GameAction.Type> inputHandler;
@@ -23,13 +24,14 @@ public class Board extends JPanel {
     private Consumer<Integer> itemHandler;
     private String overlayText;
     private final boolean keyboardEnabled;
-    private long placementAt, clearAt, garbageAt;
+    private long placementAt, clearAt, garbageAt, attackAt, hitAt;
     private int effectX, effectY, clearCount, clearCombo;
     private boolean perfectClear;
     private Piece effectPiece;
     private boolean automaticEffects = true;
     private final Timer effects = new Timer(33, event -> {
-        if (!isShowing() || System.currentTimeMillis() - Math.max(placementAt, Math.max(clearAt, garbageAt)) > 1000)
+        long latest = Math.max(Math.max(placementAt, clearAt), Math.max(garbageAt, Math.max(attackAt, hitAt)));
+        if (!isShowing() || System.currentTimeMillis() - latest > 1000)
             ((Timer) event.getSource()).stop();
         repaint();
     });
@@ -95,7 +97,8 @@ public class Board extends JPanel {
                 top + (ROWS - 1 - y) * cell + cell / 2);
     }
     public void resetEffects() {
-        effects.stop(); placementAt = clearAt = garbageAt = 0; effectPiece = null; repaint();
+        effects.stop(); placementAt = clearAt = garbageAt = attackAt = hitAt = 0;
+        effectPiece = null; repaint();
     }
     public void showPlacement(Piece piece, int x, int y) {
         effectPiece = piece; effectX = x; effectY = y; placementAt = System.currentTimeMillis();
@@ -106,6 +109,10 @@ public class Board extends JPanel {
         clearAt = System.currentTimeMillis(); animate();
     }
     public void showGarbage(int count) { garbageAt = System.currentTimeMillis(); animate(); }
+    /** 공격이 실제 피해로 이어질 때 보드의 무대 쪽 가장자리가 발광한다. */
+    public void showAttack() { attackAt = System.currentTimeMillis(); animate(); }
+    /** 피격을 테트리스 보드에서도 즉시 알아차릴 수 있도록 짧게 반응한다. */
+    public void showHit() { hitAt = System.currentTimeMillis(); animate(); }
     private void animate() { if (isShowing()) effects.start(); repaint(); }
     public void setInputHandlers(Consumer<GameAction.Type> input, Runnable pause) {
         inputHandler = input;
@@ -151,10 +158,15 @@ public class Board extends JPanel {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             // 가비지를 받으면 보드가 짧게 흔들려 맞았다는 것을 몸으로 느끼게 한다.
-            long hitAge = System.currentTimeMillis() - garbageAt;
-            if (garbageAt > 0 && hitAge >= 0 && hitAge < 280) {
-                int amp = Math.round(6 * (1 - hitAge / 280f));
-                g.translate((int) Math.round(Math.sin(hitAge / 12.0) * amp), (int) Math.round(Math.cos(hitAge / 9.0) * amp / 2.0));
+            long now = System.currentTimeMillis();
+            long garbageAge = now - garbageAt, hitAge = now - hitAt;
+            if (garbageAt > 0 && garbageAge >= 0 && garbageAge < 280
+                    || hitAt > 0 && hitAge >= 0 && hitAge < 240) {
+                long age = garbageAt > hitAt ? garbageAge : hitAge;
+                int duration = garbageAt > hitAt ? 280 : 240;
+                int amp = Math.round(6 * (1 - age / (float) duration));
+                g.translate((int) Math.round(Math.sin(age / 12.0) * amp),
+                        (int) Math.round(Math.cos(age / 9.0) * amp / 2.0));
             }
             int cell = Math.max(1, Math.min(getWidth() / COLUMNS, getHeight() / ROWS));
             int width = cell * COLUMNS, height = cell * ROWS;
@@ -240,8 +252,31 @@ public class Board extends JPanel {
         }
         long garbage = now - garbageAt;
         if (garbageAt > 0 && garbage >= 0 && garbage < 500) {
-            g.setColor(new Color(255, 92, 122, (int) (230 * (1 - garbage / 500.0))));
+            g.setColor(new Color(230, 142, 125, (int) (230 * (1 - garbage / 500.0))));
             g.setStroke(new BasicStroke(4)); g.drawRect(left, top, width, height);
+        }
+        long attack = now - attackAt;
+        if (attackAt > 0 && attack >= 0 && attack < 520) {
+            float fade = 1f - attack / 520f;
+            int edge = keyboardEnabled ? left : left + width;
+            int direction = keyboardEnabled ? -1 : 1;
+            g.setColor(new Color(255, 207, 108, Math.round(215 * fade)));
+            g.fillRect(edge - (keyboardEnabled ? 0 : 4), top, 4, height);
+            g.setColor(new Color(255, 246, 196, Math.round(135 * fade)));
+            for (int i = 0; i < 5; i++) {
+                int y = top + Math.floorMod(i * 79 + 23, Math.max(1, height));
+                int distance = Math.round(24 * attack / 520f);
+                g.fillRect(edge + direction * distance - 2, y, 5, 2);
+            }
+        }
+        long hit = now - hitAt;
+        if (hitAt > 0 && hit >= 0 && hit < 420) {
+            float fade = 1f - hit / 420f;
+            g.setColor(new Color(229, 110, 91, Math.round(85 * fade)));
+            g.fillRect(left, top, width, height);
+            g.setColor(new Color(255, 146, 128, Math.round(240 * fade)));
+            g.setStroke(new BasicStroke(3f));
+            g.drawRect(left + 1, top + 1, width - 2, height - 2);
         }
     }
     private static void drawCell(Graphics2D g, int left, int top, int size, int x, int y,

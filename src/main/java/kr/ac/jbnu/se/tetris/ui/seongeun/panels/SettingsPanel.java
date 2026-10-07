@@ -19,12 +19,14 @@ import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
-/** 게임 중에는 숨기는 오디오·조작 학습·LAN 설정 화면. */
+/** 게임 중에는 숨기는 오디오·온라인 계정·조작 학습·LAN 설정 화면. */
 public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final PixelButton back = new PixelButton("로비로");
     private final PixelButton tutorial = new PixelButton("5단계 튜토리얼 직접 해보기");
     private final PixelButton lanConnect = new PixelButton("LAN 서버 연결...");
     private final PixelButton lanHost = new PixelButton("LAN 서버 시작");
+    private final PixelButton onlineAccount = new PixelButton("로그인 / 가입");
+    private final JLabel onlineAccountStatus = text("로컬 플레이 · 로그인 필요", 13, UniversityPixelTheme.TEXT_SUB);
     private final JCheckBox skipTutorial = new JCheckBox("다시 보지 않기");
     private final JCheckBox bgmMute = new JCheckBox("BGM 끄기");
     private final JCheckBox sfxMute = new JCheckBox("효과음 끄기");
@@ -46,6 +48,18 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         row(audio, "BGM", bgmMute, bgmVolume);
         audio.add(Box.createVerticalStrut(22));
         row(audio, "효과음", sfxMute, sfxVolume);
+        audio.add(Box.createVerticalStrut(18));
+        JLabel accountHeading = text("온라인 계정", 17, UniversityPixelTheme.GOLD);
+        accountHeading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        audio.add(accountHeading);
+        audio.add(Box.createVerticalStrut(6));
+        onlineAccountStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
+        audio.add(onlineAccountStatus);
+        audio.add(Box.createVerticalStrut(10));
+        onlineAccount.secondary();
+        onlineAccount.setAlignmentX(Component.LEFT_ALIGNMENT);
+        onlineAccount.setMaximumSize(new Dimension(180, 38));
+        audio.add(onlineAccount);
         audio.add(Box.createVerticalGlue());
         columns.add(audio);
 
@@ -66,7 +80,12 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         skipTutorial.setOpaque(false); skipTutorial.setForeground(UniversityPixelTheme.TEXT);
         skipTutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         skipTutorial.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(skipTutorial);
-        guide.add(Box.createVerticalStrut(20));
+        guide.add(Box.createVerticalStrut(12));
+        JLabel controls = text("전투: 1~4 아이템 · P 일시정지", 12, UniversityPixelTheme.TEXT_SUB);
+        controls.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(controls);
+        JLabel exit = text("ESC 돌아가기 / 대전 포기", 12, UniversityPixelTheme.TEXT_SUB);
+        exit.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(exit);
+        guide.add(Box.createVerticalStrut(16));
         guide.add(text("화면", 17, UniversityPixelTheme.GOLD));
         reduceTransitions.setOpaque(false); reduceTransitions.setForeground(UniversityPixelTheme.TEXT_SUB);
         reduceTransitions.setFont(UniversityPixelTheme.font(14, Font.BOLD));
@@ -157,6 +176,17 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         } finally { loading = false; }
     }
     public void setBackAction(ActionListener listener) { back.addActionListener(listener); }
+    public void setAccountAction(ActionListener listener) { onlineAccount.addActionListener(listener); }
+    public void setAccountStatus(String status, boolean signedIn, boolean available, boolean busy) {
+        String shortStatus = busy ? "계정 처리 중..." : signedIn
+                ? status.replaceFirst("^온라인 PvP 로그인 완료\\s*·\\s*", "접속: ")
+                : available ? status : "온라인 설정 없음 · 로컬 플레이 가능";
+        onlineAccountStatus.setText(shortStatus);
+        onlineAccountStatus.setToolTipText(status);
+        onlineAccountStatus.setForeground(signedIn ? UniversityPixelTheme.MINT : UniversityPixelTheme.TEXT_SUB);
+        onlineAccount.setText(signedIn ? "로그아웃" : "로그인 / 가입");
+        onlineAccount.setEnabled(available && !busy);
+    }
     public void setTutorialAction(ActionListener listener) { tutorial.addActionListener(listener); }
     public void setLanConnectAction(ActionListener listener) { lanConnect.addActionListener(listener); }
     public void setLanHostAction(ActionListener listener) { lanHost.addActionListener(listener); }

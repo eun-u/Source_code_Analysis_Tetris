@@ -10,6 +10,7 @@ public final class MiniPiecePreview extends JComponent {
     private final String title;
     private PieceType type;
     private boolean item;
+    private int oreCellIndex = -1;
     public MiniPiecePreview(String title) {
         this.title = title;
         setPreferredSize(new Dimension(68, 70));
@@ -18,8 +19,12 @@ public final class MiniPiecePreview extends JComponent {
         setToolTipText(title);
     }
     public void setPiece(PieceType type, boolean item) {
+        setPiece(type, item, -1);
+    }
+    public void setPiece(PieceType type, boolean item, int oreCellIndex) {
         this.type = type == PieceType.EMPTY ? null : type;
         this.item = item;
+        this.oreCellIndex = item ? oreCellIndex : -1;
         repaint();
     }
     @Override protected void paintComponent(Graphics graphics) {
@@ -48,7 +53,7 @@ public final class MiniPiecePreview extends JComponent {
             for (int index = 0; index < 4; index++) {
                 int x = left + (piece.x(index) - minX) * cell;
                 int y = top + (maxY - piece.y(index)) * cell;
-                ConcreteBlockSkin.paint(g, x, y, cell, type, false, false);
+                ConcreteBlockSkin.paint(g, x, y, cell, type, false, item && index == oreCellIndex);
             }
             if (item) {
                 g.setColor(UniversityPixelTheme.GOLD);

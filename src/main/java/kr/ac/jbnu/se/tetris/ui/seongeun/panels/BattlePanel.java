@@ -373,6 +373,14 @@ public class BattlePanel extends JPanel implements Scrollable {
         timer.setRepeats(false);
         timer.start();
     }
+    private void showHitAtImpact(Board target) {
+        final int generation = feedbackGeneration;
+        Timer timer = new Timer(PixelArena.IMPACT_MS, action -> {
+            if (generation == feedbackGeneration) target.showHit();
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
     public void applyEvents(List<BattleEvent> events, String localId) {
         for (BattleEvent event : events) {
             if (event.getEventId() <= lastEventId) continue;
@@ -380,9 +388,12 @@ public class BattlePanel extends JPanel implements Scrollable {
             boolean local = localId != null && localId.equals(event.getActorId());
             Board board = local ? playerBoard : enemyBoard;
             if (event.getType() == BattleEvent.Type.DAMAGE) {
+                if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
+                else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
                 arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
                         event.getAmount(), local);
                 soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+                setFeedback((local ? "공격 적중  " : "피격  ") + event.getAmount() + " DAMAGE");
             } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
                 board.showGarbage(event.getAmount());
             } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
@@ -420,7 +431,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         Point from = SwingUtilities.convertPoint(playerBoard, playerBoard.cellCenter(x, y), this);
         Point to = SwingUtilities.convertPoint(slots[index],
                 new Point(slots[index].getWidth() / 2, slots[index].getHeight() / 2), this);
-        oreFlights.launch(from, to);
+        oreFlights.launch(from, to, slots[index].getWidth(), slots[index].getHeight());
         return true;
     }
     public void setFeedback(String text) {
@@ -461,7 +472,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         arena.setFever(local.isFeverActive());
         GameState game = local.getGameState();
         stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
-        holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null);
+        holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
+                game.getHoldOreCellIndex());
         for (int index = 0; index < nextPreviews.length; index++)
             nextPreviews[index].setPiece(index < game.getNextPieces().size()
                     ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
@@ -524,9 +536,13 @@ public class BattlePanel extends JPanel implements Scrollable {
             if (!monster) sound(AudioService.Event.LINE_CLEAR);
         }
         if (current.getHp() < previous.getHp()) {
+            showHitAtImpact(board);
+            (monster ? playerBoard : enemyBoard).showAttack();
             arena.showEffect(monster ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
                     previous.getHp() - current.getHp(), monster);
             soundAtImpact(monster ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+            setFeedback((monster ? "공격 적중  " : "피격  ")
+                    + (previous.getHp() - current.getHp()) + " DAMAGE");
         }
     }
     private static long latestPlacedOrigin(BoardState board) {

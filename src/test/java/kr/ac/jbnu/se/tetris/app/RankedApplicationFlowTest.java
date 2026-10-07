@@ -35,6 +35,9 @@ import kr.ac.jbnu.se.tetris.network.NetworkUpdate;
 import kr.ac.jbnu.se.tetris.network.protocol.WireCodec;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LeaderboardPanel;
 import kr.ac.jbnu.se.tetris.ui.seongeun.panels.LoginPanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.panels.MainLobbyPanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.panels.RoomListPanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.panels.SettingsPanel;
 
 /** 계정 전환 때 이전 PvP 소켓을 닫고 새 계정 토큰으로 랭킹을 읽는 실제 Swing 흐름. */
 public final class RankedApplicationFlowTest {
@@ -63,17 +66,33 @@ public final class RankedApplicationFlowTest {
             SeongeunApplication[] app = new SeongeunApplication[1];
             try {
                 onEdt(() -> app[0] = new SeongeunApplication(new Random(7), null));
+                check("LOBBY".equals(app[0].getCurrentScreen()), "App must start in the lobby");
+                onEdt(() -> {
+                    button(child(app[0].getScreens(), MainLobbyPanel.class), "설정").doClick();
+                    button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").doClick();
+                });
+                check("LOGIN".equals(app[0].getCurrentScreen()), "Account login must open from settings");
                 login(app[0], "Player_01", "password-a");
-                await(() -> "LOBBY".equals(app[0].getCurrentScreen()), "First account login");
+                await(() -> "SETTINGS".equals(app[0].getCurrentScreen()), "First account login");
+                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
                 onEdt(() -> app[0].openOnline(new ConnectionOptions(
                         URI.create("ws://127.0.0.1:" + socket.getLocalPort() + "/ws"), "token-A")));
                 await(() -> app[0].isOnlineConnected(), "First account WebSocket");
-                onEdt(() -> menuItem(app[0].getMenu(), "온라인 계정 로그인").doClick());
+                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "로비로").doClick());
                 check(socketClosed.await(5, TimeUnit.SECONDS), "Old account socket remained open");
-                await(() -> !app[0].isOnlineConnected() && "LOGIN".equals(app[0].getCurrentScreen()),
-                        "Account-switch screen");
+                await(() -> !app[0].isOnlineConnected() && "LOBBY".equals(app[0].getCurrentScreen()),
+                        "Online room exit");
+                onEdt(() -> {
+                    button(child(app[0].getScreens(), MainLobbyPanel.class), "설정").doClick();
+                    button(child(app[0].getScreens(), SettingsPanel.class), "로그아웃").doClick();
+                });
+                await(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").isEnabled(),
+                        "Settings account logout");
+                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").doClick());
+                await(() -> "LOGIN".equals(app[0].getCurrentScreen()), "Settings account switch");
                 login(app[0], "b@example.test", "password-b");
-                await(() -> "LOBBY".equals(app[0].getCurrentScreen()), "Second account login");
+                await(() -> "SETTINGS".equals(app[0].getCurrentScreen()), "Second account login");
+                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
                 onEdt(() -> menuItem(app[0].getMenu(), "온라인 PvP 랭킹").doClick());
                 await(() -> {
                     LeaderboardPanel panel = child(app[0].getScreens(), LeaderboardPanel.class);

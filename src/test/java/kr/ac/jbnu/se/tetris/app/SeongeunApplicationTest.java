@@ -24,8 +24,6 @@ public final class SeongeunApplicationTest {
         SwingUtilities.invokeAndWait(() -> {
             SeongeunApplication app = newTestApp(17);
             try {
-                assert LOGIN.equals(app.getCurrentScreen());
-                button(app.getScreens(), "로컬 시작").doClick();
                 assert LOBBY.equals(app.getCurrentScreen());
                 button(app.getScreens(), "설정").doClick();
                 assert "SETTINGS".equals(app.getCurrentScreen());
@@ -142,7 +140,6 @@ public final class SeongeunApplicationTest {
                 SwingUtilities.invokeAndWait(() -> {
                     for (int index = 0; index < apps.length; index++) {
                         apps[index] = newTestApp(index + 21);
-                        button(apps[index].getScreens(), "로컬 시작").doClick();
                         apps[index].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
                     }
                 });

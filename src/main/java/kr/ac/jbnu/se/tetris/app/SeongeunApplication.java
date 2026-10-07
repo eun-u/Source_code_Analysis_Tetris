@@ -139,6 +139,8 @@ public final class SeongeunApplication implements AutoCloseable {
     private boolean skipTutorial;
     private boolean transitionsOff;
     private String tutorialReturnScreen = LOBBY;
+    private String loginReturnScreen = LOBBY;
+    private String accountStatus = "로컬 플레이";
     private RankedOnlineConfig rankedConfig;
     private SupabaseAuthService auth;
     private AuthSession accountSession;
@@ -222,6 +224,7 @@ public final class SeongeunApplication implements AutoCloseable {
         localGravity.setCoalesce(true);
         addScreens();
         bindActions();
+        setAccountStatus(accountStatus);
         buildMenu();
         UniversityPixelTheme.apply(screens);
         screens.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
@@ -229,7 +232,7 @@ public final class SeongeunApplication implements AutoCloseable {
         screens.getActionMap().put("back-from-game", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent event) { backFromGame(); }
         });
-        show(LOGIN);
+        show(LOBBY);
     }
 
     private void addScreens() {
@@ -254,8 +257,9 @@ public final class SeongeunApplication implements AutoCloseable {
     private void bindActions() {
         // 원본의 로그인 버튼은 계정 확인 기능이 아니라 로컬 로비 진입이었다.
         login.setLoginAction(event -> {
-            clearSecrets(login); show(LOBBY);
-            if (!skipTutorial && frame != null && frame.isShowing())
+            clearSecrets(login);
+            if (SETTINGS.equals(loginReturnScreen)) showSettings(); else show(LOBBY);
+            if (LOBBY.equals(currentScreen) && !skipTutorial && frame != null && frame.isShowing())
                 SwingUtilities.invokeLater(() -> {
                     if (!closed && LOBBY.equals(currentScreen) && !skipTutorial)
                         startTutorial(LOBBY);
@@ -272,8 +276,12 @@ public final class SeongeunApplication implements AutoCloseable {
         lobby.setTutorialAction(event -> startTutorial(LOBBY));
         lobby.setServerAction(event -> showLeaderboard());
         lobby.setSettingsAction(event -> showSettings());
-        lobby.setAccountAction(event -> {
-            if (accountSession == null) show(LOGIN);
+        settings.setAccountAction(event -> {
+            if (accountSession == null) {
+                loginReturnScreen = SETTINGS;
+                login.setStatus("온라인 대전과 랭킹에 사용할 계정으로 로그인하세요.");
+                show(LOGIN);
+            }
             else signOutOnline();
         });
         settings.setBackAction(event -> show(LOBBY));
@@ -343,14 +351,6 @@ public final class SeongeunApplication implements AutoCloseable {
         addMenuItem(online, "방 번호 보기", this::showRoomId);
         addMenuItem(online, "로컬 서버 시작", this::startLocalServer);
         addMenuItem(online, "온라인 PvP 랭킹", this::showLeaderboard);
-        addMenuItem(online, "온라인 계정 로그인", () -> {
-            if (BATTLE.equals(currentScreen) || LOCAL_GAME.equals(currentScreen)) {
-                message("현재 게임을 마친 뒤 로그인하세요."); return;
-            }
-            if (network instanceof WebSocketNetworkClient) closeSession();
-            show(LOGIN);
-        });
-        addMenuItem(online, "온라인 로그아웃", this::signOutOnline);
         menu.add(online);
         JMenu sound = new JMenu("소리");
         javax.swing.JCheckBoxMenuItem mute = new javax.swing.JCheckBoxMenuItem("효과음 끄기", audio.isMuted());
@@ -428,7 +428,14 @@ public final class SeongeunApplication implements AutoCloseable {
     private void showSettings() {
         settings.update(audio.isBgmMuted(), audio.getBgmVolume(), audio.isMuted(),
                 audio.getVolume(), skipTutorial, transitionsOff);
+        settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
         show(SETTINGS);
+    }
+
+    private void setAccountStatus(String status) {
+        accountStatus = status;
+        lobby.setAccountStatus(status);
+        settings.setAccountStatus(status, accountSession != null, auth != null, authBusy);
     }
 
     private void saveSkipTutorial(boolean skip) {
@@ -822,7 +829,7 @@ public final class SeongeunApplication implements AutoCloseable {
             message("온라인 설정이 없습니다. 공개 설정을 포함한 게임 패키지로 실행하세요."); return;
         }
         if (accountSession == null) {
-            login.setStatus("온라인 PvP를 시작하려면 계정으로 로그인하세요."); show(LOGIN); return;
+            showSettings(); return;
         }
         openOnline(new ConnectionOptions(rankedConfig.getServerUri(), accountSession.getAccessToken()));
     }
@@ -846,7 +853,7 @@ public final class SeongeunApplication implements AutoCloseable {
         final String accountLabel = legacyEmail ? username : UsernameIdentity.normalize(username);
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; lobby.setAccountStatus("로컬 플레이");
+        accountSession = null; setAccountStatus("로컬 플레이");
         authBusy = true; login.setBusy(true); login.setStatus("로그인 중...");
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception {
@@ -860,8 +867,10 @@ public final class SeongeunApplication implements AutoCloseable {
                 try {
                     accountSession = get();
                     login.setStatus("온라인 로그인 완료");
-                    lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + accountLabel);
-                    if (LOGIN.equals(currentScreen)) show(LOBBY);
+                    setAccountStatus("온라인 PvP 로그인 완료 · " + accountLabel);
+                    if (LOGIN.equals(currentScreen)) {
+                        if (SETTINGS.equals(loginReturnScreen)) showSettings(); else show(LOBBY);
+                    }
                 } catch (Exception failed) { accountSession = null; login.setStatus("로그인 실패 · 계정 또는 서버 연결을 확인하세요."); }
             }
         }.execute();
@@ -884,7 +893,7 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; lobby.setAccountStatus("로컬 플레이");
+        accountSession = null; setAccountStatus("로컬 플레이");
         authBusy = true; signUp.setBusy(true);
         new javax.swing.SwingWorker<SignUpResult, Void>() {
             @Override protected SignUpResult doInBackground() throws Exception {
@@ -901,8 +910,10 @@ public final class SeongeunApplication implements AutoCloseable {
                         login.setStatus("가입은 접수됐지만 서버의 계정 확인 설정 때문에 로그인할 수 없습니다. 운영자에게 알려주세요.");
                         if (SIGN_UP.equals(currentScreen)) show(LOGIN);
                     } else {
-                        lobby.setAccountStatus("온라인 PvP 로그인 완료 · " + UsernameIdentity.normalize(username));
-                        if (SIGN_UP.equals(currentScreen)) show(LOBBY);
+                        setAccountStatus("온라인 PvP 로그인 완료 · " + UsernameIdentity.normalize(username));
+                        if (SIGN_UP.equals(currentScreen)) {
+                            if (SETTINGS.equals(loginReturnScreen)) showSettings(); else show(LOBBY);
+                        }
                     }
                 } catch (Exception failed) { message("가입 실패 · 계정 정보 또는 서버 연결을 확인하세요."); }
             }
@@ -914,16 +925,18 @@ public final class SeongeunApplication implements AutoCloseable {
         if (accountSession.getExpiresAtEpochSecond() - System.currentTimeMillis() / 1000 > 120) return;
         final long epoch = authEpoch;
         authBusy = true;
+        settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception { return auth.refresh(); }
             @Override protected void done() {
                 if (closed || epoch != authEpoch) return;
                 authBusy = false;
+                settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
                 try {
                     accountSession = get();
                 } catch (Exception failed) {
                     if (accountSession.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000) accountSession = null;
-                    lobby.setAccountStatus("온라인 인증 갱신에 실패했습니다. 다시 로그인하세요.");
+                    setAccountStatus("온라인 인증 갱신에 실패했습니다. 다시 로그인하세요.");
                     if (network instanceof WebSocketNetworkClient && BATTLE.equals(currentScreen))
                         battle.setFeedback("온라인 인증 갱신 실패 · 서버 연결을 확인하세요.");
                     return;
@@ -947,12 +960,15 @@ public final class SeongeunApplication implements AutoCloseable {
         if (network instanceof WebSocketNetworkClient) closeSession();
         final long epoch = ++authEpoch;
         accountSession = null; authBusy = true;
-        lobby.setAccountStatus("로컬 플레이"); show(LOBBY);
+        String returnScreen = SETTINGS.equals(currentScreen) ? SETTINGS : LOBBY;
+        setAccountStatus("로컬 플레이");
+        if (SETTINGS.equals(returnScreen)) showSettings(); else show(LOBBY);
         new javax.swing.SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception { auth.signOut(); return null; }
             @Override protected void done() {
                 if (closed || epoch != authEpoch) return;
                 authBusy = false; login.setBusy(false);
+                setAccountStatus(accountStatus);
                 try { get(); } catch (Exception ignored) { login.setStatus("로그아웃 완료 · 서버 연결을 확인하세요."); }
             }
         }.execute();
@@ -962,7 +978,9 @@ public final class SeongeunApplication implements AutoCloseable {
         if (BATTLE.equals(currentScreen) || LOCAL_GAME.equals(currentScreen)) {
             message("게임을 마친 뒤 랭킹을 확인하세요."); return;
         }
-        if (accountSession == null) { login.setStatus("랭킹을 조회하려면 온라인 계정으로 로그인하세요."); show(LOGIN); return; }
+        if (accountSession == null) {
+            showSettings(); return;
+        }
         show(LEADERBOARD); loadLeaderboard();
     }
 
@@ -1096,7 +1114,7 @@ public final class SeongeunApplication implements AutoCloseable {
                     refreshRequestId = -1;
                     if (!update.getRequestOutcome().isAccepted()) {
                         accountSession = null;
-                        lobby.setAccountStatus("인증이 만료되었습니다. 온라인 계정에 다시 로그인하세요.");
+                        setAccountStatus("인증이 만료되었습니다. 온라인 계정에 다시 로그인하세요.");
                     }
                 }
                 if (!update.getRequestOutcome().isAccepted()) {
@@ -1293,6 +1311,9 @@ public final class SeongeunApplication implements AutoCloseable {
         keepWindowAspect();
         audio.startBgm();
         if (lastMessage != null && !lastMessage.isEmpty()) message(lastMessage);
+        if (!skipTutorial) SwingUtilities.invokeLater(() -> {
+            if (!closed && LOBBY.equals(currentScreen) && !skipTutorial) startTutorial(LOBBY);
+        });
     }
 
     /** 화면 내용의 4:3 비율을 유지하면서 너비·높이 어느 쪽으로든 창을 조절한다. */

@@ -30,7 +30,6 @@ public class MainLobbyPanel extends JPanel {
     private final GameMenu.Item tutorialButton = menu.add("튜토리얼", "다섯 동작을 직접 연습", MINT);
     private final GameMenu.Item characterButton = menu.add("캐릭터 / 상점", "코인으로 전투 스타일 선택", GOLD);
     private final GameMenu.Item serverButton = menu.add("PvP 랭킹", "공식 온라인 TOP 100", MINT);
-    private final GameMenu.Item accountButton = menu.add("온라인 계정", "로그인하면 PvP와 랭킹 이용", MINT);
     private final GameButton settingsButton = new GameButton("설정");
     private final JLabel account = UniversityPixelTheme.chip("로컬 플레이", UniversityPixelTheme.PANEL_LIGHT);
     private final JLabel coins = UniversityPixelTheme.chip("0 COINS", GOLD);
@@ -48,7 +47,7 @@ public class MainLobbyPanel extends JPanel {
         localButton.setName("lobbyLocal");
         settingsButton.secondary();
         settingsButton.setPreferredSize(new Dimension(84, 34));
-        settingsButton.setToolTipText("소리 · 튜토리얼 · LAN 설정");
+        settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 · LAN 설정");
         account.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         coins.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         add(logo); add(menu); add(nextCard); add(account); add(coins); add(settingsButton); add(keys);
@@ -76,8 +75,8 @@ public class MainLobbyPanel extends JPanel {
         int logoHeight = Math.max(90, Math.min(130, h / 6));
         logo.setBounds(pad, 14, Math.min(520, w / 2), logoHeight);
         int menuWidth = Math.max(270, Math.min(360, w * 36 / 100));
-        int itemHeight = Math.max(40, Math.min(54, (h - logoHeight - 90) / 7 - 4));
-        int menuHeight = itemHeight * 7 + 4 * 6;
+        int itemHeight = Math.max(40, Math.min(54, (h - logoHeight - 90) / 6 - 4));
+        int menuHeight = itemHeight * 6 + 4 * 5;
         menu.setBounds(pad, logo.getY() + logoHeight + 8, menuWidth, menuHeight);
         int cardWidth = Math.max(230, Math.min(330, w * 30 / 100));
         int cardHeight = Math.max(250, Math.min(380, h * 46 / 100));
@@ -242,16 +241,12 @@ public class MainLobbyPanel extends JPanel {
     public void setTutorialAction(ActionListener listener) { tutorialButton.addActionListener(listener); }
     public void setServerAction(ActionListener listener) { serverButton.addActionListener(listener); }
     public void setSettingsAction(ActionListener listener) { settingsButton.addActionListener(listener); }
-    public void setAccountAction(ActionListener listener) { accountButton.addActionListener(listener); }
-
     public void setAccountStatus(String text) {
         boolean signedIn = text != null && text.startsWith(SIGNED_IN);
         String detail = signedIn ? text.substring(SIGNED_IN.length()).replaceFirst("^\\s*·\\s*", "") : text;
         UniversityPixelTheme.setChip(account, signedIn ? "● ONLINE  " + detail : detail,
                 signedIn ? MINT : UniversityPixelTheme.PANEL_LIGHT);
         account.setToolTipText(text);
-        accountButton.setDescription(signedIn ? "로그인됨 · 눌러서 로그아웃" : "로그인하면 PvP와 랭킹 이용");
-        accountButton.setBadge(signedIn ? "ON" : null, MINT);
         onlineButton.setBadge(signedIn ? null : "로그인 필요", UniversityPixelTheme.PANEL_LIGHT);
         serverButton.setBadge(signedIn ? null : "로그인 필요", UniversityPixelTheme.PANEL_LIGHT);
         revalidate();

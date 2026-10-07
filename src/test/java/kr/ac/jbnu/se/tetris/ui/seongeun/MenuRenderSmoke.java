@@ -31,6 +31,7 @@ public final class MenuRenderSmoke {
                 SettingsPanel settings = new SettingsPanel();
                 settings.update(false, .32f, false, .65f, false);
                 write(settings, folder.resolve("settings.png"));
+                write(settings, folder.resolve("settings-small.png"), 820, 650);
                 CharacterShopPanel shop = new CharacterShopPanel();
                 Map<String,Integer> prices = new LinkedHashMap<String,Integer>();
                 prices.put("student", 0); prices.put("attacker", 100);

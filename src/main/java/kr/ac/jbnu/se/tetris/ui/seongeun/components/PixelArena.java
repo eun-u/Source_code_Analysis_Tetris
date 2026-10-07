@@ -1086,7 +1086,7 @@ public final class PixelArena extends JComponent {
         int size = Math.max(18, Math.min(40, (visual.targetMonster ? 28 : 24) + visual.amount / 2));
         drawPop(g, text, x, y - Math.round(rise * 28), size, pop, color, alpha);
         if (big && visual.effect == Effect.DAMAGE)
-            drawPop(g, visual.targetMonster ? "CRITICAL!" : "OUCH!", x, y - Math.round(rise * 28) - size,
+            drawPop(g, visual.targetMonster ? "HIT!" : "OUCH!", x, y - Math.round(rise * 28) - size,
                     12, pop, WHITE, alpha);
     }
 
@@ -1139,17 +1139,19 @@ public final class PixelArena extends JComponent {
     }
 
     private void paintHitFlash(Graphics2D g, int w, int h, long now) {
-        if (playerHitAt >= 0 && now - playerHitAt >= 0 && now - playerHitAt < 220) {
-            float t = 1f - (now - playerHitAt) / 220f;
-            g.setColor(online ? new Color(255, 247, 232, (int) (75 * t))
-                    : new Color(255, 40, 80, (int) (90 * t)));
+        if (playerHitAt >= 0 && now - playerHitAt >= 0 && now - playerHitAt < 260) {
+            float t = 1f - (now - playerHitAt) / 260f;
+            g.setColor(new Color(243, 116, 94, (int) (112 * t)));
             g.fillRect(online ? w / 2 : 0, 0, online ? w - w / 2 : w, h);
+            g.setColor(new Color(255, 207, 172, (int) (220 * t)));
+            g.fillRect(online ? w / 2 : w - 5, 0, 5, h);
         }
-        if (monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < (online ? 220 : 120)) {
-            float t = 1f - (now - monsterHitAt) / (online ? 220f : 120f);
-            g.setColor(online ? new Color(255, 247, 232, Math.max(0, (int) (75 * t)))
-                    : new Color(255, 255, 255, Math.max(0, (int) (70 * t))));
+        if (monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < 240) {
+            float t = 1f - (now - monsterHitAt) / 240f;
+            g.setColor(new Color(255, 240, 184, Math.max(0, (int) (105 * t))));
             g.fillRect(0, 0, online ? w / 2 : w, h);
+            g.setColor(new Color(255, 231, 156, (int) (210 * t)));
+            g.fillRect(0, 0, 5, h);
         }
     }
 
@@ -1158,7 +1160,7 @@ public final class PixelArena extends JComponent {
         if (!initialized || playerHp <= 0 || playerHp * 10 > playerMax * 3 || finishedAt >= 0) return;
         int alpha = effectsEnabled ? (int) (70 + 60 * Math.sin(now / 160.0)) : 90;
         for (int i = 0; i < 4; i++) {
-            g.setColor(new Color(255, 40, 80, Math.max(0, alpha - i * 22)));
+            g.setColor(new Color(230, 119, 99, Math.max(0, alpha - i * 22)));
             g.fillRect(i * 4, 0, 4, h);
             g.fillRect(w - (i + 1) * 4, 0, 4, h);
             g.fillRect(0, i * 4, w, 4);
@@ -1183,7 +1185,7 @@ public final class PixelArena extends JComponent {
                                      int main, int trail, int hp, int max, Color fill, boolean flash) {
         g.setColor(UniversityPixelTheme.BLACK);
         g.fillRect(x, y, width, height);
-        g.setColor(flash ? new Color(0x4A2040) : UniversityPixelTheme.PANEL);
+        g.setColor(flash ? new Color(0x663A32) : UniversityPixelTheme.PANEL);
         g.fillRect(x + 2, y + 2, width - 4, height - 4);
         g.setFont(UniversityPixelTheme.font(10, Font.BOLD));
         FontMetrics tagMetrics = g.getFontMetrics();
@@ -1211,7 +1213,7 @@ public final class PixelArena extends JComponent {
         int barX = x + 6, barY = y + 24, barW = width - 12, barH = height - 30;
         g.setColor(UniversityPixelTheme.BLACK);
         g.fillRect(barX, barY, barW, barH);
-        g.setColor(new Color(0x2B2166));
+        g.setColor(UniversityPixelTheme.PANEL_LIGHT);
         g.fillRect(barX + 2, barY + 2, barW - 4, barH - 4);
         int inner = barW - 4;
         int trailW = (int) ((long) inner * Math.max(0, trail) / max);

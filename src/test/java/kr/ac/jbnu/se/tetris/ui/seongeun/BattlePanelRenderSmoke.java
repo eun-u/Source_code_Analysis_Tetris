@@ -29,12 +29,13 @@ public final class BattlePanelRenderSmoke {
     private BattlePanelRenderSmoke() { }
     public static void main(String[] args) throws Exception {
         if (args.length != 1 && args.length != 3 && args.length != 4)
-            throw new IllegalArgumentException("Output PNG path [width height [online]] required");
+            throw new IllegalArgumentException("Output PNG path [width height [online|impact]] required");
         Path output = Paths.get(args[0]);
         final int width = args.length >= 3 ? Integer.parseInt(args[1]) : 1160;
         final int height = args.length >= 3 ? Integer.parseInt(args[2]) : 780;
         final boolean online = args.length == 4 && "online".equalsIgnoreCase(args[3]);
-        if (args.length == 4 && !online) throw new IllegalArgumentException("Unknown mode: " + args[3]);
+        final boolean impact = args.length == 4 && "impact".equalsIgnoreCase(args[3]);
+        if (args.length == 4 && !online && !impact) throw new IllegalArgumentException("Unknown mode: " + args[3]);
         SwingUtilities.invokeAndWait(() -> {
             try {
                 BattleManager manager = online ? BattleManager.pvp(Arrays.asList(
@@ -58,6 +59,17 @@ public final class BattlePanelRenderSmoke {
                 viewport.setSize(width, height);
                 layout(viewport);
                 if (online) assertOnlineGeometry(panel);
+                if (impact) {
+                    PixelArena arena = null;
+                    for (Component child : panel.getComponents())
+                        if (child instanceof PixelArena) arena = (PixelArena) child;
+                    if (arena == null) throw new AssertionError("Battle arena is missing");
+                    arena.showEffect(PixelArena.Effect.ATTACK, 12, true);
+                    arena.showEffect(PixelArena.Effect.DAMAGE, 12, true);
+                    panel.getPlayerBoard().showAttack();
+                    panel.getEnemyBoard().showHit();
+                    Thread.sleep(PixelArena.IMPACT_MS + 70);
+                }
                 BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
                 Graphics2D graphics = image.createGraphics();
                 viewport.printAll(graphics);

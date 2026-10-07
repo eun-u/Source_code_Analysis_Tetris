@@ -182,7 +182,8 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
 
     public void setState(GameState state) {
         playerBoard.setState(state);
-        holdPreview.setPiece(state.getHoldPiece(), state.getHoldItemId() != null);
+        holdPreview.setPiece(state.getHoldPiece(), state.getHoldItemId() != null,
+                state.getHoldOreCellIndex());
         for (int index = 0; index < nextPreviews.length; index++)
             nextPreviews[index].setPiece(index < state.getNextPieces().size()
                     ? state.getNextPieces().get(index) : PieceType.EMPTY, false);

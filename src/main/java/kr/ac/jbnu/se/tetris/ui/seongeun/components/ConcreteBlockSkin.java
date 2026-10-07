@@ -36,11 +36,7 @@ public final class ConcreteBlockSkin {
         if (ghost) {
             graphics.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 145));
             graphics.drawRect(x + 2, y + 2, Math.max(1, size - 5), Math.max(1, size - 5));
-            if (ore && size >= 12) {
-                graphics.setColor(new Color(255, 209, 102, 150));
-                graphics.drawLine(x + size / 2 - 2, y + size / 2,
-                        x + size / 2 + 2, y + size / 2);
-            }
+            if (ore) paintOreMark(graphics, x, y, size, true);
             return;
         }
         graphics.setColor(new Color(22, 29, 34));
@@ -60,30 +56,36 @@ public final class ConcreteBlockSkin {
             graphics.setColor(new Color(205, 207, 200, 70));
             graphics.drawLine(x + inset + 1, y + inset + 1, x + size - inset - 2, y + inset + 1);
         }
-        graphics.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 68));
+        graphics.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), ore ? 25 : 68));
         graphics.fillRect(x + inset, y + inset, inner, inner);
-        graphics.setColor(accent);
+        graphics.setColor(ore ? new Color(255, 222, 116) : accent);
         graphics.drawLine(x + 1, y + 1, x + size - 2, y + 1);
         graphics.drawLine(x + 1, y + 1, x + 1, y + size - 2);
-        if (ore) paintOreCrack(graphics, x, y, size);
+        if (ore) paintOreMark(graphics, x, y, size, false);
         graphics.setColor(new Color(18, 25, 32, 185));
         graphics.drawLine(x + 1, y + size - 2, x + size - 2, y + size - 2);
         graphics.drawLine(x + size - 2, y + 1, x + size - 2, y + size - 2);
     }
 
-    private static void paintOreCrack(Graphics2D graphics, int x, int y, int size) {
-        if (size < 9) return;
+    private static void paintOreMark(Graphics2D graphics, int x, int y, int size, boolean ghost) {
+        if (size < 8) return;
         int cx = x + size / 2, cy = y + size / 2;
-        graphics.setColor(new Color(50, 35, 20));
-        graphics.drawLine(cx - size / 4, cy - size / 3, cx, cy);
-        graphics.drawLine(cx, cy, cx + size / 4, cy + size / 3);
-        graphics.setColor(new Color(255, 211, 93));
-        graphics.drawLine(cx - size / 4 + 1, cy - size / 3, cx, cy);
-        graphics.drawLine(cx, cy, cx + size / 4, cy + size / 3 - 1);
-        graphics.drawLine(cx, cy, cx + size / 4, cy - size / 4);
-        if (size >= 15) {
-            graphics.setColor(new Color(255, 244, 190));
-            graphics.fillRect(cx - 1, cy - 1, 3, 3);
+        int radius = Math.max(2, size / 5);
+        graphics.setColor(ghost ? new Color(255, 209, 102, 170) : new Color(62, 39, 19));
+        graphics.fillPolygon(new int[] { cx, cx + radius + 1, cx, cx - radius - 1 },
+                new int[] { cy - radius - 1, cy, cy + radius + 1, cy }, 4);
+        graphics.setColor(ghost ? new Color(255, 246, 189, 220) : new Color(255, 225, 103));
+        graphics.fillPolygon(new int[] { cx, cx + radius, cx, cx - radius },
+                new int[] { cy - radius, cy, cy + radius, cy }, 4);
+        if (ghost) return;
+        graphics.setColor(new Color(255, 253, 221));
+        graphics.fillRect(cx - 1, cy - 1, Math.max(2, size / 8), Math.max(2, size / 8));
+        graphics.setColor(new Color(255, 228, 133));
+        graphics.drawRect(x + 2, y + 2, size - 5, size - 5);
+        if (size >= 16) {
+            graphics.setColor(new Color(255, 249, 199));
+            graphics.fillRect(x + 1, y + 1, 3, 3);
+            graphics.fillRect(x + size - 4, y + size - 4, 2, 2);
         }
     }
 
