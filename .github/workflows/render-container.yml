@@ -2,15 +2,10 @@ name: Validate Render container
 
 on:
   push:
-    branches: [eunjin]
-    paths:
-      - '.github/workflows/render-container.yml'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.mvn/**'
-      - 'mvnw'
-      - 'pom.xml'
-      - 'src/**'
+    branches: [dev, eunjin]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +15,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  postgres-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-local-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Validate migrations, permissions and concurrent lease/result transactions
+        env:
+          TETRIS_TEST_POSTGRES_DSN: postgresql://postgres:ci-local-only@127.0.0.1:5432/postgres
+        run: |
+          python3 -m venv /tmp/tetris-sql-tests
+          /tmp/tetris-sql-tests/bin/pip install 'psycopg[binary]==3.2.10'
+          /tmp/tetris-sql-tests/bin/python supabase/tests/run_postgres_tests.py
   linux-container:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

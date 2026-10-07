@@ -41,6 +41,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
@@ -97,8 +98,8 @@ public final class RenderGameServer implements AutoCloseable {
     private final ThreadPoolExecutor persistenceExecutor = new ThreadPoolExecutor(2, 2, 0,
             TimeUnit.MILLISECONDS, new ArrayBlockingQueue<Runnable>(16), task -> daemon(task, "render-store"));
     private final Map<String, Room> rooms = new LinkedHashMap<String, Room>();
-    /** Immutable match IDs retain their own settlement state after a room is reused. Room-queue owned. */
-    private final Map<String, MatchAttempt> unresolvedMatches = new LinkedHashMap<String, MatchAttempt>();
+    /** Immutable match IDs retain their settlement state after a room is reused. The shutdown thread snapshots them. */
+    private final Map<String, MatchAttempt> unresolvedMatches = new ConcurrentHashMap<String, MatchAttempt>();
     private final ConcurrentHashMap<String, Peer> users = new ConcurrentHashMap<String, Peer>();
     private final ConcurrentHashMap<Channel, Boolean> sockets = new ConcurrentHashMap<Channel, Boolean>();
     private final AtomicInteger socketCount = new AtomicInteger();
@@ -399,8 +400,10 @@ public final class RenderGameServer implements AutoCloseable {
         }
 
         private void changeAdmission(ChannelHandlerContext ctx, boolean enabled) {
+            if (closed.get()) { respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server stopping"); return; }
             try {
                 leaseExecutor.execute(() -> {
+                    if (closed.get()) return;
                     try {
                         RunLease lease = store.setAdmission(runId, enabled);
                         if (!lease.isOwned() || lease.isEnabled() != enabled) {
@@ -1091,8 +1094,8 @@ public final class RenderGameServer implements AutoCloseable {
         private final String firstUserId;
         private final String secondUserId;
         private BattleManager battle;
-        private String winnerId;
-        private String reason;
+        private volatile String winnerId;
+        private volatile String reason;
         private MatchAttempt(String matchId, Room room, String firstUserId, String secondUserId) {
             this.matchId = matchId;
             this.room = room;
@@ -1114,42 +1117,73 @@ public final class RenderGameServer implements AutoCloseable {
 
     @Override public synchronized void close() {
         if (!closed.compareAndSet(false, true)) return;
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(25);
         admissionOpen = false;
         draining = true;
-        leaseExecutor.shutdownNow();
+        // close() can run on the lease worker after a confirmed fence. Do not interrupt that worker.
+        leaseExecutor.shutdown();
         Channel serverChannel = listener;
         if (serverChannel != null) serverChannel.close();
         for (Channel channel : sockets.keySet()) channel.close();
-        try {
-            java.util.concurrent.Future<List<CloseSettlement>> pending = roomsExecutor.submit(() -> {
-                List<CloseSettlement> settlements = new ArrayList<CloseSettlement>();
-                for (MatchAttempt attempt : unresolvedMatches.values()) {
-                    settlements.add(new CloseSettlement(attempt.matchId, attempt.winnerId,
-                            attempt.reason == null ? "SERVER_STOPPED" : attempt.reason));
-                }
-                return settlements;
-            });
-            for (CloseSettlement settlement : pending.get(1, TimeUnit.SECONDS)) {
-                try { persistenceExecutor.execute(() -> {
+        // Run already-queued player actions before deciding whether a match has a winner.
+        // Scheduled retries/ticks are not part of that drain and must not consume its budget.
+        roomsExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        roomsExecutor.shutdown();
+        boolean roomsDrained = awaitUntil(roomsExecutor, deadline, 5);
+        authExecutor.shutdown();
+        // Existing begin/finish/void RPCs must finish before shutdown settlements run. With two
+        // persistence workers, a queued close void could otherwise race an in-flight begin.
+        persistenceExecutor.shutdown();
+        boolean persisted = awaitUntil(persistenceExecutor, deadline, 15);
+        // A concurrent snapshot works even if the room queue is stuck; a one-second Future timeout
+        // previously discarded every unresolved match in that case.
+        List<CloseSettlement> settlements = new ArrayList<CloseSettlement>();
+        for (MatchAttempt attempt : unresolvedMatches.values()) {
+            settlements.add(new CloseSettlement(attempt.matchId, attempt.winnerId,
+                    attempt.reason == null ? "SERVER_STOPPED" : attempt.reason));
+        }
+        if (roomsDrained && persisted && !settlements.isEmpty()) {
+            ThreadPoolExecutor closeExecutor = new ThreadPoolExecutor(2, 2, 0,
+                    TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(),
+                    task -> daemon(task, "render-close-store"));
+            for (CloseSettlement settlement : settlements) {
+                closeExecutor.execute(() -> {
                     try {
                         if (settlement.winnerId == null) {
                             store.voidMatch(settlement.matchId, runId, "SERVER_STOPPED");
                         } else {
                             store.finishMatch(settlement.matchId, runId, settlement.winnerId, settlement.reason);
                         }
-                    } catch (Exception ignored) { /* unresolved rows require operator reconciliation */ }
-                }); }
-                catch (RejectedExecutionException ignored) { }
+                    } catch (Exception failure) {
+                        System.err.println("Shutdown settlement unresolved matchId=" + settlement.matchId
+                                + " error=" + failure.getClass().getSimpleName());
+                    }
+                });
             }
-        } catch (Exception ignored) { }
-        roomsExecutor.shutdown();
-        authExecutor.shutdown();
-        persistenceExecutor.shutdown();
-        try { persistenceExecutor.awaitTermination(10, TimeUnit.SECONDS); }
-        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            closeExecutor.shutdown();
+            if (!awaitUntil(closeExecutor, deadline, 10)) {
+                System.err.println("Shutdown settlement deadline reached; unresolvedIds="
+                        + unresolvedMatches.keySet());
+            }
+        } else if ((!roomsDrained || !persisted) && !settlements.isEmpty()) {
+            // The lease RPCs fence a replacement run. Never settle ahead of queued room actions
+            // or an in-flight begin; takeover or an operator must reconcile unresolved rows.
+            System.err.println("Shutdown drain deadline reached; roomsDrained=" + roomsDrained
+                    + " persistenceDrained=" + persisted + " unresolvedIds=" + unresolvedMatches.keySet());
+        }
         if (boss != null) boss.shutdownGracefully();
         if (workers != null) workers.shutdownGracefully();
         stopped.countDown();
+    }
+
+    private static boolean awaitUntil(ThreadPoolExecutor executor, long deadline, int maxSeconds) {
+        long left = Math.min(TimeUnit.SECONDS.toNanos(maxSeconds), deadline - System.nanoTime());
+        if (left <= 0) return executor.isTerminated();
+        try { return executor.awaitTermination(left, TimeUnit.NANOSECONDS); }
+        catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private static Thread daemon(Runnable task, String name) {

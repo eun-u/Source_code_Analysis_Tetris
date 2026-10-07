@@ -15,8 +15,11 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.jbnu.se.tetris.battle.BattleManager;
 import kr.ac.jbnu.se.tetris.auth.AuthIdentity;
 import kr.ac.jbnu.se.tetris.auth.AuthException;
 import kr.ac.jbnu.se.tetris.auth.TokenVerifier;
@@ -130,7 +133,144 @@ public final class RenderGameServerTest {
         orphanPendingVisibleInDrainStatus(verifier);
         slowAuthRefreshMustNotBlockRanking();
         leaseRestartAndFencing(verifier);
+        closingWaitsForInFlightBegin(verifier);
+        closingDrainsQueuedWinner(verifier);
+        leaseWorkerCloseDoesNotInterruptItself(verifier);
         System.out.println("RenderGameServerTest: PASS");
+    }
+
+    private static void closingWaitsForInFlightBegin(TokenVerifier verifier) throws Exception {
+        BlockingBeginStore store = new BlockingBeginStore();
+        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
+        server.start();
+        Probe a = null, b = null;
+        Thread closer = null;
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            a = connectProbe(USERS[0], server.getPort());
+            b = connectProbe(USERS[1], server.getPort());
+            a.client.send(RoomCommand.createRoom(2));
+            String roomId = a.await(NetworkUpdate.Type.ROOM_STATE).getRoomId();
+            b.client.send(RoomCommand.joinRoom(roomId));
+            b.await(NetworkUpdate.Type.ROOM_STATE);
+            a.client.send(RoomCommand.setReady(true));
+            b.client.send(RoomCommand.setReady(true));
+            if (!store.beginEntered.await(5, TimeUnit.SECONDS)) throw new AssertionError("Begin not in flight");
+            closer = new Thread(server::close, "test-close-during-begin");
+            closer.start();
+            java.lang.reflect.Field field = RenderGameServer.class.getDeclaredField("persistenceExecutor");
+            field.setAccessible(true);
+            ThreadPoolExecutor persistence = (ThreadPoolExecutor) field.get(server);
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!persistence.isShutdown() && System.nanoTime() < until) Thread.sleep(10);
+            if (!persistence.isShutdown()) throw new AssertionError("Close did not start draining persistence");
+            if (store.voidCalls.get() != 0 || !closer.isAlive()) {
+                throw new AssertionError("Close settled before in-flight begin completed");
+            }
+            store.releaseBegin.countDown();
+            closer.join(5000);
+            if (closer.isAlive()) throw new AssertionError("Close did not finish after begin");
+            MatchRecord saved = store.getMatch(store.matchId);
+            if (saved == null || saved.getStatus() != MatchRecord.Status.VOID
+                    || store.voidCalls.get() != 1) {
+                throw new AssertionError("In-flight begin was not voided after persistence drained");
+            }
+        } finally {
+            store.releaseBegin.countDown();
+            if (a != null) a.client.close();
+            if (b != null) b.client.close();
+            if (closer != null) closer.join(5000);
+            server.close();
+        }
+    }
+
+    private static void leaseWorkerCloseDoesNotInterruptItself(TokenVerifier verifier) throws Exception {
+        RenderGameServer server = new RenderGameServer(verifier, new TestStore(), ADMIN, 0);
+        server.start();
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            java.lang.reflect.Field field = RenderGameServer.class.getDeclaredField("leaseExecutor");
+            field.setAccessible(true);
+            ScheduledThreadPoolExecutor lease = (ScheduledThreadPoolExecutor) field.get(server);
+            java.lang.reflect.Method apply = RenderGameServer.class.getDeclaredMethod("applyLease", RunLease.class);
+            apply.setAccessible(true);
+            boolean interrupted = lease.submit(() -> {
+                apply.invoke(server, new RunLease(false, false));
+                return Thread.currentThread().isInterrupted();
+            }).get(5, TimeUnit.SECONDS);
+            if (interrupted) throw new AssertionError("Lease worker interrupted itself while closing");
+        } finally { server.close(); }
+    }
+
+    private static void closingDrainsQueuedWinner(TokenVerifier verifier) throws Exception {
+        TestStore store = new TestStore();
+        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
+        server.start();
+        Probe a = null, b = null;
+        Thread closer = null;
+        CountDownLatch releaseRoom = new CountDownLatch(1);
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            a = connectProbe(USERS[0], server.getPort());
+            b = connectProbe(USERS[1], server.getPort());
+            a.client.send(RoomCommand.createRoom(2));
+            String roomId = a.await(NetworkUpdate.Type.ROOM_STATE).getRoomId();
+            b.client.send(RoomCommand.joinRoom(roomId));
+            b.await(NetworkUpdate.Type.ROOM_STATE);
+            a.client.send(RoomCommand.setReady(true));
+            b.client.send(RoomCommand.setReady(true));
+            a.await(NetworkUpdate.Type.MATCH_STARTED);
+            b.await(NetworkUpdate.Type.MATCH_STARTED);
+            String matchId = store.records.keySet().iterator().next();
+            java.lang.reflect.Field queueField = RenderGameServer.class.getDeclaredField("roomsExecutor");
+            java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
+            queueField.setAccessible(true);
+            roomsField.setAccessible(true);
+            ScheduledThreadPoolExecutor queue = (ScheduledThreadPoolExecutor) queueField.get(server);
+            CountDownLatch roomBlocked = new CountDownLatch(1);
+            queue.execute(() -> {
+                roomBlocked.countDown();
+                try { releaseRoom.await(5, TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            });
+            if (!roomBlocked.await(5, TimeUnit.SECONDS)) throw new AssertionError("Room queue did not block");
+            Class<?> roomClass = Class.forName(RenderGameServer.class.getName() + "$Room");
+            java.lang.reflect.Field battleField = roomClass.getDeclaredField("battle");
+            java.lang.reflect.Method finish = RenderGameServer.class.getDeclaredMethod("finishIfNeeded", roomClass);
+            battleField.setAccessible(true);
+            finish.setAccessible(true);
+            java.util.concurrent.Future<?> winner = queue.submit(() -> {
+                try {
+                    Object room = ((Map<?, ?>) roomsField.get(server)).get(roomId);
+                    ((BattleManager) battleField.get(room)).forfeit(USERS[0]);
+                    finish.invoke(server, room);
+                } catch (Exception failure) { throw new RuntimeException(failure); }
+            });
+            closer = new Thread(server::close, "test-close-during-room-action");
+            closer.start();
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!queue.isShutdown() && System.nanoTime() < until) Thread.sleep(10);
+            if (!queue.isShutdown()) throw new AssertionError("Close did not start room drain");
+            if (!closer.isAlive()) throw new AssertionError("Close skipped queued room action");
+            releaseRoom.countDown();
+            winner.get(5, TimeUnit.SECONDS);
+            closer.join(5000);
+            if (closer.isAlive()) throw new AssertionError("Close did not finish after room action");
+            MatchRecord saved = store.getMatch(matchId);
+            if (saved == null || saved.getStatus() != MatchRecord.Status.FINALIZED
+                    || !USERS[1].equals(saved.getWinnerUserId())) {
+                throw new AssertionError("Queued winner was lost during shutdown");
+            }
+        } finally {
+            releaseRoom.countDown();
+            if (a != null) a.client.close();
+            if (b != null) b.client.close();
+            if (closer != null) closer.join(5000);
+            server.close();
+        }
     }
 
     private static void leaseRestartAndFencing(TokenVerifier verifier) throws Exception {
@@ -838,6 +978,31 @@ public final class RenderGameServerTest {
             return records.get(matchId);
         }
         @Override public int voidStoppedRun(String currentRunId, String stoppedRunId) { return 0; }
+    }
+
+    private static final class BlockingBeginStore extends TestStore {
+        private final CountDownLatch beginEntered = new CountDownLatch(1);
+        private final CountDownLatch releaseBegin = new CountDownLatch(1);
+        private final AtomicInteger voidCalls = new AtomicInteger();
+        private volatile String matchId;
+
+        @Override public MatchRecord beginMatch(String id, String runId, String rulesVersion,
+                String first, String second) throws IOException {
+            matchId = id;
+            beginEntered.countDown();
+            try {
+                if (!releaseBegin.await(5, TimeUnit.SECONDS)) throw new IOException("Begin timed out");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Begin interrupted", interrupted);
+            }
+            return super.beginMatch(id, runId, rulesVersion, first, second);
+        }
+
+        @Override public MatchRecord voidMatch(String id, String runId, String reason) throws IOException {
+            voidCalls.incrementAndGet();
+            return super.voidMatch(id, runId, reason);
+        }
     }
 
     private static final class FlakyStore extends TestStore {
