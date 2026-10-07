@@ -169,7 +169,11 @@ public final class PixelArena extends JComponent {
     public void setEffectsEnabled(boolean enabled) {
         effectsEnabled = enabled;
         if (enabled && isShowing()) animation.start();
-        else { animation.stop(); visuals.clear(); }
+        else {
+            animation.stop();
+            visuals.clear();
+            playerAttackAt = monsterAttackAt = playerHitAt = monsterHitAt = shakeAt = -1;
+        }
         repaint();
     }
 
@@ -236,7 +240,7 @@ public final class PixelArena extends JComponent {
             playerTrailFrom = shownTrail(playerTrailFrom, playerHp, playerTrailAt, now);
             playerTrailAt = now;
             if (hp < playerHp) {
-                if (now - monsterAttackAt > 500) monsterAttackAt = now;
+                if (effectsEnabled && now - monsterAttackAt > 500) monsterAttackAt = now;
                 showEffect(Effect.DAMAGE, playerHp - hp, false);
             } else showEffect(Effect.HEAL, hp - playerHp, false);
         }
@@ -244,7 +248,7 @@ public final class PixelArena extends JComponent {
             monsterTrailFrom = shownTrail(monsterTrailFrom, monsterHp, monsterTrailAt, now);
             monsterTrailAt = now;
             if (enemyHp < monsterHp) {
-                if (now - playerAttackAt > 500) playerAttackAt = now;
+                if (effectsEnabled && now - playerAttackAt > 500) playerAttackAt = now;
                 showEffect(Effect.DAMAGE, monsterHp - enemyHp, true);
             } else showEffect(Effect.HEAL, enemyHp - monsterHp, true);
         }
@@ -559,16 +563,12 @@ public final class PixelArena extends JComponent {
         }
     }
 
-    /** 플레이어 초상에서 몬스터로 테트로미노 조각 다섯 개가 호를 그리며 날아간다. */
+    /** 충전된 빛줄기를 따라 테트로미노 조각이 날아가고, 착탄 시 충격파가 퍼진다. */
     private void paintPlayerAttack(Graphics2D g, Stage s, long age, int seed) {
         int fromX = s.portraitX + s.portraitW, fromY = s.portraitY + s.portraitH / 3;
         int toX = s.monsterX, toY = s.monsterCenterY();
-        if (age < 140) {
-            float charge = age / 140f;
-            g.setColor(new Color(255, 247, 232, (int) (200 * charge)));
-            int r = Math.round(6 + 16 * charge);
-            g.fillRect(fromX - r / 2, fromY - r / 2, r, r);
-        }
+        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, GOLD, seed, 24);
+        paintArcStreak(g, fromX, fromY, toX, toY, age, 70, seed, GOLD, 42);
         paintShards(g, fromX, fromY, toX, toY, age, 60, IMPACT_MS, seed, -1, clampSize(s.w / 16, 12, 22));
         if (age >= IMPACT_MS) {
             float p = Math.min(1f, (age - IMPACT_MS) / 340f);
@@ -579,6 +579,7 @@ public final class PixelArena extends JComponent {
             }
             paintBurst(g, toX, toY, p, seed, GOLD, 22);
             paintBlockDebris(g, toX, toY, p, seed);
+            paintShockwave(g, toX, toY, p, Math.round(s.monsterSize * 0.64f), GOLD, seed);
             paintSlash(g, toX, toY, Math.round(s.monsterSize * 0.45f), p, WHITE, false);
         }
     }
@@ -587,6 +588,8 @@ public final class PixelArena extends JComponent {
     private void paintMonsterAttack(Graphics2D g, Stage s, long age, int seed) {
         int fromX = s.monsterX - s.monsterSize / 4, fromY = s.monsterCenterY();
         int toX = s.playerCenterX(), toY = s.playerCenterY();
+        if (age < 140) paintCharge(g, fromX, fromY, age / 140f, CORAL, seed, 27);
+        paintArcStreak(g, fromX, fromY, toX, toY, age, 80, seed, CORAL, -30);
         if (age >= 80 && age < IMPACT_MS) {
             float t = (age - 80) / (float) (IMPACT_MS - 80);
             float ease = t * t;
@@ -613,9 +616,87 @@ public final class PixelArena extends JComponent {
         }
         if (age >= IMPACT_MS) {
             float p = Math.min(1f, (age - IMPACT_MS) / 360f);
+            paintShockwave(g, toX, toY, p, Math.round(s.portraitW * 1.15f), CORAL, seed);
             paintSlash(g, toX, toY, Math.round(s.portraitW * 0.75f), p, CORAL, true);
             paintBurst(g, toX, toY, p, seed, CORAL, 12);
         }
+    }
+
+    /** 공격 시작점의 픽셀 링과 안쪽으로 모이는 불꽃. 공격 중에만 그린다. */
+    private static void paintCharge(Graphics2D g, int x, int y, float p, Color color, int seed, int radius) {
+        int alpha = Math.round(185 * p);
+        int outer = Math.round(radius * (1f - 0.42f * p));
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
+        g.drawRect(x - outer, y - outer, outer * 2, outer * 2);
+        g.drawRect(x - outer + 3, y - outer + 3, (outer - 3) * 2, (outer - 3) * 2);
+        for (int i = 0; i < 8; i++) {
+            double angle = (i + seed % 8) * Math.PI / 4;
+            int distance = Math.round(radius * (1.5f - p));
+            int px = x + (int) Math.round(Math.cos(angle) * distance);
+            int py = y + (int) Math.round(Math.sin(angle) * distance);
+            g.fillRect(px - 2, py - 2, 5, 5);
+        }
+        int core = Math.round(5 + 14 * p);
+        g.setColor(new Color(255, 247, 232, Math.round(230 * p)));
+        g.fillRect(x - core / 2, y - core / 2, core, core);
+    }
+
+    /** 여러 조각의 이동을 묶어 주는 짧은 발광 궤적. 착탄 뒤에는 남지 않는다. */
+    private static void paintArcStreak(Graphics2D g, int fromX, int fromY, int toX, int toY,
+                                       long age, int startMs, int seed, Color color, int arc) {
+        if (age < startMs || age >= IMPACT_MS) return;
+        float t = (age - startMs) / (float) (IMPACT_MS - startMs);
+        float head = t * t * (3f - 2f * t);
+        float tail = Math.max(0f, head - 0.25f);
+        int hx = Math.round(fromX + (toX - fromX) * head);
+        int hy = Math.round(fromY + (toY - fromY) * head - (float) Math.sin(head * Math.PI) * arc);
+        int tx = Math.round(fromX + (toX - fromX) * tail);
+        int ty = Math.round(fromY + (toY - fromY) * tail - (float) Math.sin(tail * Math.PI) * arc);
+        Stroke prior = g.getStroke();
+        g.setStroke(new BasicStroke(11f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 65));
+        g.drawLine(tx, ty, hx, hy);
+        g.setStroke(new BasicStroke(4f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 205));
+        g.drawLine(tx, ty, hx, hy);
+        g.setStroke(prior);
+        g.setColor(WHITE);
+        g.fillRect(hx - 4, hy - 4, 8, 8);
+        // 빛줄기 양옆의 점은 매 프레임 같은 좌표를 써서 불규칙하게 깜박이지 않는다.
+        int offset = seed % 2 == 0 ? 9 : -9;
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 180));
+        g.fillRect(hx - 2, hy + offset - 2, 4, 4);
+    }
+
+    /** 착탄 순간 두 겹의 각진 파문과 방사형 파편을 만든다. */
+    private static void paintShockwave(Graphics2D g, int x, int y, float p, int radius, Color color, int seed) {
+        if (p >= 0.8f) return;
+        float fade = 1f - p / 0.8f;
+        int outer = Math.round(radius * (0.18f + p));
+        int inner = Math.max(3, Math.round(outer * 0.64f));
+        Stroke prior = g.getStroke();
+        g.setStroke(new BasicStroke(4f));
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), Math.round(190 * fade)));
+        drawDiamond(g, x, y, outer);
+        g.setStroke(new BasicStroke(2f));
+        g.setColor(new Color(255, 247, 232, Math.round(225 * fade)));
+        drawDiamond(g, x, y, inner);
+        g.setStroke(prior);
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), Math.round(220 * fade)));
+        for (int i = 0; i < 8; i++) {
+            double angle = (i + (seed % 3) * 0.2) * Math.PI / 4;
+            int near = outer + 4;
+            int far = outer + Math.round(14 * fade);
+            g.drawLine(x + (int) (Math.cos(angle) * near), y + (int) (Math.sin(angle) * near),
+                    x + (int) (Math.cos(angle) * far), y + (int) (Math.sin(angle) * far));
+        }
+    }
+
+    private static void drawDiamond(Graphics2D g, int x, int y, int radius) {
+        g.drawLine(x, y - radius, x + radius, y);
+        g.drawLine(x + radius, y, x, y + radius);
+        g.drawLine(x, y + radius, x - radius, y);
+        g.drawLine(x - radius, y, x, y - radius);
     }
 
     private static int clampSize(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
