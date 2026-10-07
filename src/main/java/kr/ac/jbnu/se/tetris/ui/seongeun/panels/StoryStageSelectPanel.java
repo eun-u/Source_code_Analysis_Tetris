@@ -19,7 +19,6 @@ import kr.ac.jbnu.se.tetris.ai.DifficultyProfile;
 import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.story.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.*;
-import kr.ac.jbnu.se.tetris.ui.seongeun.model.StoryProgressData;
 
 /**
  * 스토리 지도. 대학교·졸업·취업 세 지역을 잇는 길 위에 아홉 전투를 점으로 두고,
@@ -185,7 +184,6 @@ public class StoryStageSelectPanel extends JPanel {
         for (MonsterSpec monster : catalog.getStages().get(stageIndex).getEncounters())
             if (monster.getTier() == tier) { setStageAction(stageIndex, monster.getId(), listener); return; }
     }
-    public void updateProgress(StoryProgressData ignored) { }
     public void setStage1NormalAction(ActionListener l) { setStageAction(0, MonsterTier.NORMAL, l); }
     public void setStage1EliteAction(ActionListener l) { setStageAction(0, MonsterTier.ELITE, l); }
     public void setStage1BossAction(ActionListener l) { setStageAction(0, MonsterTier.BOSS, l); }

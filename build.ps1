@@ -45,7 +45,8 @@ $previousJavaHome = $env:JAVA_HOME
 try {
     $env:JAVA_HOME = $selectedJdk
     Write-Output "JDK: $selectedJdk"
-    $mavenArguments = @('-B', '-ntp', 'package')
+    # 제거된 리소스/클래스가 이전 target/에 남아 JAR로 다시 들어가지 않도록 매번 깨끗이 빌드
+    $mavenArguments = @('-B', '-ntp', 'clean', 'package')
     if ($Task -notin @('Test', 'GuiTest')) { $mavenArguments += '-DskipTests=true' }
     # Windows PowerShell 5는 리다이렉트된 정상 stderr 로그도 NativeCommandError로 취급하므로 종료 코드로 판정
     $savedErrorPreference = $ErrorActionPreference

@@ -220,6 +220,23 @@ public final class RankedOnlineUiFlowTest {
         final Map<String, MatchRecord> records = new ConcurrentHashMap<>();
         final CountDownLatch finishEntered = new CountDownLatch(1);
         final CountDownLatch releaseFinish = new CountDownLatch(1);
+        private String ownerRunId;
+        private boolean enabled;
+        @Override public synchronized kr.ac.jbnu.se.tetris.ranking.RunLease claimRun(String runId) {
+            if (ownerRunId == null && enabled) ownerRunId = runId;
+            return new kr.ac.jbnu.se.tetris.ranking.RunLease(runId.equals(ownerRunId), enabled);
+        }
+        @Override public synchronized kr.ac.jbnu.se.tetris.ranking.RunLease renewRun(String runId) {
+            return new kr.ac.jbnu.se.tetris.ranking.RunLease(runId.equals(ownerRunId), enabled);
+        }
+        @Override public synchronized kr.ac.jbnu.se.tetris.ranking.RunLease setAdmission(String runId,
+                boolean open) {
+            if (ownerRunId == null) ownerRunId = runId;
+            if (!runId.equals(ownerRunId))
+                return new kr.ac.jbnu.se.tetris.ranking.RunLease(false, enabled);
+            enabled = open;
+            return new kr.ac.jbnu.se.tetris.ranking.RunLease(true, enabled);
+        }
         @Override public synchronized MatchRecord beginMatch(String matchId, String runId,
                 String rulesVersion, String first, String second) throws IOException {
             MatchRecord existing = records.get(matchId);
@@ -254,6 +271,6 @@ public final class RankedOnlineUiFlowTest {
             records.put(matchId, voided); return voided;
         }
         @Override public synchronized MatchRecord getMatch(String matchId) { return records.get(matchId); }
-        @Override public int voidStoppedRun(String runId) { return 0; }
+        @Override public int voidStoppedRun(String currentRunId, String stoppedRunId) { return 0; }
     }
 }

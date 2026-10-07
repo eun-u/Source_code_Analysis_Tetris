@@ -23,19 +23,23 @@ public final class SupabaseRankingTest {
             SupabaseConfig config = new SupabaseConfig("http://127.0.0.1:" + server.getAddress().getPort(),
                     "public-test-key", "secret-test-key");
             SupabaseRankedMatchStore store = new SupabaseRankedMatchStore(config);
+            check(!store.claimRun(RUN).isOwned(), "Initial drained lease");
+            check(store.setAdmission(RUN, true).isOwned(), "Operator opened lease");
+            check(store.renewRun(RUN).isEnabled(), "Lease renewed");
             MatchRecord started = store.beginMatch(MATCH, RUN, "v1", FIRST, SECOND);
             check(started.getStatus() == MatchRecord.Status.RUNNING, "Begin result");
             MatchRecord ended = store.finishMatch(MATCH, RUN, FIRST, "WIN");
             check(ended.getStatus() == MatchRecord.Status.FINALIZED
                     && ended.getFirstRatingAfter() == 1016, "Finalized rating");
             check(store.getMatch(MATCH).getStatus() == MatchRecord.Status.FINALIZED, "Get match");
-            check(store.voidStoppedRun(RUN) == 2, "Stopped run count");
+            check(store.voidStoppedRun(RUN, "20000000-0000-4000-8000-000000000002") == 2,
+                    "Stopped run count");
             try { store.voidMatch(MATCH, RUN, "ERROR"); throw new AssertionError("Conflict missed"); }
             catch (IOException expected) { /* HTTP 409 remains an error. */ }
             LeaderboardEntry entry = new LeaderboardService(config).top100("user-access-token").get(0);
             check(entry.getRank() == 1 && entry.getRating() == 1016 && FIRST.equals(entry.getUserId()),
                     "Leaderboard DTO");
-            check(calls.get() == 6, "All RPC paths exercised");
+            check(calls.get() == 9, "All RPC paths exercised");
             try { new SupabaseRankedMatchStore(new SupabaseConfig(config.getBaseUri().toString(), "public"));
                 throw new AssertionError("Server initialized without secret");
             } catch (IllegalStateException expected) { /* fail closed */ }
@@ -59,6 +63,11 @@ public final class SupabaseRankingTest {
                 "Secret key is never used as a bearer JWT");
         if (function.endsWith("ranked_void_match")) { answer(request, 409, "{\"code\":\"MATCH_ALREADY_FINALIZED\"}"); return; }
         if (function.endsWith("ranked_void_stopped_run")) { answer(request, 200, "2"); return; }
+        if (function.endsWith("ranked_run_lease")) {
+            answer(request, 200, "{\"owned\":" + (calls.get() != 1)
+                    + ",\"enabled\":" + (calls.get() != 1) + "}");
+            return;
+        }
         String status = function.endsWith("ranked_finish_match") || function.endsWith("ranked_get_match")
                 ? "FINALIZED" : "RUNNING";
         answer(request, 200, "{\"match_id\":\"" + MATCH + "\",\"server_run_id\":\"" + RUN

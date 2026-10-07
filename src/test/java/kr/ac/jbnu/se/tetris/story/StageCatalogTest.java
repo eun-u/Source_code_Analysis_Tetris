@@ -44,6 +44,10 @@ public final class StageCatalogTest {
         check(level == 9, "전투 총 9회");
         check(catalog.getStage("employment") == stages.get(2), "ID 조회");
         check(catalog.getStage("missing") == null, "없는 ID는 null");
+        check(stages.get(0).getEncounters().get(0).getDifficulty().getPlayerGravityMillis() == 450
+                && stages.get(0).getEncounters().get(0).getDifficulty().getExtraGarbageLines() == 0
+                && stages.get(2).getEncounters().get(2).getDifficulty().getMonsterItemLevel() == 5,
+                "단일 스토리 설정 파일에서 첫·마지막 전투 난이도 로드");
         expectUnsupported(() -> stages.clear());
         expectUnsupported(() -> stages.get(0).getEncounters().clear());
     }
@@ -60,6 +64,21 @@ public final class StageCatalogTest {
         expectInvalid(() -> load(valid + "\nstage.1.encounter.1.typo=x\n"));
         expectInvalid(() -> load(valid + "\nstage.count=3\n"));
         expectInvalid(() -> load(valid.replace("stage.3.encounter.3.aiProfile=boss_default", "")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.maxSearchStates=150", "")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.playerGravityMillis=450",
+                "stage.1.encounter.1.playerGravityMillis=99")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.monsterDelayMillis=3500",
+                "stage.1.encounter.1.monsterDelayMillis=10001")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.budgetMillis=12",
+                "stage.1.encounter.1.budgetMillis=0")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.attackMultiplier=1.00",
+                "stage.1.encounter.1.attackMultiplier=NaN")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.extraGarbageLines=0", "")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.extraGarbageLines=0",
+                "stage.1.encounter.1.extraGarbageLines=5")));
+        expectInvalid(() -> load(valid.replace("stage.1.encounter.1.monsterItemLevel=0",
+                "stage.1.encounter.1.monsterItemLevel=6")));
+        expectInvalid(() -> load(valid + "\nstage.1.encounter.1.maxSearchStates=150\n"));
     }
 
     private static StageCatalog load(String contents) {

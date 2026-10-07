@@ -7,18 +7,26 @@ public final class MonsterSpec {
     private final MonsterTier tier;
     private final int hp;
     private final String aiProfileId;
+    private final StoryDifficulty difficulty;
 
     public MonsterSpec(String id, String name, MonsterTier tier, int hp, String aiProfileId) {
+        this(id, name, tier, hp, aiProfileId, null);
+    }
+
+    public MonsterSpec(String id, String name, MonsterTier tier, int hp, String aiProfileId,
+            StoryDifficulty difficulty) {
         if (id == null || id.trim().isEmpty() || name == null || name.trim().isEmpty()
                 || tier == null || hp < 1 || hp > 10000 || aiProfileId == null
                 || !aiProfileId.matches("[a-z][a-z0-9_]*")) {
             throw new IllegalArgumentException("Invalid monster specification");
         }
-        this.id = id; this.name = name; this.tier = tier; this.hp = hp; this.aiProfileId = aiProfileId;
+        this.id = id; this.name = name; this.tier = tier; this.hp = hp;
+        this.aiProfileId = aiProfileId; this.difficulty = difficulty;
     }
     public String getId() { return id; }
     public String getName() { return name; }
     public MonsterTier getTier() { return tier; }
     public int getHp() { return hp; }
     public String getAiProfileId() { return aiProfileId; }
+    public StoryDifficulty getDifficulty() { return difficulty; }
 }

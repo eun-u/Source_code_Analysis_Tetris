@@ -16,6 +16,28 @@ public final class SupabaseRankedMatchStore implements RankedMatchStore {
         this.http = new SupabaseHttp(config);
     }
 
+    @Override public RunLease claimRun(String serverRunId) throws IOException {
+        return lease(serverRunId, "CLAIM");
+    }
+
+    @Override public RunLease renewRun(String serverRunId) throws IOException {
+        return lease(serverRunId, "RENEW");
+    }
+
+    @Override public RunLease setAdmission(String serverRunId, boolean enabled) throws IOException {
+        return lease(serverRunId, enabled ? "OPEN" : "DRAIN");
+    }
+
+    private RunLease lease(String serverRunId, String action) throws IOException {
+        JsonObject body = new JsonObject();
+        body.addProperty("p_server_run", uuid(serverRunId));
+        body.addProperty("p_action", action);
+        try {
+            JsonObject result = rpc("ranked_run_lease", body).getAsJsonObject();
+            return new RunLease(result.get("owned").getAsBoolean(), result.get("enabled").getAsBoolean());
+        } catch (RuntimeException invalid) { throw new IOException("Invalid lease response", invalid); }
+    }
+
     @Override public MatchRecord beginMatch(String matchId, String serverRunId, String rulesVersion,
             String firstUserId, String secondUserId) throws IOException {
         JsonObject body = matchAndRun(matchId, serverRunId);
@@ -48,8 +70,9 @@ public final class SupabaseRankedMatchStore implements RankedMatchStore {
         return value == null || value.isJsonNull() ? null : decode(value);
     }
 
-    @Override public int voidStoppedRun(String stoppedRunId) throws IOException {
+    @Override public int voidStoppedRun(String currentRunId, String stoppedRunId) throws IOException {
         JsonObject body = new JsonObject();
+        body.addProperty("p_current_run", uuid(currentRunId));
         body.addProperty("p_stopped_run", uuid(stoppedRunId));
         return rpc("ranked_void_stopped_run", body).getAsInt();
     }

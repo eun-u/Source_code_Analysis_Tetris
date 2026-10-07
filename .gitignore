@@ -3,6 +3,9 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 .kotlin
+*.iml
+__pycache__/
+*.pyc
 
 ### Eclipse ###
 .apt_generated

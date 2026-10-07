@@ -1,77 +1,68 @@
 package kr.ac.jbnu.se.tetris.ai;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import kr.ac.jbnu.se.tetris.story.MonsterSpec;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.story.Stage;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
+import kr.ac.jbnu.se.tetris.story.StoryDifficulty;
 
-/** 패턴과 별도로 HP, 속도, 공격, 아이템을 정한 아홉 레벨 프리셋. */
+/** 아홉 스토리 전투의 모든 레벨 수치는 story/stages.properties에서 읽는다. */
 public final class DifficultyProfileCatalog {
-    private static final StageCatalog CAMPAIGN = StageCatalog.loadDefault();
-    private static final int[] GRAVITY = {450, 420, 400, 370, 350, 330, 310, 290, 270};
-    private static final int[] DELAY = {3500, 3300, 3000, 2800, 2600, 2450, 2300, 2150, 2000};
-    private static final int[] STATES = {150, 150, 400, 400, 400, 800, 800, 800, 800};
-    private static final int[] BUDGET = {12, 12, 24, 24, 24, 40, 40, 40, 40};
-    private static final int[] ITEM_LEVEL = {0, 0, 0, 1, 2, 2, 3, 4, 5};
-    private static final int[] AI_TIER = {1, 1, 2, 2, 2, 3, 3, 3, 3};
-    private static final double[] ATTACK_MULTIPLIER =
-            {1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30, 1.40, 1.50};
-    private static final MonsterTier[] PATTERN = {
-        MonsterTier.NORMAL, MonsterTier.ELITE, MonsterTier.BOSS,
-        MonsterTier.NORMAL, MonsterTier.ELITE, MonsterTier.BOSS,
-        MonsterTier.ELITE, MonsterTier.ELITE, MonsterTier.BOSS
-    };
+    private static final List<MonsterSpec> ENCOUNTERS = encounters(StageCatalog.loadDefault());
+
     private DifficultyProfileCatalog() { }
 
-    public static int getAiTier(int level) { return AI_TIER[index(level)]; }
-    public static MonsterTier getPattern(int level) { return PATTERN[index(level)]; }
-    public static double getAttackMultiplier(int level) { return ATTACK_MULTIPLIER[index(level)]; }
+    /** 과거 숫자 단계 조회 API. 실제 AI는 maxSearchStates/budgetMillis를 사용한다. */
+    @Deprecated
+    public static int getAiTier(int level) {
+        int states = encounterAt(level).getDifficulty().getMaxSearchStates();
+        return states <= 150 ? 1 : states <= 400 ? 2 : 3;
+    }
+
+    public static MonsterTier getPattern(int level) { return encounterAt(level).getTier(); }
+    public static double getAttackMultiplier(int level) {
+        return encounterAt(level).getDifficulty().getAttackMultiplier();
+    }
 
     public static DifficultyProfile level(int level) {
-        int i = index(level);
-        return new DifficultyProfile(level, encounterAt(level).getHp(), GRAVITY[i], DELAY[i],
-                new DifficultyProfile.AiStrength(STATES[i], BUDGET[i]),
-                new DifficultyProfile.AttackStrength(ATTACK_MULTIPLIER[i] - 1.0, 0),
-                special(PATTERN[i]), profileId(PATTERN[i]), ITEM_LEVEL[i]);
+        MonsterSpec encounter = encounterAt(level);
+        StoryDifficulty tuning = encounter.getDifficulty();
+        return new DifficultyProfile(level, encounter.getHp(), tuning.getPlayerGravityMillis(),
+                tuning.getMonsterDelayMillis(),
+                new DifficultyProfile.AiStrength(tuning.getMaxSearchStates(), tuning.getBudgetMillis()),
+                new DifficultyProfile.AttackStrength(tuning.getAttackMultiplier() - 1.0,
+                        tuning.getExtraGarbageLines()),
+                special(encounter.getTier()), encounter.getAiProfileId(),
+                tuning.getMonsterItemLevel());
     }
 
     public static DifficultyProfile forEncounter(MonsterSpec monster) {
         if (monster == null) throw new IllegalArgumentException("Monster required");
-        int level = 0;
-        for (Stage stage : CAMPAIGN.getStages()) {
-            for (MonsterSpec candidate : stage.getEncounters()) {
-                level++;
-                if (candidate.getId().equals(monster.getId())) {
-                    if (candidate.getTier() != getPattern(level))
-                        throw new IllegalStateException("Campaign pattern differs from level " + level);
-                    DifficultyProfile base = level(level);
-                    return base.withEncounter(candidate.getHp(), special(candidate.getTier()),
-                            candidate.getAiProfileId());
-                }
-            }
+        for (int index = 0; index < ENCOUNTERS.size(); index++) {
+            if (ENCOUNTERS.get(index).getId().equals(monster.getId())) return level(index + 1);
         }
         throw new IllegalArgumentException("Unknown story monster: " + monster.getId());
     }
 
-    private static int index(int level) {
-        if (level < 1 || level > 9) throw new IllegalArgumentException("Level must be 1..9");
-        return level - 1;
-    }
     private static MonsterSpec encounterAt(int level) {
-        int current = 0;
-        for (Stage stage : CAMPAIGN.getStages()) {
-            for (MonsterSpec monster : stage.getEncounters()) {
-                if (++current == level) return monster;
-            }
+        if (level < 1 || level > ENCOUNTERS.size()) {
+            throw new IllegalArgumentException("Level must be 1..9");
         }
-        throw new IllegalStateException("Missing campaign encounter for level " + level);
+        return ENCOUNTERS.get(level - 1);
     }
+
+    private static List<MonsterSpec> encounters(StageCatalog catalog) {
+        List<MonsterSpec> monsters = new ArrayList<MonsterSpec>(9);
+        for (Stage stage : catalog.getStages()) monsters.addAll(stage.getEncounters());
+        return Collections.unmodifiableList(monsters);
+    }
+
     private static DifficultyProfile.SpecialPattern special(MonsterTier tier) {
         return tier == MonsterTier.NORMAL ? DifficultyProfile.SpecialPattern.FIXED
                 : tier == MonsterTier.ELITE ? DifficultyProfile.SpecialPattern.ADAPTIVE
                 : DifficultyProfile.SpecialPattern.BOSS_PHASE;
-    }
-    private static String profileId(MonsterTier tier) {
-        return tier.name().toLowerCase(java.util.Locale.ROOT) + "_default";
     }
 }
