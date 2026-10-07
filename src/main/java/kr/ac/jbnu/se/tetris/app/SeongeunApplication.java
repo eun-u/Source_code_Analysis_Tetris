@@ -935,7 +935,7 @@ public final class SeongeunApplication implements AutoCloseable {
         final String accountLabel = legacyEmail ? username : UsernameIdentity.normalize(username);
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; setAccountStatus("로컬 플레이");
+        accountSession = null; clearLeaderboardForIdentityChange(); setAccountStatus("로컬 플레이");
         authBusy = true; login.setBusy(true); login.setStatus("로그인 중...");
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception {
@@ -978,7 +978,7 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         final long epoch = ++authEpoch;
         if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; setAccountStatus("로컬 플레이");
+        accountSession = null; clearLeaderboardForIdentityChange(); setAccountStatus("로컬 플레이");
         authBusy = true; signUp.setBusy(true);
         new javax.swing.SwingWorker<SignUpResult, Void>() {
             @Override protected SignUpResult doInBackground() throws Exception {
@@ -1023,8 +1023,13 @@ public final class SeongeunApplication implements AutoCloseable {
                 try {
                     accountSession = get();
                 } catch (Exception failed) {
-                    if (accountSession.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000) accountSession = null;
+                    if (accountSession.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000) {
+                        accountSession = null;
+                        clearLeaderboardForIdentityChange();
+                    } else rankingReloadPending = false;
                     setAccountStatus("온라인 인증 갱신에 실패했습니다. 다시 로그인하세요.");
+                    if (LEADERBOARD.equals(currentScreen))
+                        leaderboard.setError("인증 갱신에 실패했습니다. 다시 로그인하거나 새로고침하세요.");
                     if (network instanceof WebSocketNetworkClient && BATTLE.equals(currentScreen))
                         battle.setFeedback("온라인 인증 갱신 실패 · 서버 연결을 확인하세요.");
                     return;
@@ -1035,6 +1040,10 @@ public final class SeongeunApplication implements AutoCloseable {
                         onlineConnected = false; roomList.setConnected(false);
                         battle.setFeedback("로그인 유지 · 대전 서버에 다시 연결하세요.");
                     }
+                }
+                if (rankingReloadPending && LEADERBOARD.equals(currentScreen)) {
+                    rankingReloadPending = false;
+                    loadLeaderboard();
                 }
             }
         }.execute();
@@ -1047,7 +1056,7 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         if (network instanceof WebSocketNetworkClient) closeSession();
         final long epoch = ++authEpoch;
-        accountSession = null; authBusy = true;
+        accountSession = null; clearLeaderboardForIdentityChange(); authBusy = true;
         String returnScreen = SETTINGS.equals(currentScreen) ? SETTINGS : LOBBY;
         setAccountStatus("로컬 플레이");
         if (SETTINGS.equals(returnScreen)) showSettings(); else show(LOBBY);
@@ -1076,9 +1085,23 @@ public final class SeongeunApplication implements AutoCloseable {
         show(LEADERBOARD); loadLeaderboard();
     }
 
+    private void clearLeaderboardForIdentityChange() {
+        rankingReloadPending = false;
+        leaderboard.setEntries(Collections.<LeaderboardEntry>emptyList());
+    }
+
     private void loadLeaderboard() {
         if (accountSession == null || rankedConfig == null) return;
         if (rankingBusy) { rankingReloadPending = true; return; }
+        if (authBusy) { rankingReloadPending = true; return; }
+        // 곧 만료될 토큰으로 랭킹을 요청하면 401 이후 재시도만 남으므로 먼저 갱신한다.
+        if (accountSession.getExpiresAtEpochSecond() - System.currentTimeMillis() / 1000 <= 120) {
+            rankingReloadPending = true;
+            refreshAccount();
+            return;
+        }
+        // 화면을 떠난 동안 남은 대기 플래그는 새 조회를 중복시키지 않는다.
+        rankingReloadPending = false;
         final AuthSession requestedAccount = accountSession;
         rankingBusy = true; leaderboard.setBusy(true);
         new javax.swing.SwingWorker<java.util.List<LeaderboardEntry>, Void>() {
@@ -1213,6 +1236,7 @@ public final class SeongeunApplication implements AutoCloseable {
                 } else if ("AUTH_INVALID".equals(reason)) {
                     authEpoch++;
                     accountSession = null;
+                    clearLeaderboardForIdentityChange();
                     authBusy = false;
                     setAccountStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
                     roomList.setConnectionFailed("로그인이 만료되었습니다");
@@ -1229,6 +1253,7 @@ public final class SeongeunApplication implements AutoCloseable {
                     refreshRequestId = -1;
                     if (!update.getRequestOutcome().isAccepted()) {
                         accountSession = null;
+                        clearLeaderboardForIdentityChange();
                         setAccountStatus("인증이 만료되었습니다. 온라인 계정에 다시 로그인하세요.");
                     }
                 }
