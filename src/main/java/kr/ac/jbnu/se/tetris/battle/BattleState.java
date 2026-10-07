@@ -13,15 +13,22 @@ public final class BattleState {
     private final Map<String, ParticipantState> participants;
     private final String winnerId;
     private final String reason;
+    private final long elapsedMillis;
 
     BattleState(Status status, long version, Map<String, ParticipantState> participants,
                 String winnerId, String reason) {
+        this(status, version, participants, winnerId, reason, 0);
+    }
+
+    BattleState(Status status, long version, Map<String, ParticipantState> participants,
+                String winnerId, String reason, long elapsedMillis) {
         this.status = status;
         this.version = version;
         this.participants = Collections.unmodifiableMap(
                 new LinkedHashMap<String, ParticipantState>(participants));
         this.winnerId = winnerId;
         this.reason = reason;
+        this.elapsedMillis = elapsedMillis;
     }
 
     public Status getStatus() { return status; }
@@ -30,4 +37,5 @@ public final class BattleState {
     public ParticipantState getParticipant(String id) { return participants.get(id); }
     public String getWinnerId() { return winnerId; }
     public String getReason() { return reason; }
+    public long getElapsedMillis() { return elapsedMillis; }
 }

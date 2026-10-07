@@ -3,6 +3,8 @@ package kr.ac.jbnu.se.tetris.story;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import kr.ac.jbnu.se.tetris.battle.BattleManager;
 import kr.ac.jbnu.se.tetris.battle.BattleResult;
 import kr.ac.jbnu.se.tetris.battle.ParticipantSpec;
@@ -10,12 +12,20 @@ import kr.ac.jbnu.se.tetris.battle.ParticipantSpec;
 /** 실제 전투 결과에 따른 잠금, 재시도, 중복, 다음 전투 검증 */
 public final class StoryProgressServiceTest {
     public static void main(String[] args) throws Exception {
+        legacyThreeEncounterFixture();
+        repeatedElitePatternUsesEncounterId();
+    }
+
+    private static void legacyThreeEncounterFixture() throws Exception {
         StageCatalog catalog = fixtureCatalog();
         StoryProgressService story = new StoryProgressService(catalog);
         CampaignProgress initial = story.getCampaignProgress();
         check(initial.isStageUnlocked("s1") && !initial.isStageUnlocked("s2"),
                 "첫 스테이지만 해금");
         expectState(() -> story.startStage("s2", "locked", "p", "m"));
+        check(initial.isEncounterUnlocked("s1", MonsterTier.NORMAL)
+                && !initial.isEncounterUnlocked("s1", MonsterTier.ELITE), "원본 난이도 버튼의 초기 잠금");
+        expectState(() -> story.startEncounter("s1", MonsterTier.ELITE, "locked-elite", "p", "m"));
         expectInvalid(() -> story.startStage("missing", "missing", "p", "m"));
 
         EncounterRun normal = story.startStage("s1", "run-1", "p", "m");
@@ -37,8 +47,10 @@ public final class StoryProgressServiceTest {
         check(!initial.isEncounterCleared("s1-normal")
                 && story.getCampaignProgress().isEncounterCleared("s1-normal"),
                 "이전 진행 스냅샷 불변");
+        check(story.getCampaignProgress().isEncounterUnlocked("s1", MonsterTier.ELITE)
+                && !story.getCampaignProgress().isEncounterUnlocked("s1", MonsterTier.BOSS), "일반 승리 후 엘리트만 해금");
 
-        EncounterRun elite = story.startStage("s1", "run-2", "p", "m");
+        EncounterRun elite = story.startEncounter("s1", MonsterTier.ELITE, "run-2", "p", "m");
         check(elite.getEncounterId().equals("s1-elite"), "홈 재진입은 첫 미완료 전투");
         check(story.recordBattleResult("run-1", win)
                 == StoryProgressService.ResultDisposition.STALE, "이전 run 결과 무시");
@@ -69,6 +81,36 @@ public final class StoryProgressServiceTest {
         check(story.nextEncounter("unused-final") == null, "최종 보스 뒤 다음 전투 없음");
         check(story.startStage("s1", "run-8", "p", "m").getEncounterId().equals("s1-normal"),
                 "완료 Stage 재플레이는 일반 전투부터");
+        check(story.startEncounter("s1", MonsterTier.BOSS, "replay-boss", "p", "m").getEncounterId().equals("s1-boss"),
+                "해금된 보스 버튼의 직접 재도전");
+    }
+
+    private static void repeatedElitePatternUsesEncounterId() {
+        StageCatalog catalog = StageCatalog.loadDefault();
+        StoryProgressService story = new StoryProgressService(catalog);
+        Set<String> cleared = new LinkedHashSet<String>();
+        for (int level = 1; level <= 7; level++) cleared.add("level_" + level + "_monster");
+        story.restoreCompletedEncounterIds(cleared);
+        CampaignProgress progress = story.getCampaignProgress();
+        check(progress.isStageUnlocked("employment"), "취업 과정 해금");
+        check(progress.isEncounterUnlocked("employment", "level_8_monster")
+                && !progress.isEncounterUnlocked("employment", "level_9_monster"),
+                "연속 Elite의 두 번째 레벨만 해금");
+        expectState(() -> story.startEncounter("employment", "level_9_monster",
+                "locked-9", "p", "m"));
+        EncounterRun eighth = story.startEncounter("employment", "level_8_monster",
+                "run-8", "p", "m");
+        check(eighth.getMonster().getTier() == MonsterTier.ELITE
+                && eighth.getEncounterId().equals("level_8_monster"), "두 번째 Elite 개별 선택");
+        check(story.recordBattleResult("run-8", finishedForfeit("m"))
+                == StoryProgressService.ResultDisposition.APPLIED_WIN, "Lv 8 확정 승리");
+        check(story.nextEncounter("run-9").getEncounterId().equals("level_9_monster"),
+                "Lv 8 뒤 기업 보스");
+        check(story.recordBattleResult("run-9", finishedForfeit("m"))
+                == StoryProgressService.ResultDisposition.APPLIED_WIN,
+                "최종 레벨 확정 승리");
+        check(story.nextEncounter("final") == null
+                && story.getCampaignProgress().isStageCleared("employment"), "9레벨 완료");
     }
 
     private static BattleManager battle() {

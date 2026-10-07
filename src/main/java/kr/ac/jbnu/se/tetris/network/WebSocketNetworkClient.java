@@ -12,7 +12,6 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpClientCodec;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
@@ -79,7 +78,7 @@ public final class WebSocketNetworkClient implements NetworkClient {
             URI uri = options.getWebSocketUri();
             final WebSocketClientHandshaker handshaker = WebSocketClientHandshakerFactory.newHandshaker(uri,
                     WebSocketVersion.V13, null, false,
-                    new DefaultHttpHeaders().set(HttpHeaderNames.AUTHORIZATION, "Bearer " + options.getAccessToken()),
+                    new DefaultHttpHeaders().set("Authorization", "Bearer " + options.getAccessToken()),
                     WireCodec.MAX_FRAME_BYTES);
             final SslContext ssl = "wss".equalsIgnoreCase(uri.getScheme())
                     ? SslContextBuilder.forClient().build() : null;

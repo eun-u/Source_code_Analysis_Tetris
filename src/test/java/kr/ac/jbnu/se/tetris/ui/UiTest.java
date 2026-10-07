@@ -48,10 +48,10 @@ public final class UiTest {
             app.showStages();
             check("stages".equals(app.getRouter().getCurrentId()), "스토리 단계 선택 화면");
             boolean locked = false;
-            try { app.startStory(4, 42); } catch (IllegalStateException expected) { locked = true; }
+            try { app.startStory(2, 42); } catch (IllegalStateException expected) { locked = true; }
             check(locked, "잠긴 스테이지 직접 진입 차단");
             app.startStory(0, 42);
-            check(app.getBattleState().getParticipant("monster").getMaxHp() == 65,
+            check(app.getBattleState().getParticipant("monster").getMaxHp() == 30,
                     "첫 Stage 기본 HP 설정 적용");
             app.showHome();
             check(!app.isAiThinking() && !app.isAiTimerRunning(), "스토리 홈 이동 시 worker 정리");
@@ -143,7 +143,7 @@ public final class UiTest {
     private static void sessionLifecycle() {
         TetrisApplication app = new TetrisApplication();
         try {
-            check("home".equals(app.getRouter().getCurrentId()), "launch at home");
+            check("login".equals(app.getRouter().getCurrentId()), "launch at original login");
             check(!app.isGravityRunning() && app.getState() == null, "no hidden session at home");
             app.startNewGame(42);
             check("game".equals(app.getRouter().getCurrentId()) && app.isGravityRunning(), "new game starts timer");

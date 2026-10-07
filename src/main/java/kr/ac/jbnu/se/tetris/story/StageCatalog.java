@@ -59,14 +59,36 @@ public final class StageCatalog {
             String stageId = required(config, knownKeys, stageKey + ".id");
             String stageName = required(config, knownKeys, stageKey + ".name");
             List<MonsterSpec> encounters = new ArrayList<MonsterSpec>(3);
-            for (MonsterTier tier : MonsterTier.values()) {
-                String tierKey = tier.name().toLowerCase(java.util.Locale.ROOT);
-                String encounterKey = stageKey + "." + tierKey;
-                encounters.add(new MonsterSpec(
-                        required(config, knownKeys, encounterKey + ".id"),
-                        required(config, knownKeys, encounterKey + ".name"), tier,
-                        integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
-                        required(config, knownKeys, encounterKey + ".aiProfile")));
+            if (config.containsKey(stageKey + ".encounter.count")) {
+                int encounterCount = integer(config, knownKeys,
+                        stageKey + ".encounter.count", 1, 9);
+                for (int number = 1; number <= encounterCount; number++) {
+                    String encounterKey = stageKey + ".encounter." + number;
+                    MonsterTier tier;
+                    try {
+                        tier = MonsterTier.valueOf(required(config, knownKeys,
+                                encounterKey + ".tier").toUpperCase(java.util.Locale.ROOT));
+                    } catch (IllegalArgumentException invalid) {
+                        throw new IllegalArgumentException("Invalid monster pattern: " + encounterKey,
+                                invalid);
+                    }
+                    encounters.add(new MonsterSpec(
+                            required(config, knownKeys, encounterKey + ".id"),
+                            required(config, knownKeys, encounterKey + ".name"), tier,
+                            integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
+                            required(config, knownKeys, encounterKey + ".aiProfile")));
+                }
+            } else {
+                // 이전 3전투 설정 파일도 읽되, 배포 기본 캠페인은 1레벨 1전투다.
+                for (MonsterTier tier : MonsterTier.values()) {
+                    String encounterKey = stageKey + "." +
+                            tier.name().toLowerCase(java.util.Locale.ROOT);
+                    encounters.add(new MonsterSpec(
+                            required(config, knownKeys, encounterKey + ".id"),
+                            required(config, knownKeys, encounterKey + ".name"), tier,
+                            integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
+                            required(config, knownKeys, encounterKey + ".aiProfile")));
+                }
             }
             stages.add(new Stage(stageId, stageName, encounters));
         }

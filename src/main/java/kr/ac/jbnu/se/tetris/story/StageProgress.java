@@ -16,7 +16,8 @@ public final class StageProgress {
 
     StageProgress(StageCatalog catalog, int stageIndex, int encounterIndex) {
         if (catalog == null || stageIndex < 0 || stageIndex >= catalog.getStages().size()
-                || encounterIndex < 0 || encounterIndex >= MonsterTier.values().length) {
+                || encounterIndex < 0
+                || encounterIndex >= catalog.getStages().get(stageIndex).getEncounters().size()) {
             throw new IllegalArgumentException("Invalid starting stage");
         }
         this.catalog = catalog;
@@ -38,7 +39,7 @@ public final class StageProgress {
     public boolean isCampaignComplete() { return outcome == Outcome.COMPLETE; }
     public boolean isLastEncounter() {
         return !isCampaignComplete() && stageIndex == catalog.getStages().size() - 1
-                && encounterIndex == MonsterTier.values().length - 1;
+                && encounterIndex == getCurrentStage().getEncounters().size() - 1;
     }
 
     /** 현재 전투 결과의 단일 기록 */
@@ -53,7 +54,7 @@ public final class StageProgress {
     public void advance() {
         if (outcome != Outcome.WON) throw new IllegalStateException("Win is required to advance");
         encounterIndex++;
-        if (encounterIndex == MonsterTier.values().length) {
+        if (encounterIndex == catalog.getStages().get(stageIndex).getEncounters().size()) {
             encounterIndex = 0;
             stageIndex++;
         }

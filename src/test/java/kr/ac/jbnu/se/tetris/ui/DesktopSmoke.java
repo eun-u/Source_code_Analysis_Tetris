@@ -43,9 +43,12 @@ public final class DesktopSmoke {
                 window.requestFocus();
             });
             robot.waitForIdle(); robot.delay(200);
+            capture(robot, output, "login.png");
+            check("login".equals(screen()), "original login visible");
+            click(robot, "localLogin");
             capture(robot, output, "home.png");
-            check("home".equals(screen()), "home visible");
             click(robot, "newGame");
+            click(robot, "tutorial");
             check(state().getStatus() == GameState.Status.RUNNING, "new game button");
             press(robot, KeyEvent.VK_P);
             check(state().getStatus() == GameState.Status.PAUSED, "OS P pauses after start button focus");
@@ -70,12 +73,11 @@ public final class DesktopSmoke {
             press(robot, KeyEvent.VK_SPACE);
             check(occupied(state()) >= 4, "OS Space hard drop");
             press(robot, KeyEvent.VK_ESCAPE);
-            check("home".equals(screen()) && state().getStatus() == GameState.Status.PAUSED, "OS Escape suspends game");
-            long homeTick = state().getTick();
+            check("local-mode".equals(screen()) && state() == null, "OS Escape closes game and returns to Local Mode");
             robot.delay(550);
-            check(state().getTick() == homeTick, "no hidden gravity at home");
-            click(robot, "continueGame");
-            check("game".equals(screen()) && state().getStatus() == GameState.Status.RUNNING, "continue button");
+            check(!app.isGravityRunning(), "no hidden gravity after Back");
+            click(robot, "infinite");
+            check("game".equals(screen()) && state().getStatus() == GameState.Status.RUNNING, "original Infinite button");
             press(robot, KeyEvent.VK_P);
             SwingUtilities.invokeAndWait(() -> window.setSize(760, 680));
             robot.waitForIdle();
@@ -90,9 +92,12 @@ public final class DesktopSmoke {
             check("result".equals(screen()), "top-out result route");
             capture(robot, output, "result.png");
             click(robot, "retry");
-            check(state().getLinesCleared() == 0 && "game".equals(screen()), "retry button creates new game");
+            check("local-mode".equals(screen()), "original result returns to Local Mode");
+            click(robot, "infinite");
             press(robot, KeyEvent.VK_ESCAPE);
+            click(robot, "localBack");
             click(robot, "newBattle");
+            click(robot, "stage-" + kr.ac.jbnu.se.tetris.story.StageCatalog.loadDefault().getStages().get(0).getId() + "-NORMAL");
             check("battle".equals(screen()) && battle().getParticipants().size() == 2,
                     "monster battle button");
             long deadline = System.nanoTime() + 5_000_000_000L;
@@ -111,13 +116,13 @@ public final class DesktopSmoke {
             capture(robot, output, "battle.png");
             click(robot, "battleHome");
             check("home".equals(screen()), "battle home button");
-            long playerVersion = state().getVersion();
             robot.delay(550);
-            check(state().getVersion() == playerVersion && enemy().getVersion() == enemyVersion,
-                    "both boards frozen at home");
-            click(robot, "continueGame");
+            check(state() == null && battle() == null && !app.isAiTimerRunning(),
+                    "original lobby return closes both boards and AI");
+            click(robot, "newBattle");
+            click(robot, "stage-" + kr.ac.jbnu.se.tetris.story.StageCatalog.loadDefault().getStages().get(0).getId() + "-NORMAL");
             check("battle".equals(screen()) && battle().getStatus() == BattleState.Status.RUNNING,
-                    "continue resumes battle");
+                    "original difficulty button starts fresh battle");
             SwingUtilities.invokeAndWait(() -> {
                 for (int i = 0; i < 100 && app.getBattleState().getStatus() != BattleState.Status.FINISHED; i++) {
                     app.submit(GameAction.Type.HARD_DROP);
@@ -127,8 +132,7 @@ public final class DesktopSmoke {
             check("result".equals(screen()) && !app.isAiTimerRunning(), "battle top-out result stops AI");
             capture(robot, output, "battle-result.png");
             click(robot, "retry");
-            check("battle".equals(screen()) && battle().getParticipant("local").getHp() == 100,
-                    "battle retry resets HP and keeps mode");
+            check("stages".equals(screen()), "original Story result returns to difficulty selection");
             SwingUtilities.invokeAndWait(() -> window.dispatchEvent(new WindowEvent(window, WindowEvent.WINDOW_CLOSING)));
             check(!window.isDisplayable() && !app.isGravityRunning() && !app.isAiTimerRunning(),
                     "window close stops session and AI timer");

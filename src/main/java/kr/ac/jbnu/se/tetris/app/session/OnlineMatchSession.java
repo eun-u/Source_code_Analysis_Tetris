@@ -15,6 +15,7 @@ import kr.ac.jbnu.se.tetris.network.NetworkUpdate;
 import kr.ac.jbnu.se.tetris.network.RequestOutcome;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
+import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
 
 /** 서버 확정 상태만 화면으로 전달하는 온라인 대전 어댑터 */
 public final class OnlineMatchSession implements MatchSession {
@@ -53,7 +54,8 @@ public final class OnlineMatchSession implements MatchSession {
         long localId = ++nextLocalRequestId;
         if (phase != SessionPhase.RUNNING) {
             reject(localId, "SESSION_NOT_RUNNING");
-        } else if (intent.getItemUse() != null) {
+        } else if (network instanceof WebSocketNetworkClient && intent.getItemUse() != null) {
+            // 배포된 공식 PvP 서버는 아직 아이템 입력을 받지 않는다.
             reject(localId, "ITEM_NOT_IMPLEMENTED");
         } else {
             send(localId, intent);

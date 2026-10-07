@@ -11,6 +11,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import kr.ac.jbnu.se.tetris.app.TetrisApplication;
+import kr.ac.jbnu.se.tetris.app.LocalGameSession;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 
 /** 사용자 데스크톱 조작 없는 최소·기본 크기 화면의 이미지 버퍼 렌더링 */
@@ -19,7 +20,13 @@ public final class OffscreenUiTest {
         SwingUtilities.invokeAndWait(() -> {
             TetrisApplication app = new TetrisApplication();
             try {
+                capture(app, "login");
+                app.getRouter().show("signup"); capture(app, "signup");
+                app.showHome();
                 capture(app, "home");
+                app.showLocalModes(); capture(app, "local-mode");
+                app.startLocalGame(LocalGameSession.Mode.INFINITE, 42); capture(app, "local-infinite");
+                app.startLocalGame(LocalGameSession.Mode.SPRINT, 42); capture(app, "local-sprint");
                 app.startNewGame(42); capture(app, "tutorial");
                 for (GameAction.Type action : new GameAction.Type[] {GameAction.Type.MOVE_LEFT,
                         GameAction.Type.ROTATE_RIGHT, GameAction.Type.SOFT_DROP,
@@ -29,7 +36,6 @@ public final class OffscreenUiTest {
                 app.startStory(0, 7); capture(app, "story-battle");
                 app.showHome(); capture(app, "paused-home");
                 app.showOnline(); capture(app, "online-lobby");
-                app.showAccount(); capture(app, "online-account");
             } finally { app.close(); }
             JPanel preview = UiPreviewMain.createPanel();
             JTabbedPane tabs = null;
@@ -42,13 +48,13 @@ public final class OffscreenUiTest {
                 capture(preview, "preview-" + i);
             }
         });
-        System.out.println("PASS OffscreenUiTest: 8 app screens + 8 preview tabs at 2 sizes, no native window");
+        System.out.println("PASS OffscreenUiTest: 12 app screens + 8 preview tabs at 4 sizes, no native window");
     }
     private static void capture(TetrisApplication app, String name) {
         capture(app.getRouter().getContainer(), name);
     }
     private static void capture(Container root, String name) {
-        for (int[] size : new int[][] {{760, 680}, {960, 820}}) {
+        for (int[] size : new int[][] {{800, 600}, {760, 680}, {960, 820}, {784, 562}}) {
             root.setSize(size[0], size[1]); layout(root);
             BufferedImage buffer = new BufferedImage(size[0], size[1], BufferedImage.TYPE_INT_ARGB);
             Graphics2D graphics = buffer.createGraphics();

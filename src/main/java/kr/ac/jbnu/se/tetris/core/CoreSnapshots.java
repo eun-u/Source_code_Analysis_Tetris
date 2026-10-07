@@ -7,17 +7,39 @@ public final class CoreSnapshots {
     private CoreSnapshots() { }
 
     public static BoardState board(int width, int height, PieceType[] cells) {
+        return board(width, height, cells, new long[cells == null ? 0 : cells.length],
+                new String[cells == null ? 0 : cells.length]);
+    }
+
+    public static BoardState board(int width, int height, PieceType[] cells,
+                                   long[] origins, String[] itemIds) {
         if (width != 10 || height != 22 || cells == null || cells.length != 220) {
             throw new IllegalArgumentException("A snapshot requires a 10x22 board");
         }
         for (PieceType cell : cells) if (cell == null) throw new IllegalArgumentException("Null board cell");
-        return new BoardState(width, height, cells);
+        if (origins == null || itemIds == null || origins.length != 220 || itemIds.length != 220) {
+            throw new IllegalArgumentException("Invalid board metadata");
+        }
+        return new BoardState(width, height, cells, origins, itemIds);
+    }
+
+    public static BoardState board(int width, int height, PieceType[] cells, String[] itemIds) {
+        return board(width, height, cells, new long[cells == null ? 0 : cells.length], itemIds);
     }
 
     public static GameState game(String actorId, long version, long tick, GameState.Status status,
             BoardState board, Piece activePiece, int pieceX, int pieceY, int linesCleared,
             boolean awaitingSpawn, PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
             int ghostY, int combo, int pendingGarbageLines) {
+        return game(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
+                linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces,
+                ghostY, combo, pendingGarbageLines, null);
+    }
+
+    public static GameState game(String actorId, long version, long tick, GameState.Status status,
+            BoardState board, Piece activePiece, int pieceX, int pieceY, int linesCleared,
+            boolean awaitingSpawn, PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
+            int ghostY, int combo, int pendingGarbageLines, String holdItemId) {
         if (actorId == null || actorId.trim().isEmpty() || actorId.length() > 128
                 || version < 0 || tick < 0 || status == null || board == null
                 || board.getWidth() != 10 || board.getHeight() != 22 || linesCleared < 0
@@ -50,22 +72,29 @@ public final class CoreSnapshots {
             }
         }
         return new GameState(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
-                linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY, combo, pendingGarbageLines);
+                linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY, combo,
+                pendingGarbageLines, holdItemId);
     }
 
     /** 외부 사본의 불변식 확인 및 컬렉션 방어 복사 */
     public static GameState copyOf(GameState state) {
         if (state == null) throw new IllegalArgumentException("Game state is required");
         PieceType[] cells = new PieceType[220];
+        long[] origins = new long[220];
+        String[] itemIds = new String[220];
         if (state.getBoard().getWidth() != 10 || state.getBoard().getHeight() != 22) {
             throw new IllegalArgumentException("Unexpected board size");
         }
         for (int y = 0; y < 22; y++) for (int x = 0; x < 10; x++) {
-            cells[y * 10 + x] = state.getBoard().getCell(x, y);
+            int index = y * 10 + x;
+            cells[index] = state.getBoard().getCell(x, y);
+            origins[index] = state.getBoard().getOriginId(x, y);
+            itemIds[index] = state.getBoard().getItemId(x, y);
         }
         return game(state.getActorId(), state.getVersion(), state.getTick(), state.getStatus(),
-                board(10, 22, cells), state.getActivePiece(), state.getPieceX(), state.getPieceY(),
+                board(10, 22, cells, origins, itemIds), state.getActivePiece(), state.getPieceX(), state.getPieceY(),
                 state.getLinesCleared(), state.isAwaitingSpawn(), state.getHoldPiece(), state.canHold(),
-                state.getNextPieces(), state.getGhostY(), state.getCombo(), state.getPendingGarbageLines());
+                state.getNextPieces(), state.getGhostY(), state.getCombo(), state.getPendingGarbageLines(),
+                state.getHoldItemId());
     }
 }

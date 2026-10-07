@@ -1,50 +1,110 @@
 package kr.ac.jbnu.se.tetris.ui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.FlowLayout;
 import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JTextArea;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.RoomState;
+import kr.ac.jbnu.se.tetris.ui.components.GameButton;
+import kr.ac.jbnu.se.tetris.ui.components.PlayerCard;
 
-/** 방 사본 표시와 준비 요청 전달용 기본 화면 */
+/** 성은 브랜치 WaitingRoomPanel의 회색 대기방·상대/나 카드 순서 */
 public final class RoomPanel extends JPanel {
-    private final JLabel title = new JLabel("방 연결 대기");
-    private final JTextArea participants = new JTextArea();
-    private final JButton ready = new JButton("준비");
-    private final JButton leave = new JButton("나가기");
+    private final JLabel title = new JLabel("Waiting Room", JLabel.CENTER);
+    private final JPanel playerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 40, 40));
+    private final JButton ready = new GameButton("READY");
+    private final JButton leave = new GameButton("방 나가기");
+    private final Consumer<RoomCommand> send;
     private RoomState state;
+    private boolean matchFinished;
+
     public RoomPanel(Consumer<RoomCommand> send) {
-        super(new BorderLayout(8, 8));
-        ready.setName("roomReady"); leave.setName("leaveRoom");
-        participants.setEditable(false);
-        add(title, BorderLayout.NORTH); add(participants, BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout()); buttons.add(ready); buttons.add(leave);
-        add(buttons, BorderLayout.SOUTH); ready.setEnabled(false); leave.setEnabled(false);
-        ready.addActionListener(event -> {
-            if (state != null) send.accept(RoomCommand.setReady(!state.getReadyByParticipantId().get(state.getLocalParticipantId())));
-        });
+        super(new BorderLayout());
+        this.send = send;
+        title.setName("roomTitle");
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(title, BorderLayout.CENTER);
+        leave.setName("leaveRoom");
         leave.addActionListener(event -> send.accept(RoomCommand.leaveRoom()));
+        top.add(leave, BorderLayout.EAST);
+        add(top, BorderLayout.NORTH);
+        playerPanel.setBackground(Color.LIGHT_GRAY);
+        add(playerPanel, BorderLayout.CENTER);
+        JPanel bottom = new JPanel();
+        ready.setName("roomReady");
+        ready.addActionListener(event -> {
+            if (state != null && canChangeReady()) {
+                boolean current = Boolean.TRUE.equals(
+                        state.getReadyByParticipantId().get(state.getLocalParticipantId()));
+                send.accept(RoomCommand.setReady(!current));
+            }
+        });
+        bottom.add(ready);
+        add(bottom, BorderLayout.SOUTH);
+        refreshActions();
     }
+
     public void setState(RoomState next) {
         ScreenRouter.requireEdt();
         state = next;
-        if (next == null) {
-            title.setText("방 연결 대기"); participants.setText(""); ready.setEnabled(false); leave.setEnabled(false); return;
+        if (next == null) matchFinished = false;
+        title.setText(next == null ? "Waiting Room" : next.getRoomId());
+        showPlayers();
+        refreshActions();
+    }
+
+    /** 서버가 확정한 경기 종료 동안에만 다음 READY 요청 허용 */
+    public void setMatchFinished(boolean finished) {
+        ScreenRouter.requireEdt();
+        matchFinished = finished;
+        refreshActions();
+    }
+
+    private boolean canChangeReady() {
+        return state != null && (state.getPhase() == RoomState.Phase.WAITING
+                || state.getPhase() == RoomState.Phase.IN_MATCH && matchFinished);
+    }
+
+    private void refreshActions() {
+        ready.setEnabled(canChangeReady());
+        leave.setEnabled(state != null && state.getPhase() != RoomState.Phase.CLOSED);
+        boolean localReady = state != null && Boolean.TRUE.equals(
+                state.getReadyByParticipantId().get(state.getLocalParticipantId()));
+        ready.setText(localReady ? "READY 취소" : "READY");
+    }
+
+    private void showPlayers() {
+        playerPanel.removeAll();
+        if (state != null) {
+            int opponents = 0;
+            for (Map.Entry<String, Boolean> entry : state.getReadyByParticipantId().entrySet()) {
+                if (!entry.getKey().equals(state.getLocalParticipantId())) {
+                    addCard(entry.getKey(), false, entry.getValue());
+                    opponents++;
+                }
+            }
+            if (opponents == 0) {
+                PlayerCard waiting = new PlayerCard();
+                waiting.setName("roomEmpty-opponent");
+                waiting.setEmpty();
+                playerPanel.add(waiting);
+            }
+            String local = state.getLocalParticipantId();
+            addCard(local, true, state.getReadyByParticipantId().get(local));
         }
-        title.setText("방 " + next.getRoomId() + " · " + next.getPhase());
-        StringBuilder lines = new StringBuilder();
-        for (Map.Entry<String, Boolean> participant : next.getReadyByParticipantId().entrySet()) {
-            lines.append(participant.getKey()).append(participant.getKey().equals(next.getLocalParticipantId()) ? " (나)" : "")
-                    .append(participant.getValue() ? " · 준비 완료" : " · 대기").append('\n');
-        }
-        participants.setText(lines.toString());
-        ready.setEnabled(next.getPhase() == RoomState.Phase.WAITING);
-        leave.setEnabled(next.getPhase() != RoomState.Phase.CLOSED);
-        ready.setText(next.getReadyByParticipantId().get(next.getLocalParticipantId()) ? "준비 취소" : "준비");
+        playerPanel.revalidate();
+        playerPanel.repaint();
+    }
+
+    private void addCard(String id, boolean local, boolean readyState) {
+        PlayerCard card = new PlayerCard();
+        card.setName("roomParticipant-" + id);
+        card.setParticipant(id, local, readyState);
+        playerPanel.add(card);
     }
 }

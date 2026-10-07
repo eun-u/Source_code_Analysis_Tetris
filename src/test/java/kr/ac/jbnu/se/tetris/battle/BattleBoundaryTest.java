@@ -70,7 +70,7 @@ public final class BattleBoundaryTest {
         BattleManager battle = new BattleManager(specs(2), 23);
         check(battle.start().isAccepted(), "Start");
         BattleState before = battle.getState();
-        rejectWithoutChange(battle, before, "ITEM_NOT_IMPLEMENTED",
+        rejectWithoutChange(battle, before, "ITEM_NOT_OWNED",
                 battle.submitItem("p0", new GameAction.ItemUse("damage", "p1",
                         new GameAction.TargetCell(9, 21))));
         rejectWithoutChange(battle, before, "INVALID_TARGET",

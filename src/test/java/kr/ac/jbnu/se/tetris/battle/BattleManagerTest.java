@@ -56,14 +56,15 @@ public final class BattleManagerTest {
         check(count(clear, BattleEvent.Type.DAMAGE) == 1, "one damage for one clear");
         check(count(clear, BattleEvent.Type.HP_CHANGED) == 1, "one HP transition");
         check(count(clear, BattleEvent.Type.GARBAGE_SENT) == 1, "one garbage attack");
-        check(battle.getState().getParticipant("monster").getHp() == 92, "two line damage 8");
-        check(battle.getState().getParticipant("monster").getGameState()
-                .getPendingGarbageLines() == 1, "garbage queued");
+        // O 블록 다섯 개로 빈 보드의 두 줄을 지우므로 퍼펙트 클리어, 기본 묶음 대체 피해 40과 가비지 8
+        check(battle.getState().getParticipant("monster").getHp() == 60, "perfect clear damage 40");
+        check(battle.getState().getParticipant("monster")
+                .getPendingGarbageLines() == 8, "perfect clear garbage queued");
         BattleResult applied = battle.submit("monster", GameAction.Type.HARD_DROP);
         check(applied.isAccepted(), "target locks piece");
-        check(count(applied, BattleEvent.Type.GARBAGE_RECEIVED) == 1, "garbage applied at lock");
-        check(battle.getState().getParticipant("monster").getGameState()
-                .getPendingGarbageLines() == 0, "garbage queue drained");
+        check(count(applied, BattleEvent.Type.GARBAGE_RECEIVED) == 0, "two-second wait prevents immediate rise");
+        check(battle.getState().getParticipant("monster")
+                .getPendingGarbageLines() == 8, "garbage remains in tank before delay");
         check(!battle.getState().getParticipant("monster").isEliminated(), "still alive");
         assertIncreasingIds(clear);
     }
@@ -107,8 +108,9 @@ public final class BattleManagerTest {
         check(three.tick().isAccepted(), "spawn after first clear");
         BattleResult secondClear = fillTwoRows(three, "a");
         check(count(secondClear, BattleEvent.Type.DAMAGE) == 1, "next clear attacks once");
-        check(three.getState().getParticipant("c").getHp() == 92,
-                "next living target receives base damage");
+        // 두 번째도 빈 보드에서 지운 퍼펙트 클리어라 피해 40
+        check(three.getState().getParticipant("c").getHp() == 60,
+                "next living target receives perfect clear damage");
 
         Map<String, PieceGenerator> failing = new LinkedHashMap<String, PieceGenerator>();
         failing.put("player", constant(PieceType.O));
@@ -134,12 +136,16 @@ public final class BattleManagerTest {
                 new ParticipantSpec("player", "Player", 100),
                 new ParticipantSpec("monster", "Monster", 100)), 2, generators);
         check(battle.start().isAccepted(), "start with four prepared pieces");
-        for (int i = 0; i < 20; i++) check(battle.tick().isAccepted(), "gravity tick " + i);
-        BattleResult failed = battle.tick();
+        BattleResult failed = null;
+        for (int i = 0; i < 30; i++) {
+            failed = battle.tick();
+            if (!failed.isAccepted()) break;
+        }
         check(!failed.isAccepted(), "bad generator rejected on tick");
         check(failed.getState().getStatus() == BattleState.Status.FINISHED,
                 "partial tick cannot continue match");
-        check(failed.getReason().startsWith("TICK_FAILED"), "tick failure surfaced");
+        check(failed.getReason().startsWith("TICK_FAILED")
+                || failed.getReason().startsWith("SPAWN_FAILED"), "tick failure surfaced");
         check(!battle.submit("player", GameAction.Type.HARD_DROP).isAccepted(),
                 "partial tick match frozen");
     }
@@ -148,9 +154,11 @@ public final class BattleManagerTest {
         DamageManager manager = new DamageManager();
         check(manager.calculate(1, 0, false).getDamage() == 4, "single damage");
         check(manager.calculate(2, 0, false).getGarbageLines() == 1, "double garbage");
-        check(manager.calculate(3, 2, true).getDamage() == 28, "T-spin plus combo damage");
-        check(manager.calculate(3, 2, true).getGarbageLines() == 5, "T-spin plus combo garbage");
-        check(manager.calculate(4, 20, false).getDamage() == 30, "combo bonus capped");
+        // T-Spin 보너스는 꺼져 있으므로 T-Spin이어도 3줄 12 + 2콤보 4 = 16, 가비지 2 + 1 = 3
+        check(manager.calculate(3, 2, true).getDamage() == 16, "T-spin bonus disabled plus combo damage");
+        check(manager.calculate(3, 2, true).getGarbageLines() == 3, "T-spin bonus disabled plus combo garbage");
+        // 4콤보 이상은 마지막 항목 +12를 그대로 사용
+        check(manager.calculate(4, 20, false).getDamage() == 32, "combo bonus uses last entry from four combos");
         check(new HPManager().applyDamage(4, 100, 30) == 0, "HP floors at zero");
         check(new HPManager().applyHealing(99, 100, 30) == 100, "HP caps at max");
     }

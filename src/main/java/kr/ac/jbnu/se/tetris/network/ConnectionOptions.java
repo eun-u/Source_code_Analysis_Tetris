@@ -30,6 +30,12 @@ public final class ConnectionOptions {
                         && !isLoopback(webSocketUri.getHost()))) {
             throw new IllegalArgumentException("Invalid WebSocket connection options");
         }
+        for (int index = 0; index < accessToken.length(); index++) {
+            char character = accessToken.charAt(index);
+            if (character < 33 || character > 126) {
+                throw new IllegalArgumentException("Invalid access token header");
+            }
+        }
         int remotePort = webSocketUri.getPort();
         if (remotePort == -1) remotePort = "wss".equalsIgnoreCase(webSocketUri.getScheme()) ? 443 : 80;
         if (remotePort < 1 || remotePort > 65535) throw new IllegalArgumentException("Invalid WebSocket port");

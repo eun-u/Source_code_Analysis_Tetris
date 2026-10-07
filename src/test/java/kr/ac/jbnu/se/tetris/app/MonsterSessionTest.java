@@ -157,10 +157,8 @@ public final class MonsterSessionTest {
     }
 
     private static boolean hasGarbage(BattleState state) {
-        return state.getParticipant(MonsterSession.PLAYER_ID)
-                    .getGameState().getPendingGarbageLines() > 0
-                || state.getParticipant(MonsterSession.MONSTER_ID)
-                    .getGameState().getPendingGarbageLines() > 0;
+        return state.getParticipant(MonsterSession.PLAYER_ID).getPendingGarbageLines() > 0
+                || state.getParticipant(MonsterSession.MONSTER_ID).getPendingGarbageLines() > 0;
     }
 
     private static void observeBattle(BattleState state) {

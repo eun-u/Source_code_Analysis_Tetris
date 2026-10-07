@@ -2,21 +2,31 @@ package kr.ac.jbnu.se.tetris.core;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 
 /** 순서 있는 명령 처리와 UI용 스냅샷 조회를 제공하는 동기화된 순수 게임 규칙 엔진 */
 public final class GameEngine implements GameActionSink {
     private static final int MAX_PENDING_GARBAGE_LINES = 220;
+    private static final List<String> ITEM_IDS = Arrays.asList("damage_boost", "garbage_bomb",
+            "heal", "shield", "line_cleaner", "fever_charge", "time_warp", "nullify");
     private final String actorId;
     private final PieceGenerator generator;
     private final Board board = new Board();
-    private final ArrayDeque<PieceType> nextPieces = new ArrayDeque<PieceType>();
+    private final ArrayDeque<Piece> nextPieces = new ArrayDeque<Piece>();
     // 후속 보충 실패 시에도 미리 뽑은 블록 보존 및 공개 스냅샷 불변 유지
     private final ArrayDeque<PieceType> reservedPieces = new ArrayDeque<PieceType>();
     private final ArrayDeque<GameAction.Garbage> pendingGarbage = new ArrayDeque<GameAction.Garbage>();
+    private final Set<Long> collectedItemOrigins = new HashSet<Long>();
     private GameState.Status status = GameState.Status.READY;
     private Piece activePiece;
     private PieceType holdPiece = PieceType.EMPTY;
+    private Piece heldPiece;
     private int pieceX;
     private int pieceY;
     private int linesCleared;
@@ -29,6 +39,11 @@ public final class GameEngine implements GameActionSink {
     private long tick;
     private long lastSequence = -1;
     private long lastEventId;
+    private long issuedPieces;
+    private boolean battleManaged;
+    private int itemEveryPieces;
+    private Random itemRandom;
+    private List<String> itemPool = ITEM_IDS;
 
     public GameEngine(PieceGenerator generator) { this("local", generator); }
 
@@ -40,13 +55,46 @@ public final class GameEngine implements GameActionSink {
         this.generator = generator;
     }
 
+    /** 전투 규칙 계층이 공격·상쇄를 처리할 때 다음 블록 생성을 명시적으로 미룬다. */
+    public synchronized void setBattleManaged(boolean enabled) {
+        if (status != GameState.Status.READY) throw new IllegalStateException("Configure before START");
+        battleManaged = enabled;
+    }
+
+    /** 지정한 수의 새 미노마다 한 번 아이템을 부여한다. */
+    public synchronized void configureItemSpawns(int everyPieces, long seed) {
+        configureItemSpawns(everyPieces, seed, ITEM_IDS);
+    }
+
+    /** PvE 몬스터 전용으로 출현 가능한 아이템 종류도 제한한다. */
+    public synchronized void configureItemSpawns(int everyPieces, long seed,
+                                                  List<String> allowedItems) {
+        if (status != GameState.Status.READY) throw new IllegalStateException("Configure before START");
+        if (everyPieces < 0 || allowedItems == null
+                || (everyPieces > 0 && allowedItems.isEmpty())
+                || !ITEM_IDS.containsAll(allowedItems)
+                || new HashSet<String>(allowedItems).size() != allowedItems.size())
+            throw new IllegalArgumentException("Invalid item spawn policy");
+        itemEveryPieces = everyPieces;
+        itemPool = Collections.unmodifiableList(new ArrayList<String>(allowedItems));
+        itemRandom = everyPieces == 0 ? null : new Random(seed);
+    }
+
     /** 내부 가변 보드와 분리된 현재 상태를 반환하며 고스트 착지 위치도 함께 계산 */
     public synchronized GameState getState() {
         int ghostY = activePiece == null ? -1 : board.landingY(activePiece, pieceX, pieceY);
         return new GameState(actorId, version, tick, status, board.snapshot(),
                 activePiece, pieceX, pieceY, linesCleared, awaitingSpawn,
                 holdPiece, status == GameState.Status.RUNNING && activePiece != null && !holdUsed,
-                new ArrayList<PieceType>(nextPieces), ghostY, combo, pendingGarbageLines);
+                nextTypes(), ghostY, combo, pendingGarbageLines, getHoldItemId());
+    }
+
+    public synchronized String getHoldItemId() { return heldPiece == null ? null : heldPiece.getItemId(); }
+
+    private List<PieceType> nextTypes() {
+        List<PieceType> types = new ArrayList<PieceType>(nextPieces.size());
+        for (Piece piece : nextPieces) types.add(piece.getType());
+        return types;
     }
 
     /** 행위자와 순번을 확인한 뒤 명령 하나의 상태 변경과 이벤트 생성을 완료 */
@@ -123,13 +171,14 @@ public final class GameEngine implements GameActionSink {
             if (holdUsed) return reject("HOLD already used for this piece");
             Piece previous = activePiece;
             Piece replacement;
-            if (holdPiece == PieceType.EMPTY) {
+            if (heldPiece == null) {
                 PreparedPiece next = prepareNextPiece();
                 if (next.reason != null) return reject(next.reason);
                 replacement = consumePreparedPiece();
             } else {
-                replacement = new Piece(holdPiece);
+                replacement = new Piece(heldPiece.getType(), heldPiece.getIdentity(), heldPiece.getItemId());
             }
+            heldPiece = new Piece(previous.getType(), previous.getIdentity(), previous.getItemId());
             holdPiece = previous.getType();
             holdUsed = true;
             lastSuccessfulRotation = false;
@@ -166,7 +215,7 @@ public final class GameEngine implements GameActionSink {
             PreparedPiece next = null;
             if (!canMove) {
                 preview = previewLock(pieceY, lastSuccessfulRotation);
-                if (preview.linesCleared == 0 && !preview.overflow) {
+                if (!battleManaged && preview.linesCleared == 0 && !preview.overflow) {
                     next = prepareNextPiece();
                     if (next.reason != null) return reject(next.reason);
                 }
@@ -187,7 +236,7 @@ public final class GameEngine implements GameActionSink {
             int landingY = board.landingY(activePiece, pieceX, pieceY);
             LockPreview preview = previewLock(landingY, lastSuccessfulRotation && landingY == pieceY);
             PreparedPiece next = null;
-            if (preview.linesCleared == 0 && !preview.overflow) {
+            if (!battleManaged && preview.linesCleared == 0 && !preview.overflow) {
                 next = prepareNextPiece();
                 if (next.reason != null) return reject(next.reason);
             }
@@ -223,14 +272,19 @@ public final class GameEngine implements GameActionSink {
         detached.place(activePiece, pieceX, landingY);
         boolean tSpin = rotatedAtLock && activePiece.getType() == PieceType.T
                 && occupiedCorners(detached, pieceX, landingY) >= 3;
+        Map<Long, String> collected = detached.itemsOnCompletedRows(collectedItemOrigins);
         int cleared = detached.removeFullLines();
+        detached.clearCollectedItemMarkers(collected.keySet());
+        // 퍼펙트 클리어는 줄 제거 직후 가비지를 올리기 전에 보드가 완전히 비었는지로 판정
+        boolean perfectClear = cleared > 0 && detached.isEmpty();
         boolean overflow = false;
-        for (GameAction.Garbage garbage : pendingGarbage) {
+        for (GameAction.Garbage garbage : battleManaged
+                ? new ArrayList<GameAction.Garbage>() : pendingGarbage) {
             for (int i = 0; i < garbage.getLines() && !overflow; i++) {
                 overflow |= detached.addGarbageLine(garbage.getHoleColumn());
             }
         }
-        return new LockPreview(detached, cleared, tSpin, overflow);
+        return new LockPreview(detached, cleared, tSpin, perfectClear, overflow, collected);
     }
 
     private static int occupiedCorners(Board board, int x, int y) {
@@ -242,6 +296,52 @@ public final class GameEngine implements GameActionSink {
                     || board.getCell(cx, cy) != PieceType.EMPTY) occupied++;
         }
         return occupied;
+    }
+
+    /** 전투가 상쇄를 마친 가비지만 다음 생성 전에 즉시 분출한다. */
+    public synchronized ActionResult applyGarbage(List<GameAction.Garbage> batches) {
+        if (!battleManaged || status != GameState.Status.RUNNING || !awaitingSpawn) {
+            return reject("Garbage requires a managed lock boundary");
+        }
+        if (batches == null) return reject("Garbage batches are null");
+        Board detached = new Board(board.snapshot());
+        int total = 0;
+        boolean overflow = false;
+        for (GameAction.Garbage batch : batches) {
+            if (batch == null || total > MAX_PENDING_GARBAGE_LINES - batch.getLines()) {
+                return reject("Invalid garbage batch");
+            }
+            total += batch.getLines();
+            for (int i = 0; i < batch.getLines(); i++) {
+                overflow |= detached.addGarbageLine(batch.getHoleColumn());
+            }
+        }
+        if (total == 0) return accepted(new ArrayList<GameEvent>());
+        board.copyFrom(detached);
+        version++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, total, null));
+        if (overflow) {
+            awaitingSpawn = false;
+            status = GameState.Status.GAME_OVER;
+            topOut(events, "GARBAGE_TOP_OUT");
+        }
+        return accepted(events);
+    }
+
+    /** 아이템 효과가 실제로 제거할 가비지 행이 있을 때만 성공한다. */
+    public synchronized ActionResult clearBottomGarbageLine() {
+        if (status != GameState.Status.RUNNING) return reject("Cleaning requires RUNNING");
+        Board detached = new Board(board.snapshot());
+        if (!detached.clearBottomGarbageLine()) return reject("No garbage line to clean");
+        if (activePiece != null && !detached.canPlace(activePiece, pieceX, pieceY)) {
+            return reject("Cleaning would collide with active piece");
+        }
+        board.copyFrom(detached);
+        version++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event(GameEvent.Type.GARBAGE_CLEANED, null, 0, 0, 1, null));
+        return accepted(events);
     }
 
     private void lock(LockPreview preview, Piece next, List<GameEvent> events) {
@@ -258,14 +358,18 @@ public final class GameEngine implements GameActionSink {
         if (preview.linesCleared > 0) {
             linesCleared += preview.linesCleared;
             combo++;
+            collectedItemOrigins.addAll(preview.collected.keySet());
             events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
+                    preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
+                    new ArrayList<String>(preview.collected.values())));
+            if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
                     preview.linesCleared, null, combo, preview.tSpin));
-            if (combo > 0) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin));
+            // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
+            if (preview.perfectClear) combo = -1;
         } else {
             combo = -1;
         }
-        if (pendingGarbageLines > 0) {
+        if (!battleManaged && pendingGarbageLines > 0) {
             events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
             pendingGarbage.clear();
             pendingGarbageLines = 0;
@@ -274,7 +378,7 @@ public final class GameEngine implements GameActionSink {
             awaitingSpawn = false;
             status = GameState.Status.GAME_OVER;
             topOut(events, "GARBAGE_TOP_OUT");
-        } else if (preview.linesCleared > 0) {
+        } else if (battleManaged || preview.linesCleared > 0) {
             awaitingSpawn = true;
         } else {
             spawn(next, true, events);
@@ -307,28 +411,40 @@ public final class GameEngine implements GameActionSink {
     }
 
     private Piece consumePreparedPiece() {
-        PieceType type;
+        Piece piece;
         if (nextPieces.isEmpty()) {
-            type = reservedPieces.removeFirst();
-            for (int i = 0; i < 3; i++) nextPieces.addLast(reservedPieces.removeFirst());
+            piece = issuePiece(reservedPieces.removeFirst());
+            for (int i = 0; i < 3; i++) nextPieces.addLast(issuePiece(reservedPieces.removeFirst()));
         } else {
-            type = nextPieces.removeFirst();
-            nextPieces.addLast(reservedPieces.removeFirst());
+            piece = nextPieces.removeFirst();
+            nextPieces.addLast(issuePiece(reservedPieces.removeFirst()));
         }
-        return new Piece(type);
+        return piece;
+    }
+
+    private Piece issuePiece(PieceType type) {
+        long origin = ++issuedPieces;
+        String item = itemEveryPieces > 0 && origin % itemEveryPieces == 0
+                ? itemPool.get(itemRandom.nextInt(itemPool.size())) : null;
+        return new Piece(type, origin, item);
     }
 
     private static final class LockPreview {
         private final Board board;
         private final int linesCleared;
         private final boolean tSpin;
+        private final boolean perfectClear;
         private final boolean overflow;
+        private final Map<Long, String> collected;
 
-        private LockPreview(Board board, int linesCleared, boolean tSpin, boolean overflow) {
+        private LockPreview(Board board, int linesCleared, boolean tSpin, boolean perfectClear,
+                            boolean overflow, Map<Long, String> collected) {
             this.board = board;
             this.linesCleared = linesCleared;
             this.tSpin = tSpin;
+            this.perfectClear = perfectClear;
             this.overflow = overflow;
+            this.collected = collected;
         }
     }
 
@@ -343,8 +459,19 @@ public final class GameEngine implements GameActionSink {
 
     private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
                             String reason, int eventCombo, boolean tSpin) {
+        return event(type, piece, x, y, lineCount, reason, eventCombo, tSpin, false);
+    }
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
+                            String reason, int eventCombo, boolean tSpin, boolean perfectClear) {
+        return event(type, piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear,
+                new ArrayList<String>());
+    }
+
+    private GameEvent event(GameEvent.Type type, Piece piece, int x, int y, int lineCount,
+                            String reason, int eventCombo, boolean tSpin, boolean perfectClear,
+                            List<String> collectedItems) {
         return new GameEvent(type, ++lastEventId, version, tick, actorId,
-                piece, x, y, lineCount, reason, eventCombo, tSpin);
+                piece, x, y, lineCount, reason, eventCombo, tSpin, perfectClear, collectedItems);
     }
 
     private ActionResult accepted(List<GameEvent> events) {

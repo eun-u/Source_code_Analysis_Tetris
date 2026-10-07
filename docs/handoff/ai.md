@@ -50,6 +50,6 @@
 
 `MonsterStrategiesTest`는 프로필 로딩 오류, 세 정책의 조립, Fixed 계획, 정책 실행 실패·잘못된 반환의 복구 진단, worker 관측 사본 고정을 확인한다. `WeightPoliciesTest`는 관측 부족·실제 6회 배치·이전 수락 가중치·새 경기 격리·HP 경계·극단 HP와 가중치 범위를 확인한다. `HeuristicStrategyTest`는 실제 엔진에서 입력 경로의 합법성을 확인한다. `AIControllerTest`는 취소·오래된 계획·작업자 오류를 확인한다. `PlacementLogTest`는 첫 줄 삭제의 콤보 값 0과 다음 연속 삭제의 값 1을 확인한다.
 
-수동 비교 도구 `kr.ac.jbnu.se.tetris.app.MonsterBalanceBenchmark --smoke`는 현재 기본 프로필로 한 경기만 실행한다. `--compare-smoke`는 엘리트 한 시드에서 고정 기준과 적응형 정책을 대조한다. `--compare`는 두 Stage × 엘리트·보스 × 두 시드에 각각 고정 기준과 설정 정책을 적용해 16회 경기 결과를 출력한다. 같은 쌍은 시드·HP·행동 간격·탐색 한도를 공유하며 timeout·fallback 횟수도 표시한다. 출력은 합성 플레이어와 가상 시간의 샘플이며 실제 사용자 승률의 근거가 아니다. 실행 시간 예산에 따라 탐색 후보가 달라질 수 있으므로 시드만으로 완전한 재현성을 보장하지 않는다. 실행 기록과 판단은 `docs/ai-policy-verification.md` 참조.
+수동 비교 도구 `kr.ac.jbnu.se.tetris.app.MonsterBalanceBenchmark --smoke`는 현재 기본 프로필로 한 경기만 실행한다. `--compare-smoke`는 엘리트 한 시드에서 고정 기준과 적응형 정책을 대조한다. `--compare`는 세 과정의 엘리트·보스 7전투 × 두 시드 × 두 정책의 28회 경기 결과를 출력한다. 같은 쌍은 시드·HP·행동 간격·탐색 한도를 공유하며 timeout·fallback 횟수도 표시한다. 출력은 합성 플레이어와 가상 시간의 샘플이며 실제 사용자 승률의 근거가 아니다. 실행 시간 예산에 따라 탐색 후보가 달라질 수 있으므로 시드만으로 완전한 재현성을 보장하지 않는다. 실행 기록과 판단은 `docs/ai-policy-verification.md` 참조.
 
 실제 플레이어 체감 난이도와 승률 순서는 아직 검증 대상이다. 보드 직접 수정이나 숨은 플레이어 정보 참조는 계약 밖이다.

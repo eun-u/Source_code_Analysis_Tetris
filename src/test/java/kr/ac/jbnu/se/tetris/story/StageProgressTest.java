@@ -11,23 +11,23 @@ public final class StageProgressTest {
         expectState(() -> progress.completeEncounter(true));
         expectState(progress::advance);
         progress.retry();
-        check(progress.getCurrentEncounter().getId().equals("calculus_textbook"),
+        check(progress.getCurrentEncounter().getId().equals("level_1_monster"),
                 "재시도는 같은 몬스터를 유지한다");
         expectState(progress::retry);
         expectState(progress::replay);
 
         progress.completeEncounter(true);
         progress.replay();
-        check(progress.getCurrentEncounter().getId().equals("calculus_textbook")
+        check(progress.getCurrentEncounter().getId().equals("level_1_monster")
                 && progress.getOutcome() == StageProgress.Outcome.IN_PROGRESS,
                 "승리 후 재대결도 같은 몬스터를 유지한다");
 
-        for (int stageIndex = 0; stageIndex < 5; stageIndex++) {
+        for (int stageIndex = 0; stageIndex < 3; stageIndex++) {
             for (int encounterIndex = 0; encounterIndex < 3; encounterIndex++) {
                 check(progress.getStageIndex() == stageIndex
                         && progress.getEncounterIndex() == encounterIndex,
                         "진행 순서가 맞다");
-                check(progress.isLastEncounter() == (stageIndex == 4 && encounterIndex == 2),
+                check(progress.isLastEncounter() == (stageIndex == 2 && encounterIndex == 2),
                         "마지막 보스를 식별한다");
                 progress.completeEncounter(true);
                 expectState(() -> progress.completeEncounter(true));
@@ -40,11 +40,11 @@ public final class StageProgressTest {
                 "완료된 캠페인에는 다음 전투가 없다");
         expectState(() -> progress.completeEncounter(true));
 
-        StageProgress selected = new StageProgress(catalog, 3);
-        check(selected.getCurrentStage() == catalog.getStages().get(3)
-                && selected.getCurrentEncounter().getTier() == MonsterTier.NORMAL,
-                "선택한 장의 일반 몬스터부터 시작한다");
-        expectInvalid(() -> new StageProgress(catalog, 5));
+        StageProgress selected = new StageProgress(catalog, 2);
+        check(selected.getCurrentStage() == catalog.getStages().get(2)
+                && selected.getCurrentEncounter().getTier() == MonsterTier.ELITE,
+                "선택한 과정의 첫 패턴부터 시작한다");
+        expectInvalid(() -> new StageProgress(catalog, 3));
     }
 
     private static void expectState(Runnable action) {

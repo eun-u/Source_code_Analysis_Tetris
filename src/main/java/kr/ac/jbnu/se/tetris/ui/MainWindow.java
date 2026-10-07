@@ -12,8 +12,8 @@ public final class MainWindow extends JFrame {
         ScreenRouter.requireEdt();
         setContentPane(router.getContainer());
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-        setMinimumSize(new Dimension(760, 680));
-        setSize(960, 820);
+        setMinimumSize(new Dimension(760, 600));
+        setSize(800, 600);
         setLocationRelativeTo(null);
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent event) {

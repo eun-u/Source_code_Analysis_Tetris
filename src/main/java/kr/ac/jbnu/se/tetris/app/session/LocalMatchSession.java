@@ -20,6 +20,7 @@ public final class LocalMatchSession implements MatchSession {
     private final Timer aiPulse;
     private final List<ListenerSlot> listeners = new ArrayList<ListenerSlot>();
     private long requestId;
+    private long lastGravityNanos;
     private boolean closed;
     private String failure;
 
@@ -29,7 +30,7 @@ public final class LocalMatchSession implements MatchSession {
         ScreenRouter.requireEdt();
         if (engine == null || clock == null) throw new IllegalArgumentException("Engine and clock required");
         this.engine = engine; this.clock = clock;
-        gravity = new Timer(400, event -> advanceGravity()); gravity.setCoalesce(true);
+        gravity = new Timer(50, event -> advanceTimed()); gravity.setCoalesce(true);
         aiPulse = new Timer(50, event -> advanceAi()); aiPulse.setCoalesce(true);
     }
 
@@ -90,6 +91,30 @@ public final class LocalMatchSession implements MatchSession {
         engine.tick(); publish(null, engine.getLastBattleResult());
     }
 
+    private void advanceTimed() {
+        ScreenRouter.requireEdt();
+        if (closed || failure != null || engine.isPaused() || engine.isFinished()) return;
+        long now = clock.getAsLong();
+        long millis = Math.max(0, (now - lastGravityNanos) / 1_000_000L);
+        if (millis == 0) return;
+        lastGravityNanos += millis * 1_000_000L;
+        advanceMillis(millis);
+    }
+
+    /** 검증과 서버 재생에서 같은 가상 시간을 전달하는 경계. */
+    public void advanceMillis(long elapsedMillis) {
+        ScreenRouter.requireEdt();
+        if (elapsedMillis < 0) throw new IllegalArgumentException("Elapsed time must be non-negative");
+        if (closed || failure != null || engine.isPaused() || engine.isFinished()) return;
+        long remaining = elapsedMillis;
+        while (remaining > 0 && !engine.isFinished()) {
+            long step = Math.min(600000, remaining);
+            engine.advance(step);
+            publish(null, engine.getLastBattleResult());
+            remaining -= step;
+        }
+    }
+
     public void advanceAi() {
         ScreenRouter.requireEdt();
         if (closed || failure != null || engine.isPaused() || engine.isFinished()) return;
@@ -106,6 +131,7 @@ public final class LocalMatchSession implements MatchSession {
     public void startClock() {
         ScreenRouter.requireEdt();
         if (!closed && failure == null && !engine.isPaused() && !engine.isFinished()) {
+            if (!gravity.isRunning()) lastGravityNanos = clock.getAsLong();
             gravity.start(); aiPulse.start();
         }
     }

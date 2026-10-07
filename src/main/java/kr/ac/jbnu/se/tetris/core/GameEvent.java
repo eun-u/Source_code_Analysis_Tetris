@@ -1,11 +1,15 @@
 package kr.ac.jbnu.se.tetris.core;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /** 게임에서 확정된 사실을 담는 불변 이벤트와 종류별 선택 필드 */
 public final class GameEvent {
     public enum Type {
         GAME_STARTED, PIECE_SPAWNED, PIECE_MOVED, PIECE_ROTATED, PIECE_PLACED,
         LINE_CLEAR, COMBO, T_SPIN, PIECE_HELD, GARBAGE_QUEUED, GARBAGE_RECEIVED,
-        PAUSED, RESUMED, TOP_OUT, GAME_OVER, ACTION_REJECTED
+        GARBAGE_CLEANED, PAUSED, RESUMED, TOP_OUT, GAME_OVER, ACTION_REJECTED
     }
 
     private final Type type;
@@ -20,6 +24,8 @@ public final class GameEvent {
     private final String reason;
     private final int combo;
     private final boolean tSpin;
+    private final boolean perfectClear;
+    private final List<String> collectedItems;
 
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason) {
@@ -28,6 +34,19 @@ public final class GameEvent {
 
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin) {
+        this(type, eventId, stateVersion, tick, actorId, piece, x, y, lineCount, reason, combo, tSpin, false);
+    }
+
+    GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
+              Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
+              boolean perfectClear) {
+        this(type, eventId, stateVersion, tick, actorId, piece, x, y, lineCount,
+                reason, combo, tSpin, perfectClear, Collections.<String>emptyList());
+    }
+
+    GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
+              Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
+              boolean perfectClear, List<String> collectedItems) {
         if (type == null || actorId == null || eventId <= 0 || stateVersion < 0 || tick < 0) {
             throw new IllegalArgumentException("Invalid event identity");
         }
@@ -53,6 +72,12 @@ public final class GameEvent {
             default:
                 break;
         }
+        if (perfectClear && type != Type.LINE_CLEAR) {
+            throw new IllegalArgumentException("Only LINE_CLEAR can be a perfect clear");
+        }
+        if (collectedItems == null || (type != Type.LINE_CLEAR && !collectedItems.isEmpty())) {
+            throw new IllegalArgumentException("Only LINE_CLEAR can collect items");
+        }
         this.type = type;
         this.eventId = eventId;
         this.stateVersion = stateVersion;
@@ -65,6 +90,8 @@ public final class GameEvent {
         this.reason = reason;
         this.combo = combo;
         this.tSpin = tSpin;
+        this.perfectClear = perfectClear;
+        this.collectedItems = Collections.unmodifiableList(new ArrayList<String>(collectedItems));
     }
 
     public Type getType() { return type; }
@@ -79,4 +106,7 @@ public final class GameEvent {
     public String getReason() { return reason; }
     public int getCombo() { return combo; }
     public boolean isTSpin() { return tSpin; }
+    /** 줄 제거 직후 가비지 삽입 전 보드가 완전히 비었는지 여부, LINE_CLEAR에서만 true */
+    public boolean isPerfectClear() { return perfectClear; }
+    public List<String> getCollectedItems() { return collectedItems; }
 }

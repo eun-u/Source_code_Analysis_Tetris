@@ -21,7 +21,7 @@ public final class PieceQueuePanel extends JPanel {
         holdPanel.add(hold, BorderLayout.CENTER);
         JPanel nextPanel = new JPanel(new BorderLayout());
         nextPanel.add(new JLabel("NEXT", JLabel.CENTER), BorderLayout.NORTH);
-        JPanel pieces = new JPanel(new GridLayout(1, 3));
+        JPanel pieces = new JPanel(new GridLayout(1, 3, 4, 0));
         for (PiecePreview piece : next) pieces.add(piece);
         nextPanel.add(pieces, BorderLayout.CENTER);
         add(holdPanel); add(nextPanel);

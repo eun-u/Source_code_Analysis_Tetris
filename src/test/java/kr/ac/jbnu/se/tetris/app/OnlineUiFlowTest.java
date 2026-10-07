@@ -23,14 +23,20 @@ public final class OnlineUiFlowTest {
             try {
                 SwingUtilities.invokeAndWait(() -> {
                     for (int i = 0; i < 2; i++) {
-                        apps[i] = new TetrisApplication(); apps[i].showOnline();
-                        apps[i].connectOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
+                        apps[i] = new TetrisApplication();
+                        button(apps[i], "localLogin").doClick();
+                        button(apps[i], "onlinePvP").doClick();
+                        field(apps[i], "serverPort").setText(Integer.toString(server.getPort()));
+                        button(apps[i], "connectServer").doClick();
                     }
                 });
                 awaitEdt(() -> button(apps[0], "createRoom").isEnabled() && button(apps[1], "createRoom").isEnabled(), "connected lobby");
-                SwingUtilities.invokeAndWait(() -> apps[0].sendRoomCommand(RoomCommand.createRoom(2)));
+                SwingUtilities.invokeAndWait(() -> button(apps[0], "createRoom").doClick());
                 awaitEdt(() -> !field(apps[0], "roomId").getText().isEmpty(), "room ID shown");
-                SwingUtilities.invokeAndWait(() -> apps[1].sendRoomCommand(RoomCommand.joinRoom(field(apps[0], "roomId").getText())));
+                SwingUtilities.invokeAndWait(() -> {
+                    field(apps[1], "roomId").setText(field(apps[0], "roomId").getText());
+                    button(apps[1], "joinRoom").doClick();
+                });
                 awaitEdt(() -> button(apps[1], "roomReady").isEnabled(), "joined room ready control");
                 SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
                 awaitEdt(() -> running(apps[0]) && running(apps[1]), "two battle screens");
@@ -53,9 +59,13 @@ public final class OnlineUiFlowTest {
                 awaitEdt(() -> ((JLabel) find(apps[0].getRouter().getContainer(), "onlineStatus"))
                         .getText().contains("ALREADY_IN_ROOM"), "unrelated request rejection delivered");
                 SwingUtilities.invokeAndWait(() -> {
-                    check(!button(apps[0], "retry").isEnabled(), "unrelated rejection preserves rematch pending");
+                    check("online".equals(apps[0].getRouter().getCurrentId())
+                            && button(apps[0], "roomReady").isEnabled(), "original return goes to waiting room");
                     button(apps[1], "retry").doClick();
                 });
+                awaitEdt(() -> "online".equals(apps[1].getRouter().getCurrentId())
+                        && button(apps[1], "roomReady").isEnabled(), "opponent returns to waiting room");
+                SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
                 awaitEdt(() -> running(apps[0]) && running(apps[1]), "rematch battle screens");
                 SwingUtilities.invokeAndWait(() -> apps[0].showHome());
                 awaitEdt(() -> finished(apps[1]), "leaving opponent result");
