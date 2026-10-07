@@ -40,7 +40,18 @@ public final class StageCatalog {
         InputStream stream = StageCatalog.class.getResourceAsStream("/story/stages.properties");
         if (stream == null) throw new IllegalStateException("Missing story/stages.properties");
         try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
-            return load(reader);
+            StageCatalog catalog = load(reader);
+            int encounters = 0;
+            for (Stage stage : catalog.getStages()) {
+                for (MonsterSpec monster : stage.getEncounters()) {
+                    if (monster.getDifficulty() == null) {
+                        throw new IllegalStateException("Missing difficulty for " + monster.getId());
+                    }
+                    encounters++;
+                }
+            }
+            if (encounters != 9) throw new IllegalStateException("Default campaign must have nine encounters");
+            return catalog;
         } catch (IOException error) {
             throw new IllegalStateException("Unable to read story/stages.properties", error);
         }
@@ -76,7 +87,8 @@ public final class StageCatalog {
                             required(config, knownKeys, encounterKey + ".id"),
                             required(config, knownKeys, encounterKey + ".name"), tier,
                             integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
-                            required(config, knownKeys, encounterKey + ".aiProfile")));
+                            required(config, knownKeys, encounterKey + ".aiProfile"),
+                            difficulty(config, knownKeys, encounterKey)));
                 }
             } else {
                 // 이전 3전투 설정 파일도 읽되, 배포 기본 캠페인은 1레벨 1전투다.
@@ -112,6 +124,35 @@ public final class StageCatalog {
         try {
             int parsed = Integer.parseInt(value);
             if (parsed >= min && parsed <= max) return parsed;
+        } catch (NumberFormatException ignored) {
+            // 숫자 형식 오류와 범위 오류의 동일한 설정 오류 처리
+        }
+        throw new IllegalArgumentException(key + " must be between " + min + " and " + max);
+    }
+
+    private static StoryDifficulty difficulty(Properties config, Set<String> knownKeys, String prefix) {
+        String[] suffixes = {"playerGravityMillis", "monsterDelayMillis", "maxSearchStates",
+                "budgetMillis", "attackMultiplier", "extraGarbageLines", "monsterItemLevel"};
+        boolean present = false;
+        for (String suffix : suffixes) present |= config.containsKey(prefix + "." + suffix);
+        // 구형 스토리 진행 테스트의 콘텐츠 전용 설정은 허용한다. 수치가 하나라도 있으면 전체 필수.
+        if (!present) return null;
+        return new StoryDifficulty(
+                integer(config, knownKeys, prefix + ".playerGravityMillis", 100, 2000),
+                integer(config, knownKeys, prefix + ".monsterDelayMillis", 100, 10000),
+                integer(config, knownKeys, prefix + ".maxSearchStates", 1, 10000),
+                integer(config, knownKeys, prefix + ".budgetMillis", 1, 1000),
+                decimal(config, knownKeys, prefix + ".attackMultiplier", 1.0, 4.0),
+                integer(config, knownKeys, prefix + ".extraGarbageLines", 0, 4),
+                integer(config, knownKeys, prefix + ".monsterItemLevel", 0, 5));
+    }
+
+    private static double decimal(Properties config, Set<String> knownKeys, String key,
+            double min, double max) {
+        String value = required(config, knownKeys, key);
+        try {
+            double parsed = Double.parseDouble(value);
+            if (Double.isFinite(parsed) && parsed >= min && parsed <= max) return parsed;
         } catch (NumberFormatException ignored) {
             // 숫자 형식 오류와 범위 오류의 동일한 설정 오류 처리
         }

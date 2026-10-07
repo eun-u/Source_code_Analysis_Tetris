@@ -94,6 +94,8 @@ public final class RpgBattleRulesTest {
         int[] gravity = {450, 420, 400, 370, 350, 330, 310, 290, 270};
         int[] hpByLevel = {30, 38, 46, 54, 64, 75, 82, 92, 102};
         int[] delay = {3500, 3300, 3000, 2800, 2600, 2450, 2300, 2150, 2000};
+        int[] states = {150, 150, 400, 400, 400, 800, 800, 800, 800};
+        int[] budget = {12, 12, 24, 24, 24, 40, 40, 40, 40};
         int[] aiTiers = {1, 1, 2, 2, 2, 3, 3, 3, 3};
         int[] items = {0, 0, 0, 1, 2, 2, 3, 4, 5};
         MonsterTier[] pattern = {MonsterTier.NORMAL, MonsterTier.ELITE, MonsterTier.BOSS,
@@ -107,6 +109,8 @@ public final class RpgBattleRulesTest {
                     && profile.getPlayerGravityMillis() == gravity[level - 1]
                     && profile.getMonsterHp() == hpByLevel[level - 1]
                     && profile.getMonsterDelayMillis() == delay[level - 1]
+                    && profile.getAiStrength().getMaxSearchStates() == states[level - 1]
+                    && profile.getAiStrength().getBudgetMillis() == budget[level - 1]
                     && profile.getMonsterItemLevel() == items[level - 1]
                     && DifficultyProfileCatalog.getAiTier(level) == aiTiers[level - 1]
                     && DifficultyProfileCatalog.getPattern(level) == pattern[level - 1]
