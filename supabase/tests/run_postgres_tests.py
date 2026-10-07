@@ -240,6 +240,16 @@ def run():
                        and finish_recover[1] == ("ok", 1),
                        "finish escaped stopped-run void")
             print("PASS finish/recovery race preserves one terminal result")
+
+            # Keep the pre-lease race suite above on its original RPC contract,
+            # then exercise the upgrade and the durable admission fence.
+            for filename in (
+                "supabase/migrations/202610080001_ranked_run_lease.sql",
+                "supabase/tests/run_lease.sql",
+            ):
+                with conn.transaction():
+                    conn.execute((ROOT / filename).read_text(encoding="utf-8"))
+            print("PASS run lease migration and restart fencing")
     finally:
         with psycopg.connect(ADMIN, autocommit=True) as admin:
             admin.execute(sql.SQL("drop database {}").format(sql.Identifier(NAME)))

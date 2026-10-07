@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
@@ -65,6 +66,7 @@ import kr.ac.jbnu.se.tetris.network.protocol.WireCodec;
 import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 import kr.ac.jbnu.se.tetris.ranking.MatchRecord;
 import kr.ac.jbnu.se.tetris.ranking.RankedMatchStore;
+import kr.ac.jbnu.se.tetris.ranking.RunLease;
 import kr.ac.jbnu.se.tetris.ranking.SupabaseRankedMatchStore;
 import kr.ac.jbnu.se.tetris.supabase.SupabaseConfig;
 
@@ -77,6 +79,7 @@ public final class RenderGameServer implements AutoCloseable {
     private static final int MAX_PENDING_WRITES = 128;
     private static final int AUTH_TIMEOUT_SECONDS = 18;
     private static final long TICK_MILLIS = 400;
+    private static final long LEASE_REFRESH_SECONDS = 5;
     private static final String RULES_VERSION = "pvp-v1";
 
     private final TokenVerifier verifier;
@@ -88,6 +91,8 @@ public final class RenderGameServer implements AutoCloseable {
     private final String runId = UUID.randomUUID().toString();
     private final ScheduledThreadPoolExecutor roomsExecutor = new ScheduledThreadPoolExecutor(1,
             task -> daemon(task, "render-room"));
+    private final ScheduledThreadPoolExecutor leaseExecutor = new ScheduledThreadPoolExecutor(1,
+            task -> daemon(task, "render-lease"));
     private final ThreadPoolExecutor authExecutor;
     private final ThreadPoolExecutor persistenceExecutor = new ThreadPoolExecutor(2, 2, 0,
             TimeUnit.MILLISECONDS, new ArrayBlockingQueue<Runnable>(16), task -> daemon(task, "render-store"));
@@ -100,8 +105,11 @@ public final class RenderGameServer implements AutoCloseable {
     private final Semaphore webSocketSlots;
     private final AtomicInteger unauthenticated = new AtomicInteger();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final CountDownLatch stopped = new CountDownLatch(1);
     private volatile boolean admissionOpen;
     private volatile boolean draining;
+    private volatile boolean leaseOwned;
+    private volatile boolean everOwnedLease;
     private volatile NioEventLoopGroup boss;
     private volatile NioEventLoopGroup workers;
     private volatile Channel listener;
@@ -128,6 +136,7 @@ public final class RenderGameServer implements AutoCloseable {
         this.authExecutor = new ThreadPoolExecutor(4, 4, 0, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<Runnable>(maxPendingAuth), task -> daemon(task, "render-auth"));
         roomsExecutor.setRemoveOnCancelPolicy(true);
+        leaseExecutor.setRemoveOnCancelPolicy(true);
     }
 
     public synchronized void start() throws InterruptedException {
@@ -149,6 +158,8 @@ public final class RenderGameServer implements AutoCloseable {
                         }
                     }).bind("0.0.0.0", requestedPort).sync().channel();
             roomsExecutor.scheduleAtFixedRate(this::tickRooms, TICK_MILLIS, TICK_MILLIS, TimeUnit.MILLISECONDS);
+            leaseExecutor.scheduleWithFixedDelay(this::refreshLease, 0, LEASE_REFRESH_SECONDS,
+                    TimeUnit.SECONDS);
         } catch (InterruptedException | RuntimeException error) {
             close();
             throw error;
@@ -162,6 +173,31 @@ public final class RenderGameServer implements AutoCloseable {
 
     public String getRunId() { return runId; }
     public boolean isAdmissionOpen() { return admissionOpen; }
+
+    private void refreshLease() {
+        if (closed.get()) return;
+        try {
+            RunLease lease = leaseOwned ? store.renewRun(runId) : store.claimRun(runId);
+            applyLease(lease);
+        } catch (Exception unavailable) {
+            // A failed RPC does not prove the lease expired. Freeze play and retry;
+            // a confirmed rejected claim/renew will close this fenced process.
+            admissionOpen = false;
+            leaseOwned = false;
+        }
+    }
+
+    private void applyLease(RunLease lease) {
+        if (closed.get()) return;
+        leaseOwned = lease.isOwned();
+        if (leaseOwned) everOwnedLease = true;
+        admissionOpen = leaseOwned && lease.isEnabled() && !draining;
+        if (!leaseOwned && everOwnedLease) {
+            // This run was fenced; it must never resume under the same run ID.
+            admissionOpen = false;
+            close();
+        }
+    }
 
     private final class FrontHandler extends SimpleChannelInboundHandler<Object> {
         private Peer peer;
@@ -337,10 +373,9 @@ public final class RenderGameServer implements AutoCloseable {
                 }
             } else if ("POST".equals(method) && "/admin/drain".equals(path)) {
                 draining = true; admissionOpen = false;
-                respond(ctx, HttpResponseStatus.OK, "draining");
+                changeAdmission(ctx, false);
             } else if ("POST".equals(method) && "/admin/open".equals(path)) {
-                draining = false; admissionOpen = true;
-                respond(ctx, HttpResponseStatus.OK, "open");
+                changeAdmission(ctx, true);
             } else if ("POST".equals(method) && path.startsWith("/admin/recover-stopped-run?runId=")) {
                 String stoppedRun = path.substring("/admin/recover-stopped-run?runId=".length());
                 if (!stoppedRun.matches("[A-Za-z0-9-]{1,128}") || runId.equals(stoppedRun)) {
@@ -350,7 +385,7 @@ public final class RenderGameServer implements AutoCloseable {
                 try {
                     persistenceExecutor.execute(() -> {
                         try {
-                            int settled = store.voidStoppedRun(stoppedRun);
+                            int settled = store.voidStoppedRun(runId, stoppedRun);
                             ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK, "voided=" + settled));
                         } catch (Exception failure) {
                             ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
@@ -361,6 +396,31 @@ public final class RenderGameServer implements AutoCloseable {
                     respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
                 }
             } else respond(ctx, HttpResponseStatus.NOT_FOUND, "not found");
+        }
+
+        private void changeAdmission(ChannelHandlerContext ctx, boolean enabled) {
+            try {
+                leaseExecutor.execute(() -> {
+                    try {
+                        RunLease lease = store.setAdmission(runId, enabled);
+                        if (!lease.isOwned() || lease.isEnabled() != enabled) {
+                            ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.CONFLICT,
+                                    "run does not own admission"));
+                            return;
+                        }
+                        draining = !enabled;
+                        applyLease(lease);
+                        ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK,
+                                enabled ? "open" : "draining"));
+                    } catch (Exception failure) {
+                        admissionOpen = false;
+                        ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
+                                "admission update failed"));
+                    }
+                });
+            } catch (RejectedExecutionException stopped) {
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server stopping");
+            }
         }
 
         @Override public void channelInactive(ChannelHandlerContext ctx) {
@@ -391,15 +451,17 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void tickRooms() {
-        for (Room room : new ArrayList<Room>(rooms.values())) {
-            if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
-            try {
-                BattleResult tick = room.battle.tick();
-                broadcastSnapshot(room);
-                broadcastPickups(room, tick);
-                finishIfNeeded(room);
-            } catch (RuntimeException failure) {
-                invalidate(room, "SERVER_TICK_FAILED");
+        if (leaseOwned) {
+            for (Room room : new ArrayList<Room>(rooms.values())) {
+                if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
+                try {
+                    BattleResult tick = room.battle.tick();
+                    broadcastSnapshot(room);
+                    broadcastPickups(room, tick);
+                    finishIfNeeded(room);
+                } catch (RuntimeException failure) {
+                    invalidate(room, "SERVER_TICK_FAILED");
+                }
             }
         }
         if (++tickCounter % 75 == 0) {
@@ -692,6 +754,7 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void handleIntent(Peer peer, WireRequest request) {
+        if (!leaseOwned) { outcome(peer, request.getRequestId(), false, "ADMISSION_CLOSED"); return; }
         Room room = peer.room;
         if (room == null) { outcome(peer, request.getRequestId(), false, "NOT_IN_ROOM"); return; }
         if (room.matchId == null || !room.matchId.equals(request.getMatchId())) {
@@ -1053,6 +1116,7 @@ public final class RenderGameServer implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) return;
         admissionOpen = false;
         draining = true;
+        leaseExecutor.shutdownNow();
         Channel serverChannel = listener;
         if (serverChannel != null) serverChannel.close();
         for (Channel channel : sockets.keySet()) channel.close();
@@ -1085,6 +1149,7 @@ public final class RenderGameServer implements AutoCloseable {
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
         if (boss != null) boss.shutdownGracefully();
         if (workers != null) workers.shutdownGracefully();
+        stopped.countDown();
     }
 
     private static Thread daemon(Runnable task, String name) {
@@ -1107,8 +1172,8 @@ public final class RenderGameServer implements AutoCloseable {
         server.start();
         Runtime.getRuntime().addShutdownHook(new Thread(server::close, "render-server-shutdown"));
         System.out.println("Render PvP HTTP/WebSocket server listening on 0.0.0.0:" + server.getPort()
-                + " runId=" + server.getRunId() + " admission=closed");
-        new java.util.concurrent.CountDownLatch(1).await();
+                + " runId=" + server.getRunId() + " admission=" + server.isAdmissionOpen());
+        server.stopped.await();
     }
 
     private static int environmentInt(String name, int defaultValue) {

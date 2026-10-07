@@ -28,6 +28,7 @@ import kr.ac.jbnu.se.tetris.network.protocol.WireCodec;
 import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 import kr.ac.jbnu.se.tetris.ranking.MatchRecord;
 import kr.ac.jbnu.se.tetris.ranking.RankedMatchStore;
+import kr.ac.jbnu.se.tetris.ranking.RunLease;
 
 /** A live loopback WebSocket transport with multiple independent ranked 1v1 rooms. */
 public final class RenderGameServerTest {
@@ -128,7 +129,81 @@ public final class RenderGameServerTest {
         lostFinishResponseKeepsOrder(verifier);
         orphanPendingVisibleInDrainStatus(verifier);
         slowAuthRefreshMustNotBlockRanking();
+        leaseRestartAndFencing(verifier);
         System.out.println("RenderGameServerTest: PASS");
+    }
+
+    private static void leaseRestartAndFencing(TokenVerifier verifier) throws Exception {
+        TestStore store = new TestStore();
+        String firstRun;
+        RenderGameServer first = new RenderGameServer(verifier, store, ADMIN, 0);
+        first.start();
+        try {
+            String base = "http://127.0.0.1:" + first.getPort();
+            assertEquals(503, request(base + "/ws", "GET", "Bearer " + USERS[0]));
+            assertEquals(200, request(base + "/admin/open", "POST", "Bearer " + ADMIN));
+            firstRun = first.getRunId();
+            String match = UUID.randomUUID().toString();
+            store.beginMatch(match, firstRun, "pvp-v1", USERS[0], USERS[1]);
+            String other = UUID.randomUUID().toString();
+            if (store.claimRun(other).isOwned()) throw new AssertionError("Overlapping run claimed lease");
+            store.expired = true;
+            if (!store.claimRun(other).isOwned()) throw new AssertionError("Expired run was not replaced");
+            if (store.getMatch(match).getStatus() != MatchRecord.Status.VOID)
+                throw new AssertionError("Takeover did not reconcile running match");
+            try { store.beginMatch(UUID.randomUUID().toString(), firstRun, "pvp-v1", USERS[0], USERS[1]);
+                throw new AssertionError("Late begin accepted"); }
+            catch (IOException expected) { /* fenced */ }
+            try { store.finishMatch(match, firstRun, USERS[0], "WIN");
+                throw new AssertionError("Late result accepted"); }
+            catch (IOException expected) { /* fenced */ }
+        } finally { first.close(); }
+
+        // A fresh process resumes the persistent OPEN policy after the old lease expires.
+        store.expired = true;
+        RenderGameServer second = new RenderGameServer(verifier, store, ADMIN, 0);
+        second.start();
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
+            if (!second.isAdmissionOpen()) throw new AssertionError("Restart did not auto-open");
+            String base = "http://127.0.0.1:" + second.getPort();
+            store.failNextRenew = true;
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+            while (second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
+            if (second.isAdmissionOpen()) throw new AssertionError("Uncertain lease kept admission open");
+            assertEquals(200, request(base + "/healthz", "GET", null));
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+            while (!second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
+            if (!second.isAdmissionOpen()) throw new AssertionError("Transient lease error did not recover");
+            store.leaseUnavailable = true;
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+            while (second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
+            if (second.isAdmissionOpen()) throw new AssertionError("DB outage kept admission open");
+            assertEquals(200, request(base + "/healthz", "GET", null));
+        } finally { second.close(); }
+
+        store.leaseUnavailable = false;
+        store.expired = true;
+        RenderGameServer third = new RenderGameServer(verifier, store, ADMIN, 0);
+        third.start();
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!third.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
+            if (!third.isAdmissionOpen()) throw new AssertionError("Second restart did not auto-open");
+            assertEquals(200, request("http://127.0.0.1:" + third.getPort()
+                    + "/admin/drain", "POST", "Bearer " + ADMIN));
+        } finally { third.close(); }
+
+        store.expired = true;
+        RenderGameServer fourth = new RenderGameServer(verifier, store, ADMIN, 0);
+        fourth.start();
+        try {
+            Thread.sleep(200);
+            if (fourth.isAdmissionOpen()) throw new AssertionError("Maintenance drain lost on restart");
+            assertEquals(200, request("http://127.0.0.1:" + fourth.getPort()
+                    + "/admin/open", "POST", "Bearer " + ADMIN));
+        } finally { fourth.close(); }
     }
 
     private static void slowAuthRefreshMustNotBlockRanking() throws Exception {
@@ -675,8 +750,52 @@ public final class RenderGameServerTest {
 
     private static class TestStore implements RankedMatchStore {
         protected final Map<String, MatchRecord> records = new ConcurrentHashMap<String, MatchRecord>();
+        private String ownerRunId;
+        private boolean enabled;
+        private volatile boolean expired;
+        private volatile boolean leaseUnavailable;
+        private volatile boolean failNextRenew;
+
+        @Override public synchronized RunLease claimRun(String runId) throws IOException {
+            if (leaseUnavailable) throw new IOException("DB unavailable");
+            if (ownerRunId != null && ownerRunId.equals(runId)) return new RunLease(!expired, enabled);
+            if (ownerRunId != null && !expired || ownerRunId == null && !enabled)
+                return new RunLease(false, enabled);
+            if (ownerRunId != null) recoverOldRun(ownerRunId);
+            ownerRunId = runId;
+            expired = false;
+            return new RunLease(true, enabled);
+        }
+        @Override public synchronized RunLease renewRun(String runId) throws IOException {
+            if (leaseUnavailable) throw new IOException("DB unavailable");
+            if (failNextRenew) { failNextRenew = false; throw new IOException("Transient DB error"); }
+            return new RunLease(runId.equals(ownerRunId) && !expired, enabled);
+        }
+        @Override public synchronized RunLease setAdmission(String runId, boolean open) throws IOException {
+            if (leaseUnavailable) throw new IOException("DB unavailable");
+            if (ownerRunId != null && !ownerRunId.equals(runId) && !expired)
+                return new RunLease(false, enabled);
+            if (ownerRunId != null && !ownerRunId.equals(runId)) recoverOldRun(ownerRunId);
+            if (ownerRunId != null && ownerRunId.equals(runId) && expired)
+                return new RunLease(false, enabled);
+            ownerRunId = runId;
+            expired = false;
+            enabled = open;
+            return new RunLease(true, enabled);
+        }
+        private void recoverOldRun(String oldRunId) {
+            for (Map.Entry<String, MatchRecord> entry : records.entrySet()) {
+                MatchRecord old = entry.getValue();
+                if (oldRunId.equals(old.getServerRunId()) && old.getStatus() == MatchRecord.Status.RUNNING) {
+                    records.put(entry.getKey(), new MatchRecord(old.getMatchId(), oldRunId,
+                            old.getFirstUserId(), old.getSecondUserId(), MatchRecord.Status.VOID,
+                            null, "SERVER_STOPPED", null, null, null, null));
+                }
+            }
+        }
         @Override public synchronized MatchRecord beginMatch(String matchId, String runId, String rulesVersion,
                 String first, String second) throws IOException {
+            if (!runId.equals(ownerRunId) || expired || !enabled) throw new IOException("RUN_NOT_OWNER");
             if (first.equals(second)) throw new IOException("self match");
             MatchRecord existing = records.get(matchId);
             if (existing != null) return existing;
@@ -694,6 +813,7 @@ public final class RenderGameServerTest {
         }
         @Override public synchronized MatchRecord finishMatch(String matchId, String runId,
                 String winner, String reason) throws IOException {
+            if (!runId.equals(ownerRunId) || expired) throw new IOException("RUN_NOT_OWNER");
             MatchRecord old = records.get(matchId);
             if (old == null || !old.getServerRunId().equals(runId)) throw new IOException("Unknown match");
             if (old.getStatus() == MatchRecord.Status.FINALIZED) return old;
@@ -705,6 +825,7 @@ public final class RenderGameServerTest {
         }
         @Override public synchronized MatchRecord voidMatch(String matchId, String runId,
                 String reason) throws IOException {
+            if (!runId.equals(ownerRunId) || expired) throw new IOException("RUN_NOT_OWNER");
             MatchRecord old = records.get(matchId);
             if (old == null || !old.getServerRunId().equals(runId)) throw new IOException("Unknown match");
             if (old.getStatus() == MatchRecord.Status.FINALIZED) throw new IOException("Finalized match");
@@ -716,7 +837,7 @@ public final class RenderGameServerTest {
         @Override public synchronized MatchRecord getMatch(String matchId) throws IOException {
             return records.get(matchId);
         }
-        @Override public int voidStoppedRun(String stoppedRunId) { return 0; }
+        @Override public int voidStoppedRun(String currentRunId, String stoppedRunId) { return 0; }
     }
 
     private static final class FlakyStore extends TestStore {
