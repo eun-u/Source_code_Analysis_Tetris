@@ -52,4 +52,4 @@ supabase.publishableKey=YOUR_PUBLIC_KEY
 
 `-Task Test`는 Java 단위·통합·로컬 TCP/HTTP 시험을 실행합니다. `-Task NetworkFixture`는 네트워크 재생, `-Task Preview -AllowVisibleDesktop`은 실제 GUI 확인에 사용합니다. 테스트 통과와 운영 서버 배포·실제 인터넷 2인 대전 검증은 별개입니다.
 
-이미지·음원 출처와 제작 기록은 각 리소스 폴더의 `README.md` 및 `ASSETS.md`에 있습니다. 개발 과정의 상세 설계·검증 문서는 제출용 소스와 분리해 별도 보관합니다.
+게임에 포함한 효과음은 Kenney의 [UI Audio](https://kenney.nl/assets/ui-audio), [Impact Sounds](https://kenney.nl/assets/impact-sounds), [Digital Audio](https://kenney.nl/assets/digital-audio) 팩(CC0)에서 변환했습니다. `audio/university`의 배경음과 `ui/university`의 일부 이미지는 팀의 `University_Simulation` 프로젝트에서 가져왔습니다. `ui/campus-rpg`, `ui/puzzle-rpg`, `ui/characters`의 신규 이미지는 이 게임을 위해 생성했습니다. 상세 원본 해시·제작 기록과 개발 문서는 제출용 소스 저장소 밖에 별도 보관합니다.
