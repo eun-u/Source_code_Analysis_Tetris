@@ -71,7 +71,6 @@ import kr.ac.jbnu.se.tetris.story.StageCatalog;
 import kr.ac.jbnu.se.tetris.story.StoryProgressService;
 import kr.ac.jbnu.se.tetris.ui.ScreenRouter;
 import kr.ac.jbnu.se.tetris.ui.SessionUiBinding;
-import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
@@ -723,7 +722,6 @@ public final class SeongeunApplication implements AutoCloseable {
             if (opponentId != null) {
                 battle.setPlayers(new PlayerData(state.getParticipant(localId).getName(), 0, "—", false),
                         new PlayerData(state.getParticipant(opponentId).getName(), 0, "—", false));
-                battle.setItems(new ItemData[0], new ItemData[0]);
             }
             displayedBattleMatchId = snapshot.getMatchId();
         }

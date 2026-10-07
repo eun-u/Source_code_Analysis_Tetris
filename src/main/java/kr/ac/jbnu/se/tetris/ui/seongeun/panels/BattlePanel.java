@@ -26,7 +26,6 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
-import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
@@ -489,8 +488,6 @@ public class BattlePanel extends JPanel implements Scrollable {
         feedbackGeneration++;
         arena.resetForEncounter();
     }
-    /** 기존 미리보기 API 호환. 실제 아이템은 setState의 스냅샷으로 표시한다. */
-    public void setItems(ItemData[] playerItems, ItemData[] enemyItems) { }
     public void startBattle() { playerBoard.start(); }
     public void setResultAction(ActionListener listener) { resultTestButton.addActionListener(listener); }
     public void setItemAction(IntConsumer action) { itemAction = action; }
