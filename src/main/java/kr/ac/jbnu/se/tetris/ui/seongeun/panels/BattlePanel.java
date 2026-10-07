@@ -24,8 +24,8 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
- * 전투 화면. 테트리스 게임처럼 보드 왼쪽에 HOLD·아이템, 오른쪽에 NEXT·피버를 붙이고,
- * 두 보드 사이의 넓은 무대에서 공격과 피격을 연출한다. 창 크기에 맞춰 보드 칸 크기를 계산한다.
+ * 전투 화면. 상대 보드와 전투 무대를 왼쪽에, 플레이 보드와 조작 정보를 오른쪽에 둔다.
+ * 무대와 플레이 보드를 맞붙여 블록을 놓는 동안에도 상대의 반응이 시야에 들어오게 한다.
  */
 public class BattlePanel extends JPanel implements Scrollable {
     private static final Color BG = UniversityPixelTheme.BG, TEXT = UniversityPixelTheme.TEXT;
@@ -207,7 +207,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         parent.add(heading);
     }
 
-    /** 보드 칸 크기를 남은 높이와 너비에서 정하고, 나머지 너비를 무대에 준다. */
+    /** 보드 칸 크기를 남은 높이와 너비에서 정하고, 플레이 보드 바로 옆에 무대를 둔다. */
     @Override public void doLayout() {
         int width = getWidth(), height = getHeight();
         if (width <= 0 || height <= 0) return;
@@ -223,25 +223,25 @@ public class BattlePanel extends JPanel implements Scrollable {
         int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
         int boardY = areaTop + (areaHeight - boardHeight) / 2;
 
-        int x = PAD;
-        leftColumn.setBounds(x, boardY, leftWidth, boardHeight);
-        x += leftWidth + GAP;
-        garbage.setBounds(x, boardY + 1, METER, boardHeight - 2);
-        x += METER + 2;
-        playerBoard.setBounds(x, boardY, boardWidth, boardHeight);
-        x += boardWidth + GAP;
-        rightColumn.setBounds(x, boardY, rightWidth, boardHeight);
-        x += rightWidth + GAP;
-        int enemyX = width - PAD - enemyWidth;
-        arena.setBounds(x, areaTop, Math.max(120, enemyX - GAP - x), areaHeight);
+        int rightX = width - PAD - rightWidth;
+        rightColumn.setBounds(rightX, boardY, rightWidth, boardHeight);
+        int leftX = rightX - GAP - leftWidth;
+        leftColumn.setBounds(leftX, boardY, leftWidth, boardHeight);
+        int boardX = leftX - GAP - boardWidth;
+        playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
+        int meterX = boardX - METER - 2;
+        garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
 
+        int enemyX = PAD;
+        int arenaX = enemyX + enemyWidth + GAP;
+        arena.setBounds(arenaX, areaTop, Math.max(120, meterX - GAP - arenaX), areaHeight);
         enemyColumn.setBounds(enemyX, areaTop, enemyWidth, areaHeight);
         int enemyCell = Math.max(4, Math.min((enemyWidth - 2) / 10, (areaHeight - 52) / 22));
         int enemyBoardWidth = enemyCell * 10 + 2, enemyBoardHeight = enemyCell * 22 + 2;
         int enemyTop = (areaHeight - enemyBoardHeight) / 2;
         enemyName.setBounds(0, Math.max(0, enemyTop - 22), enemyWidth, 18);
         enemyBoard.setBounds((enemyWidth - enemyBoardWidth) / 2, enemyTop, enemyBoardWidth, enemyBoardHeight);
-        enemyStatus.setBounds(0, enemyTop + enemyBoardHeight + 4, enemyWidth, 18);
+        enemyStatus.setBounds(0, enemyTop + enemyBoardHeight + 4, enemyWidth, 34);
         resultTestButton.setVisible(false);
     }
 
@@ -369,6 +369,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         enemyName.setText(enemy.getName());
         playerBoard.setState(local.getGameState());
         enemyBoard.setState(enemy.getGameState());
+        GameState enemyGame = enemy.getGameState();
+        enemyStatus.setText("<html>LINES " + enemyGame.getLinesCleared()
+                + "<br>COMBO " + Math.max(0, enemyGame.getCombo()) + "</html>");
         arena.update(local.getName(), local.getHp(), local.getMaxHp(),
                 enemy.getName(), enemy.getHp(), enemy.getMaxHp());
         arena.setFever(local.isFeverActive());

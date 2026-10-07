@@ -11,8 +11,10 @@ import kr.ac.jbnu.se.tetris.core.*;
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
     private static final int COLUMNS = 10, ROWS = 22;
-    private static final Color EMPTY = new Color(11, 11, 46);
-    private static final Color GRID = new Color(43, 33, 102);
+    private static final Color EMPTY = new Color(0x091E2B);
+    private static final Color GRID = new Color(0x254558);
+    private static final Color PLAYER_FRAME = new Color(0x4EE39A);
+    private static final Color ENEMY_FRAME = new Color(0xFF5C7A);
     private static final Color[] COLORS = {
         EMPTY, new Color(255, 139, 113), new Color(112, 217, 155),
         new Color(114, 157, 255), new Color(255, 221, 115),
@@ -199,8 +201,8 @@ public class Board extends JPanel {
                         drawBadge(g, badgeX / visible, badgeY / visible, cell);
                 }
             }
-            g.setColor(new Color(102, 128, 160));
-            g.setStroke(new BasicStroke(2f));
+            g.setColor(keyboardEnabled ? PLAYER_FRAME : ENEMY_FRAME);
+            g.setStroke(new BasicStroke(keyboardEnabled ? 3f : 2f));
             g.drawRect(left, top, width, height);
             paintEffects(g, left, top, cell, width, height);
             if (overlayText != null || state != null && (state.getStatus() == GameState.Status.PAUSED
