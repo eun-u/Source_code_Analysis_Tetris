@@ -3,7 +3,7 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 import java.awt.*;
 import javax.swing.*;
 
-/** Swing 화면 전체에서 공통으로 사용하는 선명한 픽셀 버튼. */
+/** Swing 화면 전체에서 공통으로 사용하는 절제된 픽셀 버튼. */
 public class PixelButton extends JButton {
     private Color accent = UniversityPixelTheme.GOLD;
 
@@ -56,15 +56,16 @@ public class PixelButton extends JButton {
             int offset = pressed ? 2 : 0;
             int faceWidth = width - 4, faceHeight = height - 5;
             if (enabled) {
-                g.setColor(UniversityPixelTheme.BLACK);
+                g.setColor(UniversityPixelTheme.LINE);
                 g.fillRect(3, 4, width - 3, height - 4);
             }
             Color base = !enabled ? UniversityPixelTheme.PANEL
                     : pressed ? accent.darker() : hover ? lighten(accent) : accent;
             g.setColor(base);
             g.fillRect(1 + offset, 1 + offset, faceWidth - 1, faceHeight - 1);
-            g.setColor(enabled ? UniversityPixelTheme.BLACK : UniversityPixelTheme.LINE);
+            g.setColor(enabled ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.LINE);
             g.drawRect(offset, offset, faceWidth, faceHeight);
+            g.setColor(enabled ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL);
             g.drawRect(1 + offset, 1 + offset, faceWidth - 2, faceHeight - 2);
             if (enabled) {
                 // 위·왼쪽은 밝게, 아래·오른쪽은 어둡게 칠한 픽셀 베벨.

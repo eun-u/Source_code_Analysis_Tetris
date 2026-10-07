@@ -27,7 +27,7 @@ public final class SeongeunApplicationTest {
                 assert LOBBY.equals(app.getCurrentScreen());
                 button(app.getScreens(), "설정").doClick();
                 assert "SETTINGS".equals(app.getCurrentScreen());
-                button(app.getScreens(), "5단계 튜토리얼 직접 해보기").doClick();
+                button(app.getScreens(), "튜토리얼 시작").doClick();
                 assert LOCAL_GAME.equals(app.getCurrentScreen()) && app.isLocalGravityRunning();
                 button(app.getScreens(), "돌아가기 [ESC]").doClick();
                 assert "SETTINGS".equals(app.getCurrentScreen()) && !app.isLocalGravityRunning();
@@ -184,7 +184,7 @@ public final class SeongeunApplicationTest {
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");
                 SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "돌아가기 [ESC]").doClick();
+                    button(apps[0].getScreens(), "대전 포기 [ESC]").doClick();
                     assert LOBBY.equals(apps[0].getCurrentScreen());
                     assert apps[0].getMatchSnapshot() == null;
                 });

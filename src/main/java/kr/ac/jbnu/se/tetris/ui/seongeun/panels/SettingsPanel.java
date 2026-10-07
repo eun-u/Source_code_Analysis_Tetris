@@ -22,7 +22,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 /** 게임 중에는 숨기는 오디오·온라인 계정·조작 학습·LAN 설정 화면. */
 public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final PixelButton back = new PixelButton("로비로");
-    private final PixelButton tutorial = new PixelButton("5단계 튜토리얼 직접 해보기");
+    private final PixelButton tutorial = new PixelButton("튜토리얼 시작");
     private final PixelButton lanConnect = new PixelButton("LAN 서버 연결...");
     private final PixelButton lanHost = new PixelButton("LAN 서버 시작");
     private final PixelButton onlineAccount = new PixelButton("로그인 / 가입");
@@ -44,7 +44,7 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         add(UniversityPixelTheme.screenHeader("CAMPUS GUIDE", "설정", back), BorderLayout.NORTH);
 
         JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
-        JPanel audio = section("소리", "배경음과 전투 효과음을 따로 조절합니다.");
+        JPanel audio = section("소리");
         row(audio, "BGM", bgmMute, bgmVolume);
         audio.add(Box.createVerticalStrut(22));
         row(audio, "효과음", sfxMute, sfxVolume);
@@ -63,15 +63,7 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         audio.add(Box.createVerticalGlue());
         columns.add(audio);
 
-        JPanel guide = section("튜토리얼", "실제 블록을 움직이며 다섯 동작을 익힙니다.");
-        for (String step : new String[] {
-                "① ← →  이동", "② ↑ ↓  회전", "③ D  한 칸 내리기",
-                "④ C  HOLD 보관", "⑤ SPACE  즉시 낙하" }) {
-            JLabel line = text(step, 16, UniversityPixelTheme.TEXT);
-            line.setAlignmentX(Component.LEFT_ALIGNMENT);
-            guide.add(line); guide.add(Box.createVerticalStrut(8));
-        }
-        guide.add(Box.createVerticalStrut(6));
+        JPanel guide = section("튜토리얼");
         tutorial.primary();
         tutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         tutorial.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -80,18 +72,17 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         skipTutorial.setOpaque(false); skipTutorial.setForeground(UniversityPixelTheme.TEXT);
         skipTutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         skipTutorial.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(skipTutorial);
-        guide.add(Box.createVerticalStrut(12));
-        JLabel controls = text("전투: 1~4 아이템 · P 일시정지", 12, UniversityPixelTheme.TEXT_SUB);
-        controls.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(controls);
-        JLabel exit = text("ESC 돌아가기 / 대전 포기", 12, UniversityPixelTheme.TEXT_SUB);
-        exit.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(exit);
         guide.add(Box.createVerticalStrut(16));
         guide.add(text("화면", 17, UniversityPixelTheme.GOLD));
         reduceTransitions.setOpaque(false); reduceTransitions.setForeground(UniversityPixelTheme.TEXT_SUB);
         reduceTransitions.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         reduceTransitions.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(reduceTransitions);
         guide.add(Box.createVerticalGlue());
-        columns.add(guide); add(columns, BorderLayout.CENTER);
+        columns.add(guide);
+        columns.setPreferredSize(new Dimension(760, 390));
+        JPanel center = new JPanel(new java.awt.GridBagLayout()); center.setOpaque(false);
+        center.add(columns);
+        add(center, BorderLayout.CENTER);
 
         JPanel lan = new JPanel(new BorderLayout(16, 0));
         lan.setBackground(UniversityPixelTheme.PANEL);
@@ -101,8 +92,6 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         JPanel lanText = new JPanel(); lanText.setOpaque(false);
         lanText.setLayout(new BoxLayout(lanText, BoxLayout.Y_AXIS));
         lanText.add(text("LAN 대전", 15, UniversityPixelTheme.TEXT));
-        lanText.add(Box.createVerticalStrut(2));
-        lanText.add(text("같은 네트워크에서 한 사람이 서버를 켜고, 다른 사람이 연결합니다.", 12, UniversityPixelTheme.TEXT_SUB));
         lan.add(lanText, BorderLayout.WEST);
         lanConnect.secondary(); lanHost.secondary();
         lanConnect.setPreferredSize(new Dimension(140, 38)); lanHost.setPreferredSize(new Dimension(140, 38));
@@ -126,7 +115,7 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         label.setForeground(color);
         return label;
     }
-    private static JPanel section(String heading, String explanation) {
+    private static JPanel section(String heading) {
         JPanel panel = new JPanel(); panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(UniversityPixelTheme.PANEL);
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -134,9 +123,6 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
                 new EmptyBorder(16, 18, 16, 18)));
         JLabel title = text(heading, 21, UniversityPixelTheme.GOLD);
         title.setAlignmentX(Component.LEFT_ALIGNMENT); panel.add(title);
-        panel.add(Box.createVerticalStrut(10));
-        JLabel subtitle = text(explanation, 13, UniversityPixelTheme.TEXT_SUB);
-        subtitle.setAlignmentX(Component.LEFT_ALIGNMENT); panel.add(subtitle);
         panel.add(Box.createVerticalStrut(22));
         return panel;
     }

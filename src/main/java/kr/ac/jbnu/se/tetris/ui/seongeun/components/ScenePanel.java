@@ -6,6 +6,7 @@ import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.LayoutManager;
+import java.awt.AlphaComposite;
 import java.awt.event.HierarchyEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -13,7 +14,7 @@ import javax.imageio.ImageIO;
 import javax.swing.JPanel;
 import javax.swing.Timer;
 
-/** 메뉴 화면 공통 배경. 한국 캠퍼스 풍경과 작게 흘러내리는 콘크리트 조각을 그린다. */
+/** 메뉴 화면 공통 배경. 캠퍼스 풍경을 밝은 콘크리트 면 아래에 은은하게 남긴다. */
 public class ScenePanel extends JPanel {
     private static final BufferedImage CAMPUS = readCampus();
     private final Timer timer = new Timer(50, event -> repaint());
@@ -47,26 +48,27 @@ public class ScenePanel extends JPanel {
     }
 
     public static void paintBackdrop(Graphics2D g, int w, int h, long now) {
-        g.setPaint(new GradientPaint(0, 0, new Color(0x16272E), 0, h, UniversityPixelTheme.BG));
+        g.setPaint(new GradientPaint(0, 0, new Color(0xD8DDD5), 0, h, UniversityPixelTheme.BG));
         g.fillRect(0, 0, w, h);
         if (CAMPUS != null && w > 0 && h > 0) {
             int width = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
+            g.setComposite(AlphaComposite.SrcOver.derive(0.27f));
             g.drawImage(CAMPUS, (w - width) / 2, 0, width, h, null);
+            g.setComposite(AlphaComposite.SrcOver);
         }
-        g.setColor(new Color(8, 17, 21, 178));
-        g.fillRect(0, 0, w, h);
-        g.setPaint(new GradientPaint(0, 0, new Color(7, 15, 19, 115), w, 0,
-                new Color(7, 15, 19, 28)));
+        // 제목과 메뉴가 놓이는 상단은 같은 밝기로 묶어 읽기 쉽게 한다.
+        g.setPaint(new GradientPaint(0, 0, new Color(235, 234, 222, 54), 0, h,
+                new Color(211, 214, 203, 54)));
         g.fillRect(0, 0, w, h);
         int cell = Math.max(8, Math.min(15, w / 80));
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 4; i++) {
             long cycle = 17000 + i * 1900L;
             float t = ((now + i * 3711L) % cycle) / (float) cycle;
             int x = Math.floorMod(i * 211 + 40, Math.max(1, w - cell));
             int y = Math.round(-cell + (h + cell * 2) * t);
-            g.setColor(new Color(191, 194, 182, 31));
+            g.setColor(new Color(66, 80, 80, 12));
             g.fillRect(x, y, cell, cell);
-            g.setColor(new Color(235, 195, 112, 43));
+            g.setColor(new Color(150, 101, 31, 21));
             g.drawLine(x, y, x + cell - 1, y);
         }
     }

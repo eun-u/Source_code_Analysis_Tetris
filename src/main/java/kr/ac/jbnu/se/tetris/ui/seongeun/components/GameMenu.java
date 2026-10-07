@@ -96,24 +96,21 @@ public final class GameMenu extends JPanel {
                 boolean on = isSelectedItem();
                 boolean pressed = getModel().isPressed();
                 long now = System.currentTimeMillis();
+                Color surface = on ? new Color(241, 239, 230, 245) : new Color(227, 229, 222, 228);
+                g.setColor(surface);
+                g.fillRect(pressed ? 2 : 0, 0, w - (pressed ? 2 : 0), h);
+                g.setColor(new Color(153, 166, 161, on ? 220 : 130));
+                g.drawRect(0, 0, w - 1, h - 1);
                 if (on) {
-                    // 선택 띠: 왼쪽이 진하고 오른쪽으로 사라지는 그라데이션.
-                    g.setPaint(new GradientPaint(0, 0, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 150),
-                            w, 0, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0)));
-                    g.fillRect(pressed ? 2 : 0, 0, w, h);
                     g.setColor(accent);
                     g.fillRect(0, 0, 5, h);
-                    int bob = (int) Math.round(Math.sin(now / 140.0) * 3);
+                    int bob = (int) Math.round(Math.sin(now / 200.0) * 2);
                     int ax = 14 + bob, ay = h / 2;
-                    g.setColor(UniversityPixelTheme.BLACK);
-                    g.fillPolygon(new int[] { ax + 1, ax + 13, ax + 1 }, new int[] { ay - 8, ay + 1, ay + 10 }, 3);
                     g.setColor(UniversityPixelTheme.GOLD);
                     g.fillPolygon(new int[] { ax, ax + 12, ax }, new int[] { ay - 9, ay, ay + 9 }, 3);
                 } else {
-                    g.setColor(new Color(12, 28, 33, 188));
-                    g.fillRect(0, 0, w, h);
-                    g.setColor(new Color(98, 131, 134, 150));
-                    g.fillRect(0, 0, 3, h);
+                    g.setColor(UniversityPixelTheme.LINE);
+                    g.fillRect(0, 0, 2, h);
                 }
                 int textX = on ? 38 : 24;
                 g.setFont(UniversityPixelTheme.font(on ? 19 : 17, Font.BOLD));
@@ -122,9 +119,7 @@ public final class GameMenu extends JPanel {
                 FontMetrics smallMetrics = g.getFontMetrics(small);
                 int blockHeight = title.getAscent() + (description == null ? 0 : smallMetrics.getAscent() + 3);
                 int top = (h - blockHeight) / 2;
-                g.setColor(UniversityPixelTheme.BLACK);
-                g.drawString(getText(), textX + 2, top + title.getAscent() + 2);
-                g.setColor(on ? UniversityPixelTheme.TEXT : UniversityPixelTheme.TEXT_SUB);
+                g.setColor(UniversityPixelTheme.TEXT);
                 g.drawString(getText(), textX, top + title.getAscent());
                 if (description != null) {
                     g.setFont(small);

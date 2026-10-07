@@ -3,7 +3,7 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 import java.awt.*;
 import javax.swing.*;
 
-/** 검은 테두리 안을 칸 단위로 채우는 픽셀 게이지. 진행도·피버처럼 0..max 값을 보여 준다. */
+/** 얇은 콘크리트 테두리 안을 칸 단위로 채우는 픽셀 게이지. */
 public final class PixelMeter extends JComponent {
     private int value, maximum;
     private Color fill;
@@ -31,7 +31,7 @@ public final class PixelMeter extends JComponent {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             int width = getWidth(), height = getHeight();
-            g.setColor(UniversityPixelTheme.BLACK);
+            g.setColor(UniversityPixelTheme.LINE);
             g.fillRect(0, 0, width, height);
             int inner = width - 4;
             int filled = (int) Math.round(inner * (value / (double) maximum));
@@ -42,7 +42,7 @@ public final class PixelMeter extends JComponent {
             // 위쪽 밝은 줄과 4px 마다 끊긴 눈금으로 픽셀 게이지처럼 보이게 한다.
             g.setColor(new Color(255, 255, 255, 70));
             g.fillRect(2, 2, filled, Math.max(1, (height - 4) / 3));
-            g.setColor(UniversityPixelTheme.BLACK);
+            g.setColor(UniversityPixelTheme.LINE);
             for (int x = 2 + 8; x < 2 + inner; x += 8) g.fillRect(x, 2, 1, height - 4);
         } finally { g.dispose(); }
     }

@@ -17,7 +17,6 @@ public class WaitingRoomPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.component
     private final GameButton copyButton = new GameButton("번호 복사");
     private final JLabel titleLabel;
     private final JLabel roomCode = UniversityPixelTheme.label("—", 30, Font.BOLD, UniversityPixelTheme.GOLD);
-    private final JLabel readyHint = new JLabel("두 사람 모두 준비하면 대전이 시작됩니다.", SwingConstants.CENTER);
     private final JPanel playerPanel = new JPanel(new GridBagLayout());
     private String roomId;
 
@@ -44,14 +43,9 @@ public class WaitingRoomPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.component
         readyButton.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         readyButton.setPreferredSize(new Dimension(220, 50));
         readyButton.positive();
-        readyHint.setForeground(UniversityPixelTheme.TEXT_SUB);
-        readyHint.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
-        JPanel bottomPanel = new JPanel(new BorderLayout(0, 6));
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
         bottomPanel.setOpaque(false);
-        JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0)); buttonRow.setOpaque(false);
-        buttonRow.add(readyButton);
-        bottomPanel.add(buttonRow, BorderLayout.CENTER);
-        bottomPanel.add(readyHint, BorderLayout.SOUTH);
+        bottomPanel.add(readyButton);
         add(bottomPanel, BorderLayout.SOUTH);
     }
 
@@ -65,9 +59,6 @@ public class WaitingRoomPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.component
         text.add(Box.createVerticalStrut(2));
         roomCode.setToolTipText("다른 창의 '방 번호로 입장'에 이 번호를 입력하세요.");
         text.add(roomCode);
-        text.add(Box.createVerticalStrut(2));
-        text.add(UniversityPixelTheme.label("상대에게 이 번호를 알려 주세요. 상대는 방 목록에서 '방 번호로 입장'을 누릅니다.",
-                12, Font.PLAIN, UniversityPixelTheme.TEXT_SUB));
         card.add(text, BorderLayout.CENTER);
         copyButton.secondary();
         copyButton.setPreferredSize(new Dimension(110, 38));
@@ -129,9 +120,6 @@ public class WaitingRoomPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.component
         boolean ready = myPlayer != null && myPlayer.isReady();
         readyButton.setText(ready ? "준비 취소" : "준비 완료");
         if (ready) readyButton.secondary(); else readyButton.positive();
-        readyHint.setText(enemyPlayer == null ? "상대가 들어오면 두 사람 모두 준비해야 대전이 시작됩니다."
-                : ready && enemyPlayer.isReady() ? "곧 대전이 시작됩니다!"
-                : ready ? "상대의 준비를 기다리는 중입니다." : "준비 완료를 누르면 상대에게 표시됩니다.");
         playerPanel.revalidate();
         playerPanel.repaint();
     }

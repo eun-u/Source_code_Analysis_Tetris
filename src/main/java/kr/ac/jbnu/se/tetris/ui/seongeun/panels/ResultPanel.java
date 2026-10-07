@@ -9,7 +9,6 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final JLabel resultLabel = new JLabel("RESULT", SwingConstants.CENTER);
-    private final JLabel summary = new JLabel(" ", SwingConstants.CENTER);
     private final JLabel playerNameLabel = new JLabel("Player", SwingConstants.CENTER);
     private final JLabel lineLabel = new JLabel("0", SwingConstants.CENTER);
     private final JLabel comboLabel = new JLabel("0", SwingConstants.CENTER);
@@ -37,20 +36,12 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
         banner.setLayout(new BoxLayout(banner, BoxLayout.Y_AXIS));
         banner.setBorder(new EmptyBorder(16, 20, 16, 20));
         banner.setAlignmentX(Component.CENTER_ALIGNMENT);
-        banner.setMaximumSize(new Dimension(620, 130));
-        banner.setPreferredSize(new Dimension(620, 130));
-        JLabel eyebrow = new JLabel("CAMPUS QUEST  ·  전투 결과", SwingConstants.CENTER);
-        eyebrow.setAlignmentX(Component.CENTER_ALIGNMENT);
-        eyebrow.setForeground(UniversityPixelTheme.TEXT_SUB);
-        eyebrow.setFont(UniversityPixelTheme.font(12, Font.BOLD));
+        banner.setMaximumSize(new Dimension(620, 90));
+        banner.setPreferredSize(new Dimension(620, 90));
         resultLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         resultLabel.setFont(UniversityPixelTheme.font(44, Font.BOLD));
         resultLabel.setForeground(UniversityPixelTheme.TEXT);
-        summary.setAlignmentX(Component.CENTER_ALIGNMENT);
-        summary.setForeground(UniversityPixelTheme.TEXT);
-        summary.setFont(UniversityPixelTheme.font(15, Font.BOLD));
-        banner.add(eyebrow); banner.add(Box.createVerticalStrut(4));
-        banner.add(resultLabel); banner.add(Box.createVerticalStrut(4)); banner.add(summary);
+        banner.add(Box.createVerticalGlue()); banner.add(resultLabel); banner.add(Box.createVerticalGlue());
         content.add(banner); content.add(Box.createVerticalStrut(14));
 
         JPanel resultCard = new JPanel(new BorderLayout(0, 12));
@@ -120,7 +111,6 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
         Color accent = good ? UniversityPixelTheme.MINT : bad ? UniversityPixelTheme.CORAL : UniversityPixelTheme.GOLD;
         resultLabel.setForeground(accent);
         banner.setAccent(accent);
-        summary.setText(summaryFor(result));
         playerNameLabel.setText(playerName);
         targets = new String[] { line, maxCombo, damage, reward };
         countStartedAt = System.currentTimeMillis();
@@ -128,16 +118,6 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
         refreshCount();
         countTimer.restart();
         banner.flashAt = countStartedAt;
-    }
-
-    private static String summaryFor(String result) {
-        if ("VICTORY".equals(result)) return "승리했습니다! 블록으로 상대를 쓰러뜨렸어요.";
-        if ("DEFEAT".equals(result)) return "아쉽게 졌습니다. 다시 도전해 보세요.";
-        if ("DRAW".equals(result)) return "무승부입니다.";
-        if ("COMPLETE".equals(result)) return "튜토리얼 완료! 이제 실전에 도전하세요.";
-        if ("GAME OVER".equals(result)) return "블록이 천장에 닿았습니다.";
-        if ("CONNECTION LOST".equals(result)) return "서버 연결이 끊겼습니다. 대기방에서 다시 연결하세요.";
-        return " ";
     }
 
     /** 숫자 결과는 0에서 목표값까지 0.8초 동안 올라간다. 숫자가 아닌 값('—')은 그대로 보인다. */

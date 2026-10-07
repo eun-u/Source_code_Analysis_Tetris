@@ -121,6 +121,11 @@ public final class SupabaseAuthService {
 
     public synchronized AuthSession getSession() { return session; }
 
+    /** A cancelled UI request may finish after another login; discard only its own session. */
+    public synchronized void discardSessionIf(AuthSession discarded) {
+        if (session == discarded) session = null;
+    }
+
     private AuthSession requireSession() throws AuthException {
         if (session == null) throw new AuthException("NOT_SIGNED_IN");
         return session;

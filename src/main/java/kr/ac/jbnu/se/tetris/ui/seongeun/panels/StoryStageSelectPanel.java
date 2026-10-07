@@ -66,7 +66,7 @@ public class StoryStageSelectPanel extends JPanel {
         back.secondary();
         back.setPreferredSize(new Dimension(96, 36));
         completion.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-        add(UniversityPixelTheme.screenHeader("STORY MODE", "캠퍼스 퀘스트 지도", completion, back), BorderLayout.NORTH);
+        add(UniversityPixelTheme.screenHeader("STORY MODE", "스토리 전투", completion, back), BorderLayout.NORTH);
         add(map, BorderLayout.CENTER);
         add(detailPanel(), BorderLayout.SOUTH);
         start.setName("storyStart");
@@ -104,10 +104,7 @@ public class StoryStageSelectPanel extends JPanel {
         start.setPreferredSize(new Dimension(190, 56));
         start.setMaximumSize(new Dimension(190, 56));
         start.setAlignmentX(Component.CENTER_ALIGNMENT);
-        JLabel hint = UniversityPixelTheme.label("← → 선택 · ENTER 시작", 11, Font.PLAIN, UniversityPixelTheme.TEXT_SUB);
-        hint.setAlignmentX(Component.CENTER_ALIGNMENT);
-        action.add(Box.createVerticalGlue()); action.add(start); action.add(Box.createVerticalStrut(6));
-        action.add(hint); action.add(Box.createVerticalGlue());
+        action.add(Box.createVerticalGlue()); action.add(start); action.add(Box.createVerticalGlue());
         panel.add(action, BorderLayout.EAST);
         return panel;
     }
@@ -278,9 +275,9 @@ public class StoryStageSelectPanel extends JPanel {
 
         private void paintRegions(Graphics2D g, int w, int h, long now) {
             Color[][] skies = {
-                { new Color(0x182B32), new Color(0x40575A) },
-                { new Color(0x17232B), new Color(0x34424C) },
-                { new Color(0x273037), new Color(0x66746C) }
+                { new Color(0xCED2CD), new Color(0xAEB9B4) },
+                { new Color(0xC5CBD0), new Color(0xA7B4BA) },
+                { new Color(0xD1D0C7), new Color(0xB6BDB6) }
             };
             for (int region = 0; region < 3; region++) {
                 int x0 = region * w / 3, x1 = (region + 1) * w / 3;
@@ -294,18 +291,18 @@ public class StoryStageSelectPanel extends JPanel {
                     g.drawImage(scene, x0, 0, x1, h, sourceX, 0,
                             sourceX + sourceWidth, scene.getHeight(), null);
                 }
-                g.setColor(new Color(8, 18, 22, 105));
+                g.setColor(new Color(225, 226, 217, 100));
                 g.fillRect(x0, 0, x1 - x0, h);
                 if (region > 0) {
-                    g.setColor(new Color(9, 17, 22, 175));
-                    g.fillRect(x0 - 1, 0, 3, h);
+                    g.setColor(new Color(95, 112, 113, 96));
+                    g.fillRect(x0 - 1, 0, 2, h);
                 }
                 g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
                 String label = "CH." + (region + 1) + "  " + CHAPTERS[region];
                 FontMetrics m = g.getFontMetrics();
-                g.setColor(new Color(0, 0, 0, 160));
+                g.setColor(new Color(241, 239, 230, 226));
                 g.fillRect(x0 + 10, 10, m.stringWidth(label) + 14, 22);
-                g.setColor(UniversityPixelTheme.GOLD);
+                g.setColor(UniversityPixelTheme.TEXT);
                 g.drawString(label, x0 + 17, 26);
             }
         }
@@ -317,7 +314,7 @@ public class StoryStageSelectPanel extends JPanel {
                     Point a = node(i), b = node(i + 1);
                     if (pass == 0) {
                         g.setStroke(new BasicStroke(12f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                        g.setColor(new Color(0, 0, 0, 170));
+                        g.setColor(new Color(57, 73, 78, 98));
                     } else {
                         boolean done = cleared[i];
                         g.setStroke(new BasicStroke(5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND,
@@ -350,14 +347,14 @@ public class StoryStageSelectPanel extends JPanel {
             boolean isNext = index == current && unlocked[index] && !cleared[index];
             if (isNext) {
                 int pulse = (int) ((now % 1000) / 1000f * 18);
-                g.setColor(new Color(78, 227, 154, 160 - pulse * 8));
+                g.setColor(new Color(40, 121, 111, 160 - pulse * 8));
                 g.setStroke(new BasicStroke(3f));
                 g.drawRect(p.x - r - 4 - pulse, p.y - r - 4 - pulse, (r + 4 + pulse) * 2, (r + 4 + pulse) * 2);
                 g.setStroke(new BasicStroke(1f));
             }
             int lift = isSelected ? (int) Math.round(Math.abs(Math.sin(now / 260.0)) * 4) : 0;
             int x = p.x - r, y = p.y - r - lift, size = r * 2;
-            g.setColor(new Color(0, 0, 0, 150));
+            g.setColor(new Color(57, 73, 78, 83));
             g.fillRect(x + 4, y + 5 + lift, size, size);
             Color frame = isSelected ? UniversityPixelTheme.GOLD : cleared[index] ? UniversityPixelTheme.MINT
                     : boss ? UniversityPixelTheme.CORAL : UniversityPixelTheme.LINE;
@@ -368,19 +365,19 @@ public class StoryStageSelectPanel extends JPanel {
             Image art = icon(index + 1, size - 6);
             if (art != null) g.drawImage(art, x + 3, y + 3, null);
             if (!unlocked[index]) {
-                g.setColor(new Color(8, 6, 26, 185));
+                g.setColor(new Color(225, 226, 217, 181));
                 g.fillRect(x, y, size, size);
                 // 자물쇠.
                 int lx = p.x - 8, ly = p.y - 2 - lift;
                 g.setColor(UniversityPixelTheme.TEXT_SUB);
                 g.fillRect(lx, ly, 16, 12);
                 g.drawRect(lx + 3, ly - 8, 9, 9);
-                g.setColor(UniversityPixelTheme.BLACK);
+                g.setColor(UniversityPixelTheme.TEXT);
                 g.fillRect(lx + 7, ly + 4, 2, 4);
             }
             if (cleared[index]) {
                 int sx = x + size - 10, sy = y - 8;
-                g.setColor(UniversityPixelTheme.BLACK);
+                g.setColor(UniversityPixelTheme.LINE);
                 g.fillRect(sx - 1, sy - 1, 20, 20);
                 g.setColor(UniversityPixelTheme.MINT);
                 g.fillRect(sx, sy, 18, 18);
@@ -394,7 +391,7 @@ public class StoryStageSelectPanel extends JPanel {
             String label = boss ? "BOSS · LV " + (index + 1) : "LV " + (index + 1);
             FontMetrics m = g.getFontMetrics();
             int lw = m.stringWidth(label) + 10;
-            g.setColor(UniversityPixelTheme.BLACK);
+            g.setColor(new Color(241, 239, 230, 240));
             g.fillRect(p.x - lw / 2, y + size + 6, lw, 17);
             g.setColor(boss ? UniversityPixelTheme.CORAL : isSelected ? UniversityPixelTheme.GOLD : UniversityPixelTheme.TEXT);
             g.drawString(label, p.x - lw / 2 + 5, y + size + 19);

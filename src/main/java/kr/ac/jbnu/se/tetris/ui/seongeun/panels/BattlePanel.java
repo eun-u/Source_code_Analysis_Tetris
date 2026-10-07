@@ -2,8 +2,12 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
 import java.awt.*;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.function.IntConsumer;
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.battle.*;
@@ -26,13 +30,21 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.model.ItemData;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
- * 전투 화면. 상대 보드와 전투 무대를 왼쪽에, 플레이 보드와 조작 정보를 오른쪽에 둔다.
- * 무대와 플레이 보드를 맞붙여 블록을 놓는 동안에도 상대의 반응이 시야에 들어오게 한다.
+ * PvE에서는 왼쪽 전투 무대, 가운데 플레이 보드, 오른쪽 조작 정보를 강의동 외벽으로 묶는다.
+ * 온라인에서는 서로 같은 크기의 보드 두 개와 가운데 전투 무대를 유지한다.
  */
 public class BattlePanel extends JPanel implements Scrollable {
     private static final Color BG = UniversityPixelTheme.BG, TEXT = UniversityPixelTheme.TEXT;
-    private static final Color PINK = new Color(0xFF92E2);
-    private static final int PAD = 10, GAP = 8, TOP = 50, BOTTOM = 28, METER = 12;
+    private static final Color FACADE = new Color(0xB9B7AB);
+    private static final Color FACADE_EDGE = new Color(0x888D87);
+    private static final Color FACADE_LIGHT = new Color(0xE5E2D7);
+    private static final int GAP = 8, METER = 12;
+    private static final int PVE_LEFT_PILLAR = 24, PVE_RIGHT_PILLAR = 12;
+    private static final BufferedImage UNIVERSITY_BATTLE_BG = readBackdrop(
+            "/ui/campus-rpg/university-battle-bg.png");
+    private static final BufferedImage UNIVERSITY_BG = readBackdrop("/ui/campus-rpg/university-bg.png");
+    private static final BufferedImage GRADUATION_BG = readBackdrop("/ui/campus-rpg/graduation-bg.png");
+    private static final BufferedImage EMPLOYMENT_BG = readBackdrop("/ui/campus-rpg/employment-bg.png");
 
     private final PixelArena arena = new PixelArena();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
@@ -46,7 +58,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JLabel gauge = label("FEVER 0%"), pending = label("가비지 0");
     private final JLabel warp = label(" ");
     private final JLabel stats = label("<html>LINES 0<br>COMBO 0</html>");
-    private final JLabel status = label("줄을 지우면 상대를 공격합니다");
+    private final JLabel status = label("");
     private final JLabel clock = label("00:00");
     private final JLabel levelChip = UniversityPixelTheme.chip("LV 1", UniversityPixelTheme.GOLD);
     private final JLabel title = label("MONSTER BATTLE");
@@ -56,7 +68,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JButton[] slots = new JButton[4];
     private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
-    private final JButton backButton = button("돌아가기 [ESC]");
+    private final JButton backButton = button("전투 포기 [ESC]");
     private final PixelMeter feverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JPanel topBar = new JPanel(new BorderLayout(10, 0));
     private final JPanel leftColumn = column();
@@ -68,6 +80,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private long lastEventId;
     private ParticipantState previousLocal, previousEnemy;
     private boolean online;
+    private String chapter = "university";
     private int feedbackGeneration;
 
     public BattlePanel() {
@@ -87,10 +100,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         clock.setFont(UniversityPixelTheme.font(18, Font.BOLD));
         clock.setForeground(UniversityPixelTheme.GOLD);
         actions.add(clock);
-        ((PixelButton) backButton).danger();
+        ((PixelButton) backButton).primary();
         backButton.setPreferredSize(new Dimension(136, 34));
         backButton.setFocusable(false);
-        backButton.setToolTipText("현재 전투를 종료하고 돌아갑니다. 진행 중인 대전은 기권 처리됩니다.");
+        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
         actions.add(backButton);
         topBar.add(actions, BorderLayout.EAST);
         add(topBar);
@@ -168,7 +181,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         }
         rightColumn.add(Box.createVerticalStrut(10));
         gauge.setFont(UniversityPixelTheme.font(12, Font.BOLD));
-        section(rightColumn, gauge, PINK);
+        section(rightColumn, gauge, UniversityPixelTheme.GOLD);
         feverBar.setAlignmentX(Component.LEFT_ALIGNMENT);
         rightColumn.add(feverBar);
         rightColumn.add(Box.createVerticalStrut(3));
@@ -217,65 +230,214 @@ public class BattlePanel extends JPanel implements Scrollable {
         parent.add(heading);
     }
 
-    /** 보드 칸 크기를 남은 높이와 너비에서 정하고, 플레이 보드 바로 옆에 무대를 둔다. */
+    /** 두 전투 모드 모두 캠퍼스 풍경 위에 같은 강의동 외벽을 그린다. */
+    @Override protected void paintComponent(Graphics graphics) {
+        super.paintComponent(graphics);
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            if (online) paintOnlineShell(g);
+            else paintPveShell(g);
+        } finally { g.dispose(); }
+    }
+
+    private void paintPveShell(Graphics2D g) {
+        int margin = pveMargin(getWidth(), getHeight());
+        int side = margin + 12, top = margin + 54, bottom = margin + 23;
+        BufferedImage backdrop = "graduation".equals(chapter) ? GRADUATION_BG
+                : "employment".equals(chapter) ? EMPLOYMENT_BG
+                : UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG;
+        paintCommonShell(g, margin, side, top, bottom, backdrop);
+        if (arena.getWidth() <= 0 || playerBoard.getWidth() <= 0) return;
+        int bodyBottom = getHeight() - bottom;
+        // 기둥은 보드와 무대를 가르는 여백을 채우고, 가비지 미터를 첫 기둥에 넣는다.
+        paintPillar(g, arena.getX() + arena.getWidth(), PVE_LEFT_PILLAR, top, bodyBottom);
+        paintPillar(g, playerBoard.getX() + playerBoard.getWidth(),
+                PVE_RIGHT_PILLAR, top, bodyBottom);
+        g.setColor(FACADE_EDGE);
+        g.drawRect(arena.getX() - 1, arena.getY() - 1, arena.getWidth() + 1, arena.getHeight() + 1);
+        paintBoardFacade(g, playerBoard.getBounds());
+        int divider = rightColumn.getX() - 5;
+        g.setColor(UniversityPixelTheme.LINE);
+        g.drawLine(divider, top + 14, divider, bodyBottom - 14);
+    }
+
+    private void paintOnlineShell(Graphics2D g) {
+        int margin = pveMargin(getWidth(), getHeight());
+        int side = margin + 12, top = margin + 54, bottom = margin + 23;
+        paintCommonShell(g, margin, side, top, bottom,
+                UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG);
+        if (arena.getWidth() <= 0 || playerBoard.getWidth() <= 0 || enemyBoard.getWidth() <= 0) return;
+        int bodyBottom = getHeight() - bottom;
+        // PvP에서는 두 보드가 같은 크기로 무대를 사이에 두고 대칭을 이룬다.
+        Rectangle opponent = SwingUtilities.convertRectangle(enemyBoard.getParent(),
+                enemyBoard.getBounds(), this);
+        paintPillar(g, opponent.x + opponent.width, GAP, top, bodyBottom);
+        paintPillar(g, arena.getX() + arena.getWidth(), GAP, top, bodyBottom);
+        paintPillar(g, playerBoard.getX() + playerBoard.getWidth(), GAP, top, bodyBottom);
+        g.setColor(FACADE_EDGE);
+        g.drawRect(arena.getX() - 1, arena.getY() - 1, arena.getWidth() + 1, arena.getHeight() + 1);
+        paintBoardFacade(g, opponent);
+        paintBoardFacade(g, playerBoard.getBounds());
+        g.setColor(UniversityPixelTheme.LINE);
+        g.drawLine(rightColumn.getX() - 5, top + 14,
+                rightColumn.getX() - 5, bodyBottom - 14);
+    }
+
+    private void paintCommonShell(Graphics2D g, int margin, int side, int top, int bottom,
+                                  BufferedImage backdrop) {
+        if (backdrop != null) {
+            paintBackdropCover(g, backdrop, getWidth(), getHeight());
+            // 프레임 바깥 풍경은 남기되 화면의 주인공인 보드와 전투원보다 조용하게 둔다.
+            g.setColor(new Color(231, 225, 213, 66));
+            g.fillRect(0, 0, getWidth(), getHeight());
+        }
+        int shellX = margin, shellY = margin;
+        int shellW = Math.max(0, getWidth() - margin * 2);
+        int shellH = Math.max(0, getHeight() - margin * 2);
+        if (shellW < 40 || shellH < 40) return;
+        int bodyBottom = getHeight() - bottom;
+        // 외벽, 상인방, 하단 콘크리트 턱은 세 칸을 하나의 건물처럼 연결한다.
+        g.setColor(FACADE_EDGE);
+        g.fillRect(shellX, shellY, shellW, shellH);
+        g.setColor(FACADE);
+        g.fillRect(shellX + 2, shellY + 2, shellW - 4, shellH - 4);
+        g.setColor(FACADE_LIGHT);
+        g.fillRect(shellX + 3, shellY + 3, shellW - 6, top - shellY - 7);
+        g.setColor(UniversityPixelTheme.PANEL_LIGHT);
+        g.fillRect(side, top, Math.max(0, getWidth() - side * 2),
+                Math.max(0, bodyBottom - top));
+        g.setColor(FACADE_LIGHT);
+        g.fillRect(shellX + 3, bodyBottom, shellW - 6, Math.max(0, getHeight() - margin - bodyBottom - 3));
+        paintConcreteTexture(g, shellX + 3, shellY + 3, shellW - 6, top - shellY - 6);
+        paintConcreteTexture(g, shellX + 3, bodyBottom, shellW - 6,
+                Math.max(0, getHeight() - margin - bodyBottom - 3));
+        g.setColor(FACADE_EDGE);
+        g.drawLine(shellX + 2, top - 3, shellX + shellW - 3, top - 3);
+        g.drawLine(shellX + 2, bodyBottom, shellX + shellW - 3, bodyBottom);
+        g.setColor(new Color(0xF6F2E8));
+        g.drawLine(shellX + 3, shellY + 3, shellX + shellW - 4, shellY + 3);
+    }
+
+    private static void paintPillar(Graphics2D g, int x, int width, int top, int bottom) {
+        g.setColor(FACADE_EDGE);
+        g.fillRect(x, top, width, bottom - top);
+        g.setColor(FACADE);
+        g.fillRect(x + 2, top, Math.max(0, width - 4), bottom - top);
+        g.setColor(FACADE_LIGHT);
+        g.drawLine(x + 2, top + 2, x + 2, bottom - 3);
+        g.setColor(new Color(0xA1A49D));
+        g.drawLine(x + width - 3, top + 2, x + width - 3, bottom - 3);
+    }
+
+    private static void paintConcreteTexture(Graphics2D g, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        g.setColor(new Color(77, 79, 72, 20));
+        for (int row = 5; row < height - 3; row += 11)
+            for (int col = 7 + ((row * 7) % 13); col < width - 3; col += 19)
+                g.fillRect(x + col, y + row, 2, 1);
+        g.setColor(new Color(255, 255, 255, 52));
+        for (int col = 47; col < width - 10; col += 113)
+            g.drawLine(x + col, y + 2, x + col, y + Math.min(height - 3, 7));
+    }
+
+    private static void paintBackdropCover(Graphics2D g, BufferedImage image, int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        double cropScale = Math.min((double) image.getWidth() / width,
+                (double) image.getHeight() / height);
+        int sourceW = Math.max(1, (int) Math.round(width * cropScale));
+        int sourceH = Math.max(1, (int) Math.round(height * cropScale));
+        int sourceX = (image.getWidth() - sourceW) / 2;
+        int sourceY = (image.getHeight() - sourceH) / 2;
+        g.drawImage(image, 0, 0, width, height,
+                sourceX, sourceY, sourceX + sourceW, sourceY + sourceH, null);
+    }
+
+    private static BufferedImage readBackdrop(String resource) {
+        try (InputStream stream = BattlePanel.class.getResourceAsStream(resource)) {
+            return stream == null ? null : ImageIO.read(stream);
+        } catch (IOException exception) { return null; }
+    }
+
+    /** 칸은 그대로 두고 바깥 여백 5px만 강의동 외벽처럼 감싼다. */
+    private static void paintBoardFacade(Graphics2D g, Rectangle board) {
+        int x = board.x - 5, y = board.y - 7;
+        int width = board.width + 10, height = board.height + 14;
+        g.setColor(FACADE);
+        g.fillRect(x, y, width, height);
+        g.setColor(FACADE_EDGE);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(FACADE_LIGHT);
+        g.drawLine(x + 1, y + 1, x + width - 2, y + 1);
+        g.drawLine(x + 1, y + height - 3, x + width - 2, y + height - 3);
+        // 윗쪽 콘크리트 줄눈만 남겨 화면 전체에 창문 무늬가 반복되지 않게 한다.
+        g.setColor(FACADE_EDGE);
+        for (int joint = x + 28; joint < x + width - 10; joint += 32)
+            g.drawLine(joint, y + 3, joint, y + 6);
+    }
+
+    /** PvE는 전투 무대·큰 보드·두 열 HUD, PvP는 기존의 양쪽 보드 배치를 쓴다. */
     @Override public void doLayout() {
         int width = getWidth(), height = getHeight();
         if (width <= 0 || height <= 0) return;
-        topBar.setBounds(PAD, 8, width - PAD * 2, 36);
-        status.setBounds(PAD + 4, height - BOTTOM + 2, width - PAD * 2, 22);
         oreFlights.setBounds(0, 0, width, height);
-        int areaTop = TOP, areaHeight = Math.max(100, height - TOP - BOTTOM);
+        int margin = pveMargin(width, height);
+        int side = margin + 12, top = margin + 54, bottom = margin + 23;
         if (online) {
-            layoutOnline(width, areaTop, areaHeight);
+            topBar.setBounds(side + 4, margin + 9, Math.max(0, width - side * 2 - 8), 36);
+            status.setBounds(side + 4, height - bottom + 3,
+                    Math.max(0, width - side * 2 - 8), 17);
+            enemyColumn.setVisible(true);
+            layoutOnline(width, side, top, Math.max(100, height - top - bottom));
             resultTestButton.setVisible(false);
             return;
         }
-        int leftWidth = clamp(Math.round(width * 0.115f), 92, 130);
-        int rightWidth = clamp(Math.round(width * 0.095f), 80, 108);
-        int enemyWidth = clamp(Math.round(width * 0.13f), 96, 150);
-        int minimumArena = Math.max(200, Math.round(width * 0.26f));
-        int boardSpace = width - PAD * 2 - leftWidth - rightWidth - enemyWidth - METER - 2 - GAP * 5 - minimumArena;
-        int cell = Math.max(10, Math.min((areaHeight - 2) / 22, (boardSpace - 2) / 10));
+        topBar.setBounds(side + 4, margin + 9, Math.max(0, width - side * 2 - 8), 36);
+        status.setBounds(side + 4, height - bottom + 3,
+                Math.max(0, width - side * 2 - 8), 17);
+        enemyColumn.setVisible(false);
+        enemyColumn.setBounds(0, 0, 0, 0);
+        int areaTop = top, areaHeight = Math.max(100, height - top - bottom);
+        int hudWidth = clamp(Math.round(width * .25f), 192, 280);
+        int arenaMinimum = Math.max(220, Math.round(width * .30f));
+        int interiorWidth = Math.max(0, width - side * 2);
+        int boardSpace = interiorWidth - hudWidth - PVE_LEFT_PILLAR - PVE_RIGHT_PILLAR
+                - arenaMinimum;
+        int cell = Math.max(10, Math.min((areaHeight - 8) / 22, (boardSpace - 2) / 10));
         int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
         int boardY = areaTop + (areaHeight - boardHeight) / 2;
-
-        int rightX = width - PAD - rightWidth;
-        rightColumn.setBounds(rightX, boardY, rightWidth, boardHeight);
-        int leftX = rightX - GAP - leftWidth;
-        leftColumn.setBounds(leftX, boardY, leftWidth, boardHeight);
-        int boardX = leftX - GAP - boardWidth;
+        int arenaWidth = Math.max(160, interiorWidth - hudWidth - PVE_LEFT_PILLAR
+                - PVE_RIGHT_PILLAR - boardWidth);
+        int arenaX = side;
+        int boardX = arenaX + arenaWidth + PVE_LEFT_PILLAR;
+        int hudX = boardX + boardWidth + PVE_RIGHT_PILLAR;
+        int hudGap = 8, hudPadding = 8;
+        int subWidth = Math.max(72, (hudWidth - hudPadding * 2 - hudGap) / 2);
+        leftColumn.setBounds(hudX + hudPadding, areaTop + 13, subWidth, areaHeight - 25);
+        rightColumn.setBounds(hudX + hudPadding + subWidth + hudGap,
+                areaTop + 13, subWidth, areaHeight - 25);
         playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
         playerName.setVisible(false);
-        int meterX = boardX - METER - 2;
+        int meterX = arenaX + arenaWidth + 6;
         garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
-
-        int enemyX = PAD;
-        int arenaX = enemyX + enemyWidth + GAP;
-        arena.setBounds(arenaX, areaTop, Math.max(120, meterX - GAP - arenaX), areaHeight);
-        enemyColumn.setBounds(enemyX, areaTop, enemyWidth, areaHeight);
-        int enemyCell = Math.max(4, Math.min((enemyWidth - 2) / 10, (areaHeight - 52) / 22));
-        int enemyBoardWidth = enemyCell * 10 + 2, enemyBoardHeight = enemyCell * 22 + 2;
-        int enemyTop = (areaHeight - enemyBoardHeight) / 2;
-        enemyName.setBounds(0, Math.max(0, enemyTop - 22), enemyWidth, 18);
-        enemyBoard.setBounds((enemyWidth - enemyBoardWidth) / 2, enemyTop, enemyBoardWidth, enemyBoardHeight);
-        enemyStatus.setBounds(0, enemyTop + enemyBoardHeight + 4, enemyWidth, 34);
+        arena.setBounds(arenaX, areaTop, arenaWidth, areaHeight);
         resultTestButton.setVisible(false);
     }
 
     /** 온라인에서는 양쪽 보드가 같은 크기이고 무대가 공격 교차로가 된다. */
-    private void layoutOnline(int width, int areaTop, int areaHeight) {
+    private void layoutOnline(int width, int side, int areaTop, int areaHeight) {
+        int areaWidth = Math.max(0, width - side * 2);
         int leftWidth = clamp(Math.round(width * 0.115f), 86, 120);
         int rightWidth = clamp(Math.round(width * 0.105f), 80, 108);
         int minimumArena = Math.max(120, Math.round(width * 0.16f));
-        int fixed = PAD * 2 + leftWidth + rightWidth + METER + 2 + GAP * 4 + minimumArena;
+        int fixed = leftWidth + rightWidth + METER + 2 + GAP * 4 + minimumArena;
         // 상대의 이름과 두 줄 기록이 보드 위아래에 들어갈 세로 여백을 남긴다.
-        int cell = Math.max(9, Math.min((areaHeight - 76) / 22, (width - fixed - 24) / 20));
+        int cell = Math.max(9, Math.min((areaHeight - 76) / 22, (areaWidth - fixed - 24) / 20));
         int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
         int boardY = areaTop + (areaHeight - boardHeight) / 2;
-        int arenaWidth = Math.max(minimumArena, width - (PAD * 2 + leftWidth + rightWidth
+        int arenaWidth = Math.max(minimumArena, areaWidth - (leftWidth + rightWidth
                 + METER + 2 + GAP * 4 + boardWidth * 2));
 
-        int enemyX = PAD;
+        int enemyX = side;
         int arenaX = enemyX + boardWidth + GAP;
         int meterX = arenaX + arenaWidth + GAP;
         int playerX = meterX + METER + 2;
@@ -295,6 +457,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+    private static int pveMargin(int width, int height) {
+        return clamp(26 + Math.min((width - 820) / 20, (height - 615) / 10), 26, 46);
+    }
 
     private static JLabel label(String text) {
         JLabel label = new JLabel(text);
@@ -334,9 +499,16 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (this.online == online) return;
         this.online = online;
         if (online) {
+            ((PixelButton) backButton).danger();
+            backButton.setText("대전 포기 [ESC]");
+            backButton.setToolTipText("진행 중인 온라인 대전을 기권하고 로비로 돌아갑니다.");
             UniversityPixelTheme.setChip(levelChip, "ONLINE", UniversityPixelTheme.MINT);
             title.setText("1:1 PvP 대전");
             arena.setChapter("university");
+        } else {
+            ((PixelButton) backButton).primary();
+            backButton.setText("전투 포기 [ESC]");
+            backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
         }
         arena.setOnline(online);
         revalidate();
@@ -345,6 +517,10 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setAudio(AudioService service) { audio = service; }
     public void setEncounter(String chapter, int level, MonsterTier pattern, String art) {
         online = false;
+        this.chapter = chapter;
+        ((PixelButton) backButton).primary();
+        backButton.setText("전투 포기 [ESC]");
+        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
         UniversityPixelTheme.setChip(levelChip, "LV " + level,
                 pattern == MonsterTier.BOSS ? UniversityPixelTheme.CORAL : UniversityPixelTheme.GOLD);
         String course = "graduation".equals(chapter) ? "졸업 과정" : "employment".equals(chapter) ? "취업 과정" : "대학교 과정";
@@ -480,7 +656,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         gauge.setText(local.isFeverActive() ? String.format("FEVER %.1fs", local.getFeverRemainingMillis() / 1000.0)
                 : "FEVER " + local.getFever() + "%");
         feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
-        feverBar.setFill(local.isFeverActive() ? PINK : UniversityPixelTheme.GOLD);
+        feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
         warp.setText(local.getTimeWarpRemainingMillis() > 0
                 ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
         int incoming = local.getPendingGarbageLines();
@@ -497,9 +673,9 @@ public class BattlePanel extends JPanel implements Scrollable {
             int count = available && i < charges.size() ? charges.get(i) : 1;
             boolean automatic = "damage_boost".equals(item) || "shield".equals(item);
             boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
-            slots[i].setText((i + 1) + "  " + (locked ? "잠김" : item == null ? "빈 슬롯"
+            slots[i].setText((i + 1) + " " + (locked ? "잠김" : item == null ? "빈 슬롯"
                     : ItemSpec.categoryOf(item) + " " + itemShortName(item)
-                    + (count > 1 ? " ×" + count : "")));
+                    + (count > 1 ? "×" + count : "")));
             automaticSlots[i] = automatic;
             slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
                     : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
@@ -580,11 +756,11 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
     private static String itemShortName(String id) {
         switch (id) {
-            case "damage_boost": return "피해↑";
+            case "damage_boost": return "증폭";
             case "garbage_bomb": return "폭탄";
             case "heal": return "회복";
             case "shield": return "방어";
-            case "line_cleaner": return "클리너";
+            case "line_cleaner": return "정리";
             case "fever_charge": return "피버";
             case "time_warp": return "왜곡";
             case "nullify": return "무효화";

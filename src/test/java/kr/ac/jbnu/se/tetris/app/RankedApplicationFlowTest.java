@@ -47,13 +47,20 @@ public final class RankedApplicationFlowTest {
     public static void main(String[] args) throws Exception {
         HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         AtomicReference<String> rankBearer = new AtomicReference<String>();
-        http.createContext("/", exchange -> answer(exchange, rankBearer));
+        CountDownLatch canceledLoginStarted = new CountDownLatch(1);
+        CountDownLatch releaseCanceledLogin = new CountDownLatch(1);
+        CountDownLatch canceledLoginAnswered = new CountDownLatch(1);
+        http.createContext("/", exchange -> answer(exchange, rankBearer,
+                canceledLoginStarted, releaseCanceledLogin, canceledLoginAnswered));
         http.start();
         CountDownLatch socketClosed = new CountDownLatch(1);
         AtomicReference<Throwable> peerFailure = new AtomicReference<Throwable>();
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             Thread peer = new Thread(() -> {
-                try (Socket accepted = socket.accept()) { serveWebSocket(accepted, socketClosed); }
+                try {
+                    try (Socket accepted = socket.accept()) { serveWebSocket(accepted, socketClosed); }
+                    try (Socket rejected = socket.accept()) { serveUnauthorized(rejected); }
+                }
                 catch (Throwable failure) { peerFailure.set(failure); }
             }, "ranked-app-ws-fixture");
             peer.setDaemon(true); peer.start();
@@ -72,12 +79,39 @@ public final class RankedApplicationFlowTest {
                     button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").doClick();
                 });
                 check("LOGIN".equals(app[0].getCurrentScreen()), "Account login must open from settings");
-                login(app[0], "Player_01", "password-a");
-                await(() -> "SETTINGS".equals(app[0].getCurrentScreen()), "First account login");
+                onEdt(() -> button(child(app[0].getScreens(), LoginPanel.class), "설정으로").doClick());
+                check("SETTINGS".equals(app[0].getCurrentScreen()), "Account cancel must return to settings");
                 onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
-                onEdt(() -> app[0].openOnline(new ConnectionOptions(
-                        URI.create("ws://127.0.0.1:" + socket.getLocalPort() + "/ws"), "token-A")));
-                await(() -> app[0].isOnlineConnected(), "First account WebSocket");
+                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
+                check("LOGIN".equals(app[0].getCurrentScreen()), "Online entry must request login directly");
+                onEdt(() -> app[0].getScreens().getActionMap().get("navigate-back")
+                        .actionPerformed(new java.awt.event.ActionEvent(app[0].getScreens(), 0, "escape")));
+                check("LOBBY".equals(app[0].getCurrentScreen()), "Login ESC must return to lobby");
+                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
+                int completedBeforeCancel = app[0].getCompletedAuthRequests();
+                login(app[0], "cancel_user", "password-a");
+                check(canceledLoginStarted.await(5, TimeUnit.SECONDS), "Canceled login did not start");
+                onEdt(() -> {
+                    button(child(app[0].getScreens(), LoginPanel.class), "취소").doClick();
+                    button(child(app[0].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick();
+                });
+                releaseCanceledLogin.countDown();
+                check(canceledLoginAnswered.await(5, TimeUnit.SECONDS), "Canceled login did not finish");
+                await(() -> app[0].getCompletedAuthRequests() > completedBeforeCancel,
+                        "Canceled login completion callback");
+                check("LOGIN".equals(app[0].getCurrentScreen()) && !app[0].isSignedIn(),
+                        "Canceled login must not sign in or follow a later destination");
+                onEdt(() -> button(child(app[0].getScreens(), LoginPanel.class), "취소").doClick());
+                onEdt(() -> {
+                    button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
+                    button(child(app[0].getScreens(), LoginPanel.class), "회원가입").doClick();
+                });
+                check("SIGN_UP".equals(app[0].getCurrentScreen()), "Signup must preserve online destination");
+                onEdt(() -> button(child(app[0].getScreens(), kr.ac.jbnu.se.tetris.ui.seongeun.panels.SignUpPanel.class),
+                        "돌아가기").doClick());
+                login(app[0], "Player_01", "password-a");
+                await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen()) && app[0].isOnlineConnected(),
+                        "Login must resume online room entry");
                 onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "로비로").doClick());
                 check(socketClosed.await(5, TimeUnit.SECONDS), "Old account socket remained open");
                 await(() -> !app[0].isOnlineConnected() && "LOBBY".equals(app[0].getCurrentScreen()),
@@ -88,18 +122,26 @@ public final class RankedApplicationFlowTest {
                 });
                 await(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").isEnabled(),
                         "Settings account logout");
-                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").doClick());
-                await(() -> "LOGIN".equals(app[0].getCurrentScreen()), "Settings account switch");
-                login(app[0], "b@example.test", "password-b");
-                await(() -> "SETTINGS".equals(app[0].getCurrentScreen()), "Second account login");
                 onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
-                onEdt(() -> menuItem(app[0].getMenu(), "온라인 PvP 랭킹").doClick());
+                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick());
+                check("LOGIN".equals(app[0].getCurrentScreen()), "Ranking entry must request login directly");
+                login(app[0], "b@example.test", "password-b");
                 await(() -> {
                     LeaderboardPanel panel = child(app[0].getScreens(), LeaderboardPanel.class);
                     JTable table = child(panel, JTable.class);
-                    return table.getRowCount() == 1 && "Player B".equals(table.getValueAt(0, 1));
-                }, "Second account leaderboard");
+                    return "LEADERBOARD".equals(app[0].getCurrentScreen())
+                            && table.getRowCount() == 1 && "Player B".equals(table.getValueAt(0, 1));
+                }, "Login must resume ranking");
                 check("Bearer token-B".equals(rankBearer.get()), "Leaderboard used old account token");
+                onEdt(() -> {
+                    button(child(app[0].getScreens(), LeaderboardPanel.class), "로비로").doClick();
+                    button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
+                });
+                await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen())
+                        && button(child(app[0].getScreens(), RoomListPanel.class), "다시 로그인") != null,
+                        "Rejected ranked token must request login instead of repeating the same token");
+                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "다시 로그인").doClick());
+                check("LOGIN".equals(app[0].getCurrentScreen()), "Rejected token retry must open login");
                 if (peerFailure.get() != null) throw new AssertionError("WebSocket fixture failure", peerFailure.get());
                 System.out.println("PASS RankedApplicationFlowTest");
             } finally {
@@ -123,14 +165,26 @@ public final class RankedApplicationFlowTest {
         });
     }
 
-    private static void answer(HttpExchange exchange, AtomicReference<String> rankBearer) throws IOException {
+    private static void answer(HttpExchange exchange, AtomicReference<String> rankBearer,
+            CountDownLatch canceledLoginStarted, CountDownLatch releaseCanceledLogin,
+            CountDownLatch canceledLoginAnswered) throws IOException {
         byte[] request = readAll(exchange.getRequestBody());
         String body = new String(request, StandardCharsets.UTF_8);
         String path = exchange.getRequestURI().getPath();
         String response;
         if ("/auth/v1/token".equals(path)) {
+            boolean canceled = body.contains("cancel_user@players.campus-quest.invalid");
+            if (canceled) {
+                canceledLoginStarted.countDown();
+                try {
+                    if (!releaseCanceledLogin.await(5, TimeUnit.SECONDS))
+                        throw new IOException("Canceled login response was not released");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt(); throw new IOException(interrupted);
+                }
+            }
             if (!body.contains("b@example.test"))
-                check(body.contains("player_01@players.campus-quest.invalid"),
+                check(body.contains("player_01@players.campus-quest.invalid") || canceled,
                         "ID login must use stable internal Auth address");
             boolean second = body.contains("b@example.test");
             String id = second ? USER_B : USER_A;
@@ -146,6 +200,17 @@ public final class RankedApplicationFlowTest {
             send(exchange, 404, "{\"code\":\"not_found\"}"); return;
         }
         send(exchange, 200, response);
+        if (body.contains("cancel_user@players.campus-quest.invalid")) canceledLoginAnswered.countDown();
+    }
+
+    private static void serveUnauthorized(Socket socket) throws Exception {
+        socket.setSoTimeout(15000);
+        String request = new String(readHeaders(socket.getInputStream()), StandardCharsets.US_ASCII);
+        check(request.contains("Authorization: Bearer token-B\r\n"), "Rejected account bearer header");
+        OutputStream output = socket.getOutputStream();
+        output.write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .getBytes(StandardCharsets.US_ASCII));
+        output.flush();
     }
 
     private static void serveWebSocket(Socket socket, CountDownLatch closed) throws Exception {
