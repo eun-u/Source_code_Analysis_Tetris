@@ -32,7 +32,7 @@ JDK 8 이상이 필요합니다. `-JdkHome`은 `JAVA_HOME`에 JDK가 설정돼 �
 
 9전투의 HP, 플레이어 낙하 속도, 몬스터 행동 간격, AI 탐색 한도, 공격 배율, 추가 가비지, 몬스터 아이템 레벨은 [`stages.properties`](src/main/resources/story/stages.properties) 한 파일에서 수정합니다. 몬스터 등급과 이름도 각 전투에 함께 지정합니다. 공통 전투 공식은 [`balance.properties`](src/main/resources/battle/balance.properties), AI 평가 가중치는 [`profiles.properties`](src/main/resources/ai/profiles.properties)에 있습니다. 설정 변경 뒤 `-Task Test`로 검증합니다.
 
-제품 화면은 `ui/seongeun`과 `app/SeongeunApplication`을 사용합니다. `core`, `battle`, `item`, `story`, `ai`, `network`, `ranking`이 게임 규칙과 통신을 담당합니다. `app/TetrisApplication`과 옛 `ui` 패널은 기존 화면 회귀 테스트용으로 남아 있습니다. 서버와 클라이언트 산출물은 `pom.xml`에서 분리합니다.
+제품 화면은 `ui/seongeun`과 `app/SeongeunApplication`을 사용합니다. `core`, `battle`, `item`, `story`, `ai`, `network`, `ranking`이 게임 규칙과 통신을 담당합니다. 서버와 클라이언트 산출물은 `pom.xml`에서 분리합니다.
 
 ## 로컬 및 공식 온라인 대전
 

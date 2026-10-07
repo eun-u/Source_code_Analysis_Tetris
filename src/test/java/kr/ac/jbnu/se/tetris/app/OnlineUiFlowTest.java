@@ -2,118 +2,145 @@ package kr.ac.jbnu.se.tetris.app;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
-import javax.swing.JButton;
-import javax.swing.JLabel;
-import javax.swing.JTextField;
+import javax.swing.AbstractButton;
 import javax.swing.SwingUtilities;
-import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.network.ConnectionOptions;
-import kr.ac.jbnu.se.tetris.network.RoomCommand;
 import kr.ac.jbnu.se.tetris.network.server.LocalGameServer;
 
-/** 실제 서버와 두 앱의 로비·대전·결과·재대결·나가기 연결 검증 */
+/** 현재 화면에서 서버 거절, 재대결 중 퇴장, 대체 참가자 입장을 검증한다. */
 public final class OnlineUiFlowTest {
+    private OnlineUiFlowTest() { }
+
     public static void main(String[] args) throws Exception {
-        TetrisApplication[] apps = new TetrisApplication[3];
+        SeongeunApplication[] apps = new SeongeunApplication[3];
         try (LocalGameServer server = new LocalGameServer(0)) {
             server.start();
             try {
-                SwingUtilities.invokeAndWait(() -> {
+                onEdt(() -> {
                     for (int i = 0; i < 2; i++) {
-                        apps[i] = new TetrisApplication();
-                        button(apps[i], "localLogin").doClick();
-                        button(apps[i], "onlinePvP").doClick();
-                        field(apps[i], "serverPort").setText(Integer.toString(server.getPort()));
-                        button(apps[i], "connectServer").doClick();
+                        apps[i] = new SeongeunApplication(new Random(i + 401), null);
+                        apps[i].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
                     }
                 });
-                awaitEdt(() -> button(apps[0], "createRoom").isEnabled() && button(apps[1], "createRoom").isEnabled(), "connected lobby");
-                SwingUtilities.invokeAndWait(() -> button(apps[0], "createRoom").doClick());
-                awaitEdt(() -> !field(apps[0], "roomId").getText().isEmpty(), "room ID shown");
-                SwingUtilities.invokeAndWait(() -> {
-                    field(apps[1], "roomId").setText(field(apps[0], "roomId").getText());
-                    button(apps[1], "joinRoom").doClick();
+                await(() -> apps[0].isOnlineConnected() && apps[1].isOnlineConnected(), "connected lobby");
+                onEdt(() -> apps[0].createRoomWithName("회귀 테스트"));
+                await(() -> apps[0].getRoomState() != null, "room created");
+                String roomId = onEdtString(() -> apps[0].getRoomState().getRoomId());
+                onEdt(() -> apps[1].joinRoom(roomId));
+                await(() -> apps[1].getRoomState() != null
+                        && apps[1].getRoomState().getReadyByParticipantId().size() == 2,
+                        "both participants in waiting room");
+                onEdt(() -> {
+                    check("WAITING_ROOM".equals(apps[0].getCurrentScreen()), "host waiting screen");
+                    check("WAITING_ROOM".equals(apps[1].getCurrentScreen()), "guest waiting screen");
+                    ready(apps[0]); ready(apps[1]);
                 });
-                awaitEdt(() -> button(apps[1], "roomReady").isEnabled(), "joined room ready control");
-                SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
-                awaitEdt(() -> running(apps[0]) && running(apps[1]), "two battle screens");
-                SwingUtilities.invokeAndWait(() -> {
-                    check(!apps[0].isGravityRunning() && !apps[0].isAiTimerRunning(), "online owns no local tick or AI timer");
-                    check(!button(apps[0], "battlePause").isEnabled(), "pause disabled");
-                    apps[0].submit(GameAction.Type.HOLD);
-                });
-                awaitEdt(() -> apps[0].getState().getHoldPiece() != null, "server hold rendered");
-                long deadline = System.nanoTime() + 15_000_000_000L;
-                while (!onEdt(() -> finished(apps[0])) && System.nanoTime() < deadline) {
-                    SwingUtilities.invokeAndWait(() -> apps[0].submit(GameAction.Type.HARD_DROP));
+                await(() -> running(apps[0]) && running(apps[1]), "first match running");
+                onEdt(() -> apps[0].submit(GameAction.Type.HOLD));
+                await(() -> apps[0].getMatchSnapshot().getBattleState()
+                                .getParticipant(apps[0].getRoomState().getLocalParticipantId())
+                                .getGameState().getHoldPiece() != null,
+                        "server hold rendered");
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+                while (!onEdtBoolean(() -> finished(apps[0])) && System.nanoTime() < deadline) {
+                    onEdt(() -> apps[0].submit(GameAction.Type.HARD_DROP));
                     Thread.sleep(50);
                 }
-                awaitEdt(() -> finished(apps[0]) && finished(apps[1]), "top out result screens");
-                SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0], "retry").doClick();
-                    apps[0].sendRoomCommand(RoomCommand.createRoom(2));
+                await(() -> finished(apps[0]) && finished(apps[1]), "both results delivered");
+                onEdt(() -> {
+                    button(apps[0], "대기방으로").doClick();
+                    apps[0].createRoomWithName("중복 요청");
                 });
-                awaitEdt(() -> ((JLabel) find(apps[0].getRouter().getContainer(), "onlineStatus"))
-                        .getText().contains("ALREADY_IN_ROOM"), "unrelated request rejection delivered");
-                SwingUtilities.invokeAndWait(() -> {
-                    check("online".equals(apps[0].getRouter().getCurrentId())
-                            && button(apps[0], "roomReady").isEnabled(), "original return goes to waiting room");
-                    button(apps[1], "retry").doClick();
+                await(() -> apps[0].getLastMessage() != null
+                        && apps[0].getLastMessage().contains("ALREADY_IN_ROOM"),
+                        "unrelated create request rejected");
+                onEdt(() -> {
+                    check("WAITING_ROOM".equals(apps[0].getCurrentScreen()), "rejection retains original room");
+                    button(apps[1], "대기방으로").doClick();
                 });
-                awaitEdt(() -> "online".equals(apps[1].getRouter().getCurrentId())
-                        && button(apps[1], "roomReady").isEnabled(), "opponent returns to waiting room");
-                SwingUtilities.invokeAndWait(() -> { button(apps[0], "roomReady").doClick(); button(apps[1], "roomReady").doClick(); });
-                awaitEdt(() -> running(apps[0]) && running(apps[1]), "rematch battle screens");
-                SwingUtilities.invokeAndWait(() -> apps[0].showHome());
-                awaitEdt(() -> finished(apps[1]), "leaving opponent result");
-                SwingUtilities.invokeAndWait(() -> {
-                    check("home".equals(apps[0].getRouter().getCurrentId()), "leaving client stays home");
-                    check("FORFEIT".equals(apps[1].getBattleState().getReason()), "disconnect forfeits");
-                    apps[2] = new TetrisApplication();
-                    apps[2].connectOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
+                await(() -> "WAITING_ROOM".equals(apps[1].getCurrentScreen()), "opponent returned to room");
+                onEdt(() -> { ready(apps[0]); ready(apps[1]); });
+                await(() -> running(apps[0]) && running(apps[1]), "rematch running");
+                onEdt(() -> button(apps[0], "대전 포기 [ESC]").doClick());
+                await(() -> "LOBBY".equals(apps[0].getCurrentScreen()) && finished(apps[1]),
+                        "leaving client home and opponent result");
+                onEdt(() -> {
+                    check("FORFEIT".equals(apps[1].getMatchSnapshot().getBattleState().getReason()),
+                            "disconnect forfeits");
+                    apps[2] = new SeongeunApplication(new Random(403), null);
+                    apps[2].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
                 });
-                awaitEdt(() -> button(apps[2], "createRoom").isEnabled(), "replacement participant connected");
-                SwingUtilities.invokeAndWait(() -> apps[2].sendRoomCommand(RoomCommand.joinRoom(field(apps[1], "roomId").getText())));
-                awaitEdt(() -> "online".equals(apps[1].getRouter().getCurrentId())
-                        && button(apps[1], "roomReady").isEnabled()
-                        && button(apps[2], "roomReady").isEnabled(), "existing participant returns to lobby for new opponent");
-                SwingUtilities.invokeAndWait(() -> { button(apps[1], "roomReady").doClick(); button(apps[2], "roomReady").doClick(); });
-                awaitEdt(() -> running(apps[1]) && running(apps[2]), "new opponent starts new match");
+                await(() -> apps[2].isOnlineConnected(), "replacement connected");
+                onEdt(() -> apps[2].joinRoom(roomId));
+                await(() -> apps[2].getRoomState() != null
+                        && apps[2].getRoomState().getReadyByParticipantId().size() == 2,
+                        "replacement joined original room");
+                onEdt(() -> button(apps[1], "대기방으로").doClick());
+                await(() -> "WAITING_ROOM".equals(apps[1].getCurrentScreen())
+                        && "WAITING_ROOM".equals(apps[2].getCurrentScreen()),
+                        "original participant sees replacement");
+                onEdt(() -> { ready(apps[1]); ready(apps[2]); });
+                await(() -> running(apps[1]) && running(apps[2]), "replacement match running");
             } finally {
-                SwingUtilities.invokeAndWait(() -> { for (TetrisApplication app : apps) if (app != null) app.close(); });
+                onEdt(() -> { for (SeongeunApplication app : apps) if (app != null) app.close(); });
             }
         }
-        System.out.println("PASS OnlineUiFlowTest: real socket lobby, match, result, rematch and disconnect without native windows");
+        System.out.println("PASS OnlineUiFlowTest: current UI rejection and replacement peer");
     }
-    private static boolean running(TetrisApplication app) {
-        return "battle".equals(app.getRouter().getCurrentId()) && app.getBattleState() != null
-                && app.getBattleState().getStatus() == BattleState.Status.RUNNING;
+
+    private static boolean running(SeongeunApplication app) {
+        return "BATTLE".equals(app.getCurrentScreen()) && app.getMatchSnapshot() != null
+                && app.getMatchSnapshot().getPhase() == SessionPhase.RUNNING;
     }
-    private static boolean finished(TetrisApplication app) {
-        return "result".equals(app.getRouter().getCurrentId()) && app.getBattleState() != null
-                && app.getBattleState().getStatus() == BattleState.Status.FINISHED;
+    private static boolean finished(SeongeunApplication app) {
+        return "RESULT".equals(app.getCurrentScreen()) && app.getMatchSnapshot() != null
+                && app.getMatchSnapshot().getPhase() == SessionPhase.FINISHED;
     }
-    private static Component find(Container root, String name) {
-        for (Component component : root.getComponents()) {
-            if (name.equals(component.getName())) return component;
-            if (component instanceof Container) {
-                Component found = find((Container) component, name); if (found != null) return found;
-            }
+    private static void ready(SeongeunApplication app) {
+        AbstractButton control = findButton(app.getScreens(), null, "waitingReady");
+        check(control != null && control.isEnabled(), "ready control enabled");
+        control.doClick();
+    }
+    private static AbstractButton button(SeongeunApplication app, String label) {
+        AbstractButton control = findButton(app.getScreens(), label, null);
+        check(control != null, "button visible: " + label);
+        return control;
+    }
+    private static AbstractButton findButton(Component root, String label, String name) {
+        if (root instanceof AbstractButton) {
+            AbstractButton result = (AbstractButton) root;
+            if (label != null ? label.equals(result.getText()) : name.equals(result.getName())) return result;
+        }
+        if (root instanceof Container) for (Component child : ((Container) root).getComponents()) {
+            AbstractButton found = findButton(child, label, name);
+            if (found != null) return found;
         }
         return null;
     }
-    private static JButton button(TetrisApplication app, String name) { return (JButton) find(app.getRouter().getContainer(), name); }
-    private static JTextField field(TetrisApplication app, String name) { return (JTextField) find(app.getRouter().getContainer(), name); }
-    private static boolean onEdt(BooleanSupplier predicate) throws Exception {
-        AtomicBoolean result = new AtomicBoolean(); SwingUtilities.invokeAndWait(() -> result.set(predicate.getAsBoolean())); return result.get();
+    private static boolean onEdtBoolean(BooleanSupplier predicate) throws Exception {
+        AtomicBoolean value = new AtomicBoolean();
+        onEdt(() -> value.set(predicate.getAsBoolean()));
+        return value.get();
     }
-    private static void awaitEdt(BooleanSupplier predicate, String message) throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!onEdt(predicate) && System.nanoTime() < deadline) Thread.sleep(10);
-        check(onEdt(predicate), message);
+    private static String onEdtString(java.util.function.Supplier<String> supplier) throws Exception {
+        String[] value = new String[1]; onEdt(() -> value[0] = supplier.get()); return value[0];
     }
-    private static void check(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private static void await(BooleanSupplier predicate, String label) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (onEdtBoolean(predicate)) return;
+            Thread.sleep(10);
+        }
+        throw new AssertionError(label);
+    }
+    private static void onEdt(Runnable action) throws Exception { SwingUtilities.invokeAndWait(action); }
+    private static void check(boolean condition, String label) {
+        if (!condition) throw new AssertionError(label);
+    }
 }

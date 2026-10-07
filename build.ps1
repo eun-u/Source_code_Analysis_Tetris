@@ -73,7 +73,7 @@ if ($Task -eq 'Preview') {
 } elseif ($Task -eq 'NetworkFixture') {
     & $java '-Djava.awt.headless=true' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.support.OnlinePreviewScenario
 } elseif ($Task -eq 'GuiTest') {
-    & $java '-Djava.awt.headless=false' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.ui.DesktopSmoke (Join-Path $projectRoot 'out\g0')
+    & $java '-Djava.awt.headless=false' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.ui.seongeun.BoardKeyboardDesktopSmoke
 } elseif ($Task -eq 'Run') {
     & (Join-Path $selectedJdk 'bin\javaw.exe') -jar $jarPath
 } elseif ($Task -eq 'Server') {
