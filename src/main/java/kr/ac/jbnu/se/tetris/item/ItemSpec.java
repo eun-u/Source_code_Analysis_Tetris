@@ -20,9 +20,9 @@ public final class ItemSpec {
     /** 기획 9.3: H=HP, L=라인, G=기타. */
     public static Category categoryOf(String id) {
         if ("damage_boost".equals(id) || "heal".equals(id) || "shield".equals(id)) return Category.H;
-        if ("garbage_bomb".equals(id) || "line_cleaner".equals(id)
-                || "time_warp".equals(id)) return Category.L;
-        if ("fever_charge".equals(id) || "nullify".equals(id)) return Category.G;
+        if ("garbage_bomb".equals(id) || "line_cleaner".equals(id)) return Category.L;
+        if ("fever_charge".equals(id) || "time_warp".equals(id)
+                || "nullify".equals(id)) return Category.G;
         throw new IllegalArgumentException("Unknown item: " + id);
     }
 

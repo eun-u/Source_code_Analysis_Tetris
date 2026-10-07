@@ -264,7 +264,7 @@ public final class RpgBattleRulesTest {
                 && ItemSpec.categoryOf("shield") == ItemSpec.Category.H
                 && ItemSpec.categoryOf("line_cleaner") == ItemSpec.Category.L
                 && ItemSpec.categoryOf("fever_charge") == ItemSpec.Category.G
-                && ItemSpec.categoryOf("time_warp") == ItemSpec.Category.L
+                && ItemSpec.categoryOf("time_warp") == ItemSpec.Category.G
                 && ItemSpec.categoryOf("nullify") == ItemSpec.Category.G,
                 "all eight item categories follow H/L/G specification");
         BattleManager heal = squares(seedFor("heal", null), 10000);
