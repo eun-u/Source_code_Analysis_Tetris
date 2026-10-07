@@ -142,6 +142,13 @@ public class Board extends JPanel {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            // 가비지를 받으면 보드가 짧게 흔들려 맞았다는 것을 몸으로 느끼게 한다.
+            long hitAge = System.currentTimeMillis() - garbageAt;
+            if (garbageAt > 0 && hitAge >= 0 && hitAge < 280) {
+                int amp = Math.round(6 * (1 - hitAge / 280f));
+                g.translate((int) Math.round(Math.sin(hitAge / 12.0) * amp), (int) Math.round(Math.cos(hitAge / 9.0) * amp / 2.0));
+            }
             int cell = Math.max(1, Math.min(getWidth() / COLUMNS, getHeight() / ROWS));
             int width = cell * COLUMNS, height = cell * ROWS;
             int left = (getWidth() - width) / 2, top = (getHeight() - height) / 2;
@@ -201,7 +208,7 @@ public class Board extends JPanel {
                 g.setColor(new Color(8, 14, 27, 198));
                 g.fillRect(left, top, width, height);
                 g.setColor(Color.WHITE);
-                g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(14, cell)));
+                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(14, cell), Font.BOLD));
                 String label = overlayText != null ? overlayText
                         : state.getStatus() == GameState.Status.PAUSED ? "PAUSED" : "GAME OVER";
                 g.drawString(label, left + (width - g.getFontMetrics().stringWidth(label)) / 2, top + height / 2);
@@ -236,11 +243,11 @@ public class Board extends JPanel {
             g.setColor(new Color(11, 11, 46, 210));
             g.fillRect(left + 4, top + height / 2 - 22, width - 8, 48);
             g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
-            g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(11, Math.min(21, width / 13))));
+            g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(11, Math.min(22, width / 12)), Font.BOLD));
             String text = perfectClear ? "PERFECT CLEAR" : clearCount == 4 ? "TETRIS!" : clearCount + " LINE CLEAR";
             g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, top + height / 2);
             if (clearCombo > 0) {
-                g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(10, Math.min(16, width / 15))));
+                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(10, Math.min(16, width / 15)), Font.BOLD));
                 String combo = "COMBO " + clearCombo;
                 g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, top + height / 2 + 20);
             }

@@ -32,6 +32,7 @@ public final class RpgWireStateTest {
         Map<String, ParticipantState> participants = new LinkedHashMap<String, ParticipantState>();
         participants.put("p", BattleSnapshots.participant("p", "학생", 83, 100, game, false,
                 "student", 3, Arrays.asList("heal", "time_warp", "shield"),
+                Arrays.asList(2, 1, 1),
                 100, 4000, 3000, 4, 1500, 550, 5, 74));
         participants.put("m", BattleSnapshots.participant("m", "몬스터", 95, 100,
                 other.getState(), false));
@@ -43,6 +44,20 @@ public final class RpgWireStateTest {
         ParticipantState p = actual.getParticipant("p");
         check(actual.getElapsedMillis() == 61234, "전투 시간 보존");
         check(p.getItems().equals(Arrays.asList("heal", "time_warp", "shield")), "슬롯 순서 보존");
+        check(p.getItemCharges().equals(Arrays.asList(2, 1, 1)), "아이템별 충전량 보존");
+        Map<String, Object> legacy = WireCodec.object(
+                StrictJson.parse(StrictJson.stringify(WireSnapshots.encode(expected))));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldPlayer = (Map<String, Object>) ((java.util.List<?>)
+                legacy.get("participants")).get(0);
+        oldPlayer.remove("itemCharges");
+        check(WireSnapshots.decode(legacy).getParticipant("p").getItemCharges()
+                .equals(Arrays.asList(1, 1, 1)), "구버전 패킷은 슬롯마다 1회로 복원");
+        oldPlayer.put("itemCharges", Arrays.asList(3L, 1L, 1L));
+        try {
+            WireSnapshots.decode(legacy);
+            throw new AssertionError("잘못된 충전량 거부 필요");
+        } catch (java.io.IOException expectedError) { /* expected */ }
         check(p.isFeverActive() && p.getFeverRemainingMillis() == 4000
                 && p.getTimeWarpRemainingMillis() == 3000, "지속 효과 보존");
         check(p.getPendingGarbageLines() == 4 && p.getGarbageWaitRemainingMillis() == 1500

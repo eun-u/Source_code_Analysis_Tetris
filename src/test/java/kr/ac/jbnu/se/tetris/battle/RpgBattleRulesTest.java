@@ -19,6 +19,7 @@ import kr.ac.jbnu.se.tetris.core.GameEngine;
 import kr.ac.jbnu.se.tetris.core.PieceGenerator;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.core.SevenBagGenerator;
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import kr.ac.jbnu.se.tetris.story.MonsterSpec;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.story.StageCatalog;
@@ -31,6 +32,7 @@ public final class RpgBattleRulesTest {
         encounterProfilesAndBossBoundaries();
         monsterItemLevelsLimitSpawnsAndUse();
         actualItemPickupAndUse();
+        detailedItemChargeRules();
         perfectClearPreservesAutomaticItems();
         itemEventsTrackConsumptionAndReacquisition();
         feverAndTimeWarpExpire();
@@ -183,8 +185,8 @@ public final class RpgBattleRulesTest {
         check(itemEvent(healed, BattleEvent.Type.ITEM_USED, "a", "a", "heal") != null,
                 "accepted heal emits actual item use");
         check(heal.getState().getParticipant("a").getHp() == 70
-                && !heal.getState().getParticipant("a").getItems().contains("heal"),
-                "one-use heal restores ten percent of max HP and frees slot");
+                && heal.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(1)),
+                "first heal restores ten percent and leaves one charge in its slot");
 
         BattleManager bomb = squares(seedFor("garbage_bomb", null), 10000);
         fillRows(bomb, "a", false);
@@ -211,17 +213,18 @@ public final class RpgBattleRulesTest {
                 "warp can be used");
         check(warp.getState().getParticipant("a").getGravityMillis() == 500
                 && warp.getState().getParticipant("a").getTimeWarpRemainingMillis() == 5000
-                && !warp.getState().getParticipant("a").getItems().contains("time_warp"),
-                "warp consumes immediately and slows gravity by 100ms for five seconds");
+                && warp.getState().getParticipant("a").getItems().contains("time_warp"),
+                "warp slows gravity and occupies its slot for five seconds");
         check(!warp.submitItem("a", new GameAction.ItemUse("time_warp", "a")).isAccepted(),
-                "unowned repeated use rejected");
+                "active warp cannot be used twice");
 
+        BattleManager nullifyEmpty = squares(seedFor("nullify", null), 10000);
+        fillRows(nullifyEmpty, "a", false);
+        BattleResult wasted = nullifyEmpty.submitItem("a", new GameAction.ItemUse("nullify", "b"));
+        check(wasted.isAccepted() && nullifyEmpty.getState().getParticipant("a").getItems().isEmpty(),
+                "nullify with empty opposing inventory consumes item");
         BattleManager nullify = squares(seedFor("nullify", null), 10000);
         fillRows(nullify, "a", false);
-        BattleState before = nullify.getState();
-        check(!nullify.submitItem("a", new GameAction.ItemUse("nullify", "b")).isAccepted()
-                && before.getParticipant("a").getItems().equals(nullify.getState().getParticipant("a").getItems()),
-                "nullify with empty opposing inventory keeps item");
         fillRows(nullify, "b", false);
         String victimItem = nullify.getState().getParticipant("b").getItems().get(0);
         BattleResult nullified = nullify.submitItem("a", new GameAction.ItemUse("nullify", "b"));
@@ -239,10 +242,10 @@ public final class RpgBattleRulesTest {
         BattleManager cleaner = squares(seedFor("line_cleaner", null), 10000);
         fillRows(cleaner, "a", false);
         BattleResult noClean = cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a"));
-        check(!noClean.isAccepted() && count(noClean, BattleEvent.Type.ITEM_USED) == 0,
-                "cleaner on empty board has no effect");
-        check(cleaner.getState().getParticipant("a").getItems().contains("line_cleaner"),
-                "failed cleaner use is not consumed");
+        check(noClean.isAccepted() && count(noClean, BattleEvent.Type.ITEM_USED) == 1,
+                "cleaner on empty board spends one use");
+        check(cleaner.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(1)),
+                "one cleaner charge remains");
         fillRows(cleaner, "b", false);
         fillRows(cleaner, "b", false);
         cleaner.advance(2000);
@@ -252,6 +255,80 @@ public final class RpgBattleRulesTest {
         BattleResult clean = cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a"));
         check(clean.isAccepted() && !cleaner.getState().getParticipant("a").getItems().contains("line_cleaner"),
                 "cleaner removes one landed garbage row and consumes one use");
+    }
+
+    private static void detailedItemChargeRules() {
+        check(ItemSpec.categoryOf("damage_boost") == ItemSpec.Category.H
+                && ItemSpec.categoryOf("garbage_bomb") == ItemSpec.Category.L
+                && ItemSpec.categoryOf("heal") == ItemSpec.Category.H
+                && ItemSpec.categoryOf("shield") == ItemSpec.Category.H
+                && ItemSpec.categoryOf("line_cleaner") == ItemSpec.Category.L
+                && ItemSpec.categoryOf("fever_charge") == ItemSpec.Category.G
+                && ItemSpec.categoryOf("time_warp") == ItemSpec.Category.L
+                && ItemSpec.categoryOf("nullify") == ItemSpec.Category.G,
+                "all eight item categories follow H/L/G specification");
+        BattleManager heal = squares(seedFor("heal", null), 10000);
+        fillRows(heal, "a", false);
+        check(heal.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(2)),
+                "healing item begins with two uses in one slot");
+        fillRows(heal, "b", false);
+        check(heal.submitItem("a", new GameAction.ItemUse("heal", "a")).isAccepted(),
+                "first heal use");
+        check(heal.submitItem("a", new GameAction.ItemUse("heal", "a")).isAccepted()
+                && heal.getState().getParticipant("a").getHp() == 80
+                && heal.getState().getParticipant("a").getItems().isEmpty(),
+                "second heal use frees slot");
+
+        BattleManager bomb = squares(seedFor("garbage_bomb", null), 10000);
+        fillRows(bomb, "a", false);
+        check(bomb.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(2)),
+                "bomb has two charges");
+        check(bomb.submitItem("a", new GameAction.ItemUse("garbage_bomb", "b")).isAccepted()
+                && bomb.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(1)),
+                "bomb first use retains slot");
+        check(bomb.submitItem("a", new GameAction.ItemUse("garbage_bomb", "b")).isAccepted()
+                && bomb.getState().getParticipant("a").getItems().isEmpty(),
+                "bomb second use empties slot");
+
+        BattleManager cleaner = squares(seedFor("line_cleaner", null), 10000);
+        fillRows(cleaner, "a", false);
+        check(cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a")).isAccepted()
+                && cleaner.getState().getParticipant("a").getItemCharges().equals(Arrays.asList(1)),
+                "empty board burns first cleaner charge");
+        check(cleaner.submitItem("a", new GameAction.ItemUse("line_cleaner", "a")).isAccepted()
+                && cleaner.getState().getParticipant("a").getItems().isEmpty(),
+                "empty board burns second cleaner charge");
+
+        BattleManager nullify = squares(seedForTwoChargeNullifyTarget(), 10000);
+        fillRows(nullify, "a", false);
+        fillRows(nullify, "b", false);
+        fillRows(nullify, "b", false);
+        check(nullify.getState().getParticipant("b").getItemCharges().get(1) == 2,
+                "target owns two-charge slot");
+        check(nullify.submitItem("a", new GameAction.ItemUse("nullify", "b")).isAccepted()
+                && nullify.getState().getParticipant("b").getItems().size() == 1,
+                "nullify discards entire two-charge slot");
+
+        BattleManager warp = squares(seedFor("time_warp", null), 10000);
+        fillRows(warp, "a", false);
+        check(warp.submitItem("a", new GameAction.ItemUse("time_warp", "a")).isAccepted()
+                && warp.getState().getParticipant("a").getItems().size() == 1,
+                "active warp occupies slot");
+        check(warp.advance(5000).isAccepted()
+                && warp.getState().getParticipant("a").getItems().isEmpty(),
+                "warp slot expires at five seconds");
+
+        BattleManager fever = squares(seedFor("fever_charge", null), 10000);
+        for (int i = 0; i < 20; i++) fillRows(fever, "a", false);
+        check(fever.getState().getParticipant("a").isFeverActive(),
+                "twenty double clears activate Fever");
+        int feverChargesBefore = java.util.Collections.frequency(
+                fever.getState().getParticipant("a").getItems(), "fever_charge");
+        check(fever.submitItem("a", new GameAction.ItemUse("fever_charge", "a")).isAccepted()
+                && java.util.Collections.frequency(fever.getState().getParticipant("a").getItems(),
+                        "fever_charge") == feverChargesBefore - 1
+                && fever.getState().getParticipant("a").getFever() == 0,
+                "Fever charge is spent without effect during active Fever");
     }
 
     private static void perfectClearPreservesAutomaticItems() {
@@ -430,6 +507,21 @@ public final class RpgBattleRulesTest {
             if (all) return seed;
         }
         throw new AssertionError("Repeated item seed not found");
+    }
+
+    private static long seedForTwoChargeNullifyTarget() {
+        List<String> items = Arrays.asList("damage_boost", "garbage_bomb", "heal", "shield",
+                "line_cleaner", "fever_charge", "time_warp", "nullify");
+        for (long seed = 0; seed < 1000000; seed++) {
+            int a = new Random(seed ^ (long) "a".hashCode()).nextInt(8);
+            Random b = new Random(seed ^ (long) "b".hashCode());
+            b.nextInt(8);
+            String second = items.get(b.nextInt(8));
+            if ("nullify".equals(items.get(a)) && ("garbage_bomb".equals(second)
+                    || "heal".equals(second) || "line_cleaner".equals(second))
+                    && new Random(seed ^ 0x2A6F19E5L).nextInt(2) == 1) return seed;
+        }
+        throw new AssertionError("Two-charge nullify target seed not found");
     }
 
     private static BattleEvent itemEvent(BattleResult result, BattleEvent.Type type,

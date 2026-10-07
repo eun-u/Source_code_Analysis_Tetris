@@ -16,6 +16,7 @@ public final class ParticipantState {
     private final String characterId;
     private final int itemSlots;
     private final List<String> items;
+    private final List<Integer> itemCharges;
     private final int fever;
     private final long feverRemainingMillis;
     private final long timeWarpRemainingMillis;
@@ -28,7 +29,8 @@ public final class ParticipantState {
     ParticipantState(String id, String name, int hp, int maxHp, GameState gameState,
                      boolean eliminated) {
         this(id, name, hp, maxHp, gameState, eliminated, "student", 3,
-                Collections.<String>emptyList(), 0, 0, 0, 0, 0, 500, 0, 0);
+                Collections.<String>emptyList(), Collections.<Integer>emptyList(),
+                0, 0, 0, 0, 0, 500, 0, 0);
     }
 
     ParticipantState(String id, String name, int hp, int maxHp, GameState gameState,
@@ -36,6 +38,17 @@ public final class ParticipantState {
             int fever, long feverRemainingMillis, long timeWarpRemainingMillis,
             int pendingGarbageLines, long garbageWaitRemainingMillis, int gravityMillis,
             int maxCombo, int totalDamage) {
+        this(id, name, hp, maxHp, gameState, eliminated, characterId, itemSlots, items,
+                Collections.nCopies(items.size(), 1), fever, feverRemainingMillis,
+                timeWarpRemainingMillis, pendingGarbageLines, garbageWaitRemainingMillis,
+                gravityMillis, maxCombo, totalDamage);
+    }
+
+    ParticipantState(String id, String name, int hp, int maxHp, GameState gameState,
+            boolean eliminated, String characterId, int itemSlots, List<String> items,
+            List<Integer> itemCharges, int fever, long feverRemainingMillis,
+            long timeWarpRemainingMillis, int pendingGarbageLines,
+            long garbageWaitRemainingMillis, int gravityMillis, int maxCombo, int totalDamage) {
         this.id = id;
         this.name = name;
         this.hp = hp;
@@ -45,6 +58,7 @@ public final class ParticipantState {
         this.characterId = characterId;
         this.itemSlots = itemSlots;
         this.items = Collections.unmodifiableList(new ArrayList<String>(items));
+        this.itemCharges = Collections.unmodifiableList(new ArrayList<Integer>(itemCharges));
         this.fever = fever;
         this.feverRemainingMillis = feverRemainingMillis;
         this.timeWarpRemainingMillis = timeWarpRemainingMillis;
@@ -64,6 +78,8 @@ public final class ParticipantState {
     public String getCharacterId() { return characterId; }
     public int getItemSlots() { return itemSlots; }
     public List<String> getItems() { return items; }
+    /** getItems()와 인덱스를 공유하는 슬롯별 남은 사용 횟수. */
+    public List<Integer> getItemCharges() { return itemCharges; }
     public int getFever() { return fever; }
     public boolean isFeverActive() { return feverRemainingMillis > 0; }
     public long getFeverRemainingMillis() { return feverRemainingMillis; }

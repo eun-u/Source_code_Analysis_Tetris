@@ -1,16 +1,26 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
+import javax.swing.UIManager;
+import javax.swing.border.Border;
+import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.ColorUIResource;
+import javax.swing.plaf.FontUIResource;
 
 /** University_Simulation의 임시 픽셀 UI 토큰을 Swing에 옮긴 공통 테마. */
 public final class UniversityPixelTheme {
@@ -19,11 +29,14 @@ public final class UniversityPixelTheme {
     public static final Color PANEL_LIGHT = new Color(0x2B2166);
     public static final Color TEXT = new Color(0xFFF7E8);
     public static final Color TEXT_SUB = new Color(0xC9C1F2);
+    public static final Color TEXT_MUTED = new Color(0x8C84BF);
     public static final Color GOLD = new Color(0xFFD166);
     public static final Color MINT = new Color(0x4EE39A);
     public static final Color CORAL = new Color(0xFF5C7A);
     public static final Color LINE = new Color(0x5148A6);
     public static final Color BLACK = new Color(0x03030D);
+    /** 화면 바깥 여백과 머리글 아래 간격. 모든 메뉴 화면이 같은 값을 쓴다. */
+    public static final int GUTTER = 22, HEADER_GAP = 16;
     private static final String FONT_FAMILY = chooseFont();
 
     private UniversityPixelTheme() { }
@@ -58,10 +71,132 @@ public final class UniversityPixelTheme {
         }
     }
 
+    /** 대화상자·툴팁·체크박스처럼 Swing이 직접 만드는 위젯도 같은 색으로 보이게 한다. */
+    public static void installDefaults() {
+        // 패널 기본색은 apply()가 칠하는 화면 배경과 같게 두어 기존 화면 색을 바꾸지 않는다.
+        ColorUIResource bg = new ColorUIResource(BG), text = new ColorUIResource(TEXT);
+        ColorUIResource light = new ColorUIResource(PANEL_LIGHT);
+        FontUIResource body = new FontUIResource(font(14, Font.PLAIN));
+        FontUIResource bold = new FontUIResource(font(13, Font.BOLD));
+        UIManager.put("OptionPane.background", bg);
+        UIManager.put("OptionPane.messageForeground", text);
+        UIManager.put("OptionPane.messageFont", body);
+        UIManager.put("OptionPane.buttonFont", bold);
+        UIManager.put("Panel.background", bg);
+        UIManager.put("Label.foreground", text);
+        UIManager.put("Button.background", light);
+        UIManager.put("Button.foreground", text);
+        UIManager.put("Button.select", new ColorUIResource(LINE));
+        UIManager.put("Button.focus", new ColorUIResource(GOLD));
+        UIManager.put("Button.font", bold);
+        UIManager.put("TextField.background", light);
+        UIManager.put("TextField.foreground", text);
+        UIManager.put("TextField.caretForeground", text);
+        UIManager.put("TextField.selectionBackground", new ColorUIResource(LINE));
+        UIManager.put("TextField.font", body);
+        UIManager.put("ToolTip.background", new ColorUIResource(BLACK));
+        UIManager.put("ToolTip.foreground", text);
+        UIManager.put("ToolTip.font", new FontUIResource(font(12, Font.PLAIN)));
+        UIManager.put("ToolTip.border", BorderFactory.createLineBorder(LINE, 2));
+        UIManager.put("CheckBox.background", bg);
+        UIManager.put("CheckBox.foreground", text);
+        UIManager.put("Slider.background", bg);
+        UIManager.put("Slider.foreground", new ColorUIResource(GOLD));
+        UIManager.put("Slider.tickColor", new ColorUIResource(TEXT_SUB));
+        UIManager.put("Slider.focus", bg);
+    }
+
+    public static JLabel label(String text, int size, int style, Color color) {
+        JLabel label = new JLabel(text);
+        label.setForeground(color);
+        label.setFont(font(size, style));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return label;
+    }
+
+    /** 패널 배경에 색 테두리와 안쪽 여백을 둔 기본 카드. */
+    public static Border cardBorder(Color accent, int thickness, int padding) {
+        return BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(accent, thickness),
+                new EmptyBorder(padding, padding + 2, padding, padding + 2));
+    }
+
+    /** 작은 상태 표시. 배경은 강조색, 글자는 대비가 큰 색으로 고른다. */
+    public static JLabel chip(String text, Color accent) {
+        JLabel chip = new JLabel(text);
+        chip.setOpaque(true);
+        chip.setFont(font(11, Font.BOLD));
+        setChip(chip, text, accent);
+        return chip;
+    }
+
+    public static void setChip(JLabel chip, String text, Color accent) {
+        chip.setText(text);
+        chip.setBackground(accent);
+        chip.setForeground(readableOn(accent));
+        chip.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BLACK, 2), new EmptyBorder(1, 6, 1, 6)));
+    }
+
+    /** 입력칸 공통 모양. 포커스가 있는 칸은 금색 테두리로 바뀐다. */
+    public static void styleField(final JTextField field) {
+        field.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 38));
+        field.setPreferredSize(new java.awt.Dimension(260, 38));
+        field.setFont(font(14, Font.PLAIN));
+        field.setForeground(TEXT);
+        field.setBackground(PANEL_LIGHT);
+        field.setCaretColor(TEXT);
+        field.setSelectionColor(LINE);
+        field.setSelectedTextColor(TEXT);
+        field.setBorder(fieldBorder(LINE));
+        field.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override public void focusGained(java.awt.event.FocusEvent event) { field.setBorder(fieldBorder(GOLD)); }
+            @Override public void focusLost(java.awt.event.FocusEvent event) { field.setBorder(fieldBorder(LINE)); }
+        });
+    }
+
+    private static Border fieldBorder(Color color) {
+        return BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(color, 2), new EmptyBorder(5, 9, 5, 9));
+    }
+
+    public static Color readableOn(Color background) {
+        double luminance = (0.299 * background.getRed() + 0.587 * background.getGreen()
+                + 0.114 * background.getBlue()) / 255d;
+        return luminance > 0.55 ? BLACK : TEXT;
+    }
+
+    /**
+     * 메뉴 화면 공통 머리글. 왼쪽에 작은 분류와 제목, 오른쪽에 행동 버튼을 둔다.
+     * 모든 화면에서 같은 위치·크기를 사용해 화면을 옮겨도 시선이 흔들리지 않게 한다.
+     */
+    public static JPanel screenHeader(String eyebrow, String title, JComponent... actions) {
+        JPanel header = new JPanel(new BorderLayout(16, 0));
+        header.setOpaque(false);
+        JPanel text = new JPanel();
+        text.setOpaque(false);
+        text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        if (eyebrow != null) {
+            text.add(label(eyebrow, 12, Font.BOLD, MINT));
+            text.add(Box.createVerticalStrut(3));
+        }
+        JLabel heading = label(title, 24, Font.BOLD, TEXT);
+        heading.setName("screenTitle");
+        text.add(heading);
+        header.add(text, BorderLayout.CENTER);
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        right.setOpaque(false);
+        for (JComponent action : actions) right.add(action);
+        JPanel align = new JPanel(new java.awt.GridBagLayout());
+        align.setOpaque(false);
+        align.add(right);
+        header.add(align, BorderLayout.EAST);
+        return header;
+    }
+
     private static boolean isThemeColor(Color color) {
         return BG.equals(color) || PANEL.equals(color) || PANEL_LIGHT.equals(color)
-                || TEXT.equals(color) || TEXT_SUB.equals(color) || GOLD.equals(color)
-                || MINT.equals(color) || CORAL.equals(color) || LINE.equals(color) || BLACK.equals(color);
+                || TEXT.equals(color) || TEXT_SUB.equals(color) || TEXT_MUTED.equals(color)
+                || GOLD.equals(color) || MINT.equals(color) || CORAL.equals(color)
+                || LINE.equals(color) || BLACK.equals(color);
     }
 
     private static String chooseFont() {

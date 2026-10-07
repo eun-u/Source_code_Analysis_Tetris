@@ -4,70 +4,115 @@ import java.awt.*;
 import java.awt.event.ActionListener;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
-public class LoginPanel extends JPanel {
+/** 첫 화면. 왼쪽은 계정 없이 바로 시작, 오른쪽은 온라인 PvP 계정 로그인. */
+public class LoginPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final JTextField idField = new JTextField(20);
     private final JPasswordField passwordField = new JPasswordField(20);
     private final GameButton loginButton = new GameButton("로컬 시작");
     private final GameButton signUpButton = new GameButton("회원가입");
     private final GameButton onlineLoginButton = new GameButton("온라인 로그인");
-    private final JLabel status = new JLabel("스토리는 계정 없이 플레이할 수 있습니다.");
+    private final JLabel status = new JLabel();
 
     public LoginPanel() {
-        setLayout(new BorderLayout());
+        setLayout(new BorderLayout(0, 12));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(20, 20, 20, 20));
+        setBorder(new EmptyBorder(20, 20, 18, 20));
 
+        JPanel title = new JPanel(); title.setOpaque(false);
+        title.setLayout(new BoxLayout(title, BoxLayout.Y_AXIS));
+        JLabel game = label("TETRIS MONSTER", 13, UniversityPixelTheme.MINT);
+        JLabel name = label("CAMPUS QUEST", 34, UniversityPixelTheme.GOLD);
+        title.add(game); title.add(Box.createVerticalStrut(2)); title.add(name);
+
+        // 제목과 두 카드를 한 덩어리로 화면 가운데에 둔다.
         JPanel content = new JPanel(new GridBagLayout()); content.setOpaque(false);
-        JPanel columns = new JPanel(new GridLayout(1, 2, 14, 0)); columns.setOpaque(false);
-        columns.setPreferredSize(new Dimension(660, 390));
+        JPanel block = new JPanel(new BorderLayout(0, 24)); block.setOpaque(false);
+        JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
+        columns.setPreferredSize(new Dimension(700, 400));
         columns.add(localCard()); columns.add(onlineCard());
-        content.add(columns); add(content, BorderLayout.CENTER);
+        block.add(title, BorderLayout.NORTH);
+        block.add(columns, BorderLayout.CENTER);
+        content.add(block); add(content, BorderLayout.CENTER);
 
-        JLabel foot = new JLabel("CAMPUS QUEST  ·  대학교 → 졸업 → 취업", SwingConstants.CENTER);
+        JLabel foot = new JLabel("대학교 → 졸업 → 취업  ·  테트리스로 싸우는 캠퍼스 RPG", SwingConstants.CENTER);
         foot.setForeground(UniversityPixelTheme.TEXT_SUB);
-        foot.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        foot.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
         add(foot, BorderLayout.SOUTH);
+        setStatus("PvP와 랭킹은 온라인 계정이 필요합니다.");
     }
 
     private JPanel localCard() {
         JPanel card = card(UniversityPixelTheme.GOLD);
-        JLabel eyebrow = label("STORY MODE", 14, UniversityPixelTheme.GOLD);
-        JLabel title = label("캠퍼스 퀘스트", 22, UniversityPixelTheme.TEXT);
-        JLabel symbol = label("▣  9 LEVELS", 24, UniversityPixelTheme.MINT);
-        JLabel help = label("교양부터 취업까지, 퍼즐로 전투하세요.", 13, UniversityPixelTheme.TEXT_SUB);
-        for (JLabel element : new JLabel[] { eyebrow, title, symbol, help }) card.add(element);
+        card.add(label("바로 플레이", 13, UniversityPixelTheme.GOLD));
+        card.add(Box.createVerticalStrut(4));
+        card.add(label("스토리 · 로컬 모드", 21, UniversityPixelTheme.TEXT));
+        card.add(Box.createVerticalStrut(6));
+        card.add(label("계정 없이 9개 전투와 연습 모드를 즐기세요.", 12, UniversityPixelTheme.TEXT_SUB));
         card.add(Box.createVerticalGlue());
+        JPanel bosses = new JPanel(new GridLayout(1, 3, 8, 0)); bosses.setOpaque(false);
+        String[] names = { "교수", "캡스톤", "기업" };
+        for (int index = 0; index < names.length; index++) {
+            JPanel boss = new JPanel(new BorderLayout(0, 2)); boss.setOpaque(true);
+            boss.setBackground(UniversityPixelTheme.PANEL_LIGHT);
+            boss.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2));
+            JLabel art = new JLabel(GameArt.icon(GameArt.keyForLevel((index + 1) * 3), 64, 66), SwingConstants.CENTER);
+            boss.add(art, BorderLayout.CENTER);
+            JLabel caption = new JLabel("BOSS · " + names[index], SwingConstants.CENTER);
+            caption.setFont(UniversityPixelTheme.font(11, Font.BOLD));
+            caption.setForeground(UniversityPixelTheme.TEXT_SUB);
+            caption.setBorder(new EmptyBorder(0, 0, 4, 0));
+            boss.add(caption, BorderLayout.SOUTH);
+            bosses.add(boss);
+        }
+        bosses.setAlignmentX(Component.CENTER_ALIGNMENT);
+        bosses.setMaximumSize(new Dimension(300, 96));
+        card.add(bosses);
+        card.add(Box.createVerticalGlue());
+        loginButton.primary();
+        loginButton.setFont(UniversityPixelTheme.font(15, Font.BOLD));
         loginButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-        loginButton.setMaximumSize(new Dimension(210, 42));
+        loginButton.setMaximumSize(new Dimension(240, 46));
+        loginButton.setPreferredSize(new Dimension(240, 46));
         card.add(loginButton);
         card.add(Box.createVerticalStrut(8));
-        JLabel note = label("로그인 없이 진행 가능", 12, UniversityPixelTheme.TEXT_SUB);
-        card.add(note);
+        card.add(label("진행은 이 PC에 자동 저장됩니다", 11, UniversityPixelTheme.TEXT_SUB));
         return card;
     }
 
     private JPanel onlineCard() {
         JPanel card = card(UniversityPixelTheme.LINE);
-        card.add(label("RANKED PvP", 14, UniversityPixelTheme.GOLD));
-        card.add(label("온라인 계정", 21, UniversityPixelTheme.TEXT));
-        card.add(Box.createVerticalStrut(13));
-        card.add(label("이메일", 13, UniversityPixelTheme.TEXT_SUB));
-        field(idField); card.add(idField);
+        card.add(UniversityPixelTheme.label("RANKED PvP", 13, Font.BOLD, UniversityPixelTheme.MINT));
+        card.add(Box.createVerticalStrut(4));
+        card.add(UniversityPixelTheme.label("온라인 계정", 21, Font.BOLD, UniversityPixelTheme.TEXT));
+        card.add(Box.createVerticalStrut(14));
+        card.add(fieldLabel("이메일"));
+        card.add(Box.createVerticalStrut(4));
+        UniversityPixelTheme.styleField(idField); card.add(idField);
         card.add(Box.createVerticalStrut(10));
-        card.add(label("비밀번호", 13, UniversityPixelTheme.TEXT_SUB));
-        field(passwordField); card.add(passwordField);
-        card.add(Box.createVerticalStrut(15));
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0)); buttons.setOpaque(false);
+        card.add(fieldLabel("비밀번호"));
+        card.add(Box.createVerticalStrut(4));
+        UniversityPixelTheme.styleField(passwordField); card.add(passwordField);
+        // 이메일에서 Enter는 비밀번호 칸으로, 비밀번호에서 Enter는 로그인으로 이어진다.
+        idField.addActionListener(event -> passwordField.requestFocusInWindow());
+        passwordField.addActionListener(event -> { if (onlineLoginButton.isEnabled()) onlineLoginButton.doClick(); });
+        card.add(Box.createVerticalStrut(14));
+        JPanel buttons = new JPanel(new GridLayout(1, 2, 8, 0)); buttons.setOpaque(false);
+        onlineLoginButton.positive();
+        signUpButton.secondary();
         buttons.add(onlineLoginButton); buttons.add(signUpButton);
+        buttons.setAlignmentX(Component.LEFT_ALIGNMENT);
+        buttons.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         card.add(buttons);
-        card.add(Box.createVerticalStrut(9));
+        card.add(Box.createVerticalStrut(10));
         status.setForeground(UniversityPixelTheme.TEXT_SUB);
         status.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
-        status.setAlignmentX(Component.CENTER_ALIGNMENT);
+        status.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.add(status);
+        card.add(Box.createVerticalGlue());
         return card;
     }
 
@@ -75,7 +120,7 @@ public class LoginPanel extends JPanel {
         JPanel panel = new JPanel(); panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(UniversityPixelTheme.PANEL);
         panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(accent, 3), new EmptyBorder(20, 17, 20, 17)));
+                BorderFactory.createLineBorder(accent, 3), new EmptyBorder(20, 20, 18, 20)));
         return panel;
     }
     private JLabel label(String text, int size, Color color) {
@@ -84,16 +129,8 @@ public class LoginPanel extends JPanel {
         label.setFont(UniversityPixelTheme.font(size, Font.BOLD)); label.setForeground(color);
         return label;
     }
-    private void field(JTextField field) {
-        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        field.setPreferredSize(new Dimension(245, 36));
-        field.setFont(UniversityPixelTheme.font(14, Font.PLAIN));
-        field.setForeground(UniversityPixelTheme.TEXT);
-        field.setBackground(UniversityPixelTheme.PANEL_LIGHT);
-        field.setCaretColor(UniversityPixelTheme.TEXT);
-        field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2),
-                new EmptyBorder(5, 8, 5, 8)));
+    private static JLabel fieldLabel(String text) {
+        return UniversityPixelTheme.label(text, 12, Font.BOLD, UniversityPixelTheme.TEXT_SUB);
     }
 
     public void setLoginAction(ActionListener listener) { loginButton.addActionListener(listener); }
@@ -104,8 +141,14 @@ public class LoginPanel extends JPanel {
     public void setOnlineLoginAction(ActionListener listener) { onlineLoginButton.addActionListener(listener); }
     public void setOnlineAvailable(boolean available) {
         onlineLoginButton.setEnabled(available); signUpButton.setEnabled(available);
-        if (!available) status.setText("온라인 설정이 없습니다. 로컬 시작을 이용하세요.");
+        idField.setEnabled(available); passwordField.setEnabled(available);
+        if (!available) setStatus("온라인 설정이 없어 지금은 로컬 플레이만 가능합니다.");
     }
     public void setBusy(boolean busy) { onlineLoginButton.setEnabled(!busy); signUpButton.setEnabled(!busy); }
-    public void setStatus(String text) { status.setText(text); }
+    /** 긴 안내도 카드 폭 안에서 줄바꿈되도록 HTML로 감싼다. */
+    public void setStatus(String text) {
+        String safe = text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        status.setText("<html><div style='width:250px'>" + safe + "</div></html>");
+        status.setToolTipText(text);
+    }
 }

@@ -20,7 +20,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 게임 중에는 숨기는 오디오·조작 학습·LAN 설정 화면. */
-public final class SettingsPanel extends JPanel {
+public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final PixelButton back = new PixelButton("로비로");
     private final PixelButton tutorial = new PixelButton("5단계 튜토리얼 직접 해보기");
     private final PixelButton lanConnect = new PixelButton("LAN 서버 연결...");
@@ -28,6 +28,7 @@ public final class SettingsPanel extends JPanel {
     private final JCheckBox skipTutorial = new JCheckBox("다시 보지 않기");
     private final JCheckBox bgmMute = new JCheckBox("BGM 끄기");
     private final JCheckBox sfxMute = new JCheckBox("효과음 끄기");
+    private final JCheckBox reduceTransitions = new JCheckBox("화면 전환 효과 끄기");
     private final JSlider bgmVolume = slider();
     private final JSlider sfxVolume = slider();
     private boolean loading;
@@ -35,11 +36,10 @@ public final class SettingsPanel extends JPanel {
     public SettingsPanel() {
         setLayout(new BorderLayout(0, 16));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(18, 24, 20, 24));
-        JPanel header = new JPanel(new BorderLayout()); header.setOpaque(false);
-        JLabel title = text("설정  /  CAMPUS GUIDE", 24, UniversityPixelTheme.GOLD);
-        header.add(title, BorderLayout.WEST); header.add(back, BorderLayout.EAST);
-        add(header, BorderLayout.NORTH);
+        setBorder(new EmptyBorder(18, UniversityPixelTheme.GUTTER, 18, UniversityPixelTheme.GUTTER));
+        back.secondary();
+        back.setPreferredSize(new Dimension(96, 38));
+        add(UniversityPixelTheme.screenHeader("CAMPUS GUIDE", "설정", back), BorderLayout.NORTH);
 
         JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
         JPanel audio = section("소리", "배경음과 전투 효과음을 따로 조절합니다.");
@@ -58,12 +58,19 @@ public final class SettingsPanel extends JPanel {
             guide.add(line); guide.add(Box.createVerticalStrut(8));
         }
         guide.add(Box.createVerticalStrut(6));
+        tutorial.primary();
+        tutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         tutorial.setAlignmentX(Component.LEFT_ALIGNMENT);
-        tutorial.setMaximumSize(new Dimension(440, 48)); guide.add(tutorial);
+        tutorial.setMaximumSize(new Dimension(440, 46)); guide.add(tutorial);
         guide.add(Box.createVerticalStrut(10));
         skipTutorial.setOpaque(false); skipTutorial.setForeground(UniversityPixelTheme.TEXT);
         skipTutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         skipTutorial.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(skipTutorial);
+        guide.add(Box.createVerticalStrut(20));
+        guide.add(text("화면", 17, UniversityPixelTheme.GOLD));
+        reduceTransitions.setOpaque(false); reduceTransitions.setForeground(UniversityPixelTheme.TEXT_SUB);
+        reduceTransitions.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        reduceTransitions.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(reduceTransitions);
         guide.add(Box.createVerticalGlue());
         columns.add(guide); add(columns, BorderLayout.CENTER);
 
@@ -72,7 +79,14 @@ public final class SettingsPanel extends JPanel {
         lan.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2),
                 new EmptyBorder(8, 12, 8, 12)));
-        lan.add(text("같은 네트워크의 LAN 대전", 14, UniversityPixelTheme.TEXT_SUB), BorderLayout.WEST);
+        JPanel lanText = new JPanel(); lanText.setOpaque(false);
+        lanText.setLayout(new BoxLayout(lanText, BoxLayout.Y_AXIS));
+        lanText.add(text("LAN 대전", 15, UniversityPixelTheme.TEXT));
+        lanText.add(Box.createVerticalStrut(2));
+        lanText.add(text("같은 네트워크에서 한 사람이 서버를 켜고, 다른 사람이 연결합니다.", 12, UniversityPixelTheme.TEXT_SUB));
+        lan.add(lanText, BorderLayout.WEST);
+        lanConnect.secondary(); lanHost.secondary();
+        lanConnect.setPreferredSize(new Dimension(140, 38)); lanHost.setPreferredSize(new Dimension(140, 38));
         JPanel lanButtons = new JPanel(new GridLayout(1, 2, 8, 0)); lanButtons.setOpaque(false);
         lanButtons.add(lanConnect); lanButtons.add(lanHost); lan.add(lanButtons, BorderLayout.EAST);
         add(lan, BorderLayout.SOUTH);
@@ -108,8 +122,20 @@ public final class SettingsPanel extends JPanel {
         return panel;
     }
     private static void row(JPanel parent, String label, JCheckBox mute, JSlider volume) {
-        JLabel heading = text(label, 17, UniversityPixelTheme.TEXT);
-        heading.setAlignmentX(Component.LEFT_ALIGNMENT); parent.add(heading);
+        JPanel headingRow = new JPanel(new BorderLayout()); headingRow.setOpaque(false);
+        headingRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headingRow.setMaximumSize(new Dimension(420, 24));
+        headingRow.add(text(label, 17, UniversityPixelTheme.TEXT), BorderLayout.WEST);
+        JLabel percent = text(volume.getValue() + "%", 14, UniversityPixelTheme.GOLD);
+        headingRow.add(percent, BorderLayout.EAST);
+        // 음소거 중에는 숫자를 흐리게 보여 지금 소리가 나지 않는다는 것을 알린다.
+        Runnable refresh = () -> {
+            percent.setText(mute.isSelected() ? "음소거" : volume.getValue() + "%");
+            percent.setForeground(mute.isSelected() ? UniversityPixelTheme.TEXT_MUTED : UniversityPixelTheme.GOLD);
+        };
+        volume.addChangeListener(event -> refresh.run());
+        mute.addItemListener(event -> refresh.run());
+        parent.add(headingRow);
         parent.add(Box.createVerticalStrut(6));
         volume.setAlignmentX(Component.LEFT_ALIGNMENT); parent.add(volume);
         mute.setOpaque(false); mute.setForeground(UniversityPixelTheme.TEXT_SUB);
@@ -118,11 +144,16 @@ public final class SettingsPanel extends JPanel {
     }
     public void update(boolean bgmOff, float bgmLevel, boolean sfxOff,
             float sfxLevel, boolean tutorialSkipped) {
+        update(bgmOff, bgmLevel, sfxOff, sfxLevel, tutorialSkipped, false);
+    }
+    public void update(boolean bgmOff, float bgmLevel, boolean sfxOff,
+            float sfxLevel, boolean tutorialSkipped, boolean transitionsOff) {
         loading = true;
         try {
             bgmMute.setSelected(bgmOff); bgmVolume.setValue(Math.round(bgmLevel * 100));
             sfxMute.setSelected(sfxOff); sfxVolume.setValue(Math.round(sfxLevel * 100));
             skipTutorial.setSelected(tutorialSkipped);
+            reduceTransitions.setSelected(transitionsOff);
         } finally { loading = false; }
     }
     public void setBackAction(ActionListener listener) { back.addActionListener(listener); }
@@ -143,5 +174,8 @@ public final class SettingsPanel extends JPanel {
     }
     public void setSkipTutorialAction(Consumer<Boolean> action) {
         skipTutorial.addActionListener(event -> { if (!loading) action.accept(skipTutorial.isSelected()); });
+    }
+    public void setReduceTransitionsAction(Consumer<Boolean> action) {
+        reduceTransitions.addActionListener(event -> { if (!loading) action.accept(reduceTransitions.isSelected()); });
     }
 }

@@ -40,7 +40,7 @@ public final class SeongeunApplicationTest {
                 assert app.getSaveData().getCoins() == 0;
                 button(app.getScreens(), "로비로").doClick();
 
-                button(app.getScreens(), "Local Mode").doClick();
+                button(app.getScreens(), "로컬 모드").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 buttonNamed(app.getScreens(), "infiniteModeStart").doClick();
                 assert LOCAL_GAME.equals(app.getCurrentScreen());
@@ -70,7 +70,7 @@ public final class SeongeunApplicationTest {
                 assert app.getLocalState() == null && !app.isLocalGravityRunning();
 
                 button(app.getScreens(), "로비로").doClick();
-                button(app.getScreens(), "Story").doClick();
+                buttonNamed(app.getScreens(), "lobbyStory").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 button(app.getScreens(), "도전하기").doClick();
                 assert BATTLE.equals(app.getCurrentScreen());
@@ -155,8 +155,8 @@ public final class SeongeunApplicationTest {
                         && apps[1].getRoomState().getReadyByParticipantId().size() == 2,
                         "two confirmed participants");
                 SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "준비 완료").doClick();
-                    button(apps[1].getScreens(), "준비 완료").doClick();
+                    buttonNamed(apps[0].getScreens(), "waitingReady").doClick();
+                    buttonNamed(apps[1].getScreens(), "waitingReady").doClick();
                 });
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen())
@@ -181,8 +181,8 @@ public final class SeongeunApplicationTest {
                 awaitEdt(() -> WAITING_ROOM.equals(apps[0].getCurrentScreen())
                         && WAITING_ROOM.equals(apps[1].getCurrentScreen()), "result returned to waiting room");
                 SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "준비 완료").doClick();
-                    button(apps[1].getScreens(), "준비 완료").doClick();
+                    buttonNamed(apps[0].getScreens(), "waitingReady").doClick();
+                    buttonNamed(apps[1].getScreens(), "waitingReady").doClick();
                 });
                 awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
                         && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");

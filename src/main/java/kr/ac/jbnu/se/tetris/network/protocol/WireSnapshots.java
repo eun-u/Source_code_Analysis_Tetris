@@ -36,6 +36,7 @@ final class WireSnapshots {
             entry.put("characterId", participant.getCharacterId());
             entry.put("itemSlots", participant.getItemSlots());
             entry.put("items", new ArrayList<String>(participant.getItems()));
+            entry.put("itemCharges", new ArrayList<Integer>(participant.getItemCharges()));
             entry.put("fever", participant.getFever());
             entry.put("feverRemainingMillis", participant.getFeverRemainingMillis());
             entry.put("timeWarpRemainingMillis", participant.getTimeWarpRemainingMillis());
@@ -65,7 +66,7 @@ final class WireSnapshots {
         for (Object rawEntry : entries) {
             Map<String, Object> entry = WireCodec.object(rawEntry);
             WireCodec.keys(entry, new String[] { "id", "name", "hp", "maxHp", "eliminated", "game" },
-                    new String[] { "characterId", "itemSlots", "items", "fever", "feverRemainingMillis",
+                    new String[] { "characterId", "itemSlots", "items", "itemCharges", "fever", "feverRemainingMillis",
                             "timeWarpRemainingMillis", "pendingGarbageLines", "garbageWaitRemainingMillis",
                             "gravityMillis", "maxCombo", "totalDamage" });
             String id = WireCodec.id(entry.get("id"));
@@ -81,9 +82,19 @@ final class WireSnapshots {
                 if (inventory.size() > 4) throw new IOException("Too many inventory items");
                 for (Object item : inventory) items.add(itemId(item));
             }
+            List<Integer> itemCharges = new ArrayList<Integer>();
+            if (entry.containsKey("itemCharges")) {
+                List<Object> charges = WireCodec.array(entry.get("itemCharges"));
+                if (charges.size() != items.size()) throw new IOException("Item charge count mismatch");
+                for (Object charge : charges) {
+                    int amount = WireCodec.integer(charge);
+                    if (amount < 1 || amount > 2) throw new IOException("Invalid item charge");
+                    itemCharges.add(amount);
+                }
+            } else for (int i = 0; i < items.size(); i++) itemCharges.add(1);
             participants.put(id, BattleSnapshots.participant(id, name, hp, maxHp, game, eliminated,
                     entry.containsKey("characterId") ? WireCodec.id(entry.get("characterId")) : "student",
-                    optionalInt(entry, "itemSlots", 3), items, optionalInt(entry, "fever", 0),
+                    optionalInt(entry, "itemSlots", 3), items, itemCharges, optionalInt(entry, "fever", 0),
                     optionalLong(entry, "feverRemainingMillis"), optionalLong(entry, "timeWarpRemainingMillis"),
                     optionalInt(entry, "pendingGarbageLines", game.getPendingGarbageLines()),
                     optionalLong(entry, "garbageWaitRemainingMillis"), optionalInt(entry, "gravityMillis", 400),

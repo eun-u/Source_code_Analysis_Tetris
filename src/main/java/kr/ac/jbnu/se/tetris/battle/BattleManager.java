@@ -16,6 +16,7 @@ import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceGenerator;
 import kr.ac.jbnu.se.tetris.core.SevenBagGenerator;
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 
 /** 가상 시간, 참가자 상태, 공격과 가비지를 처리하는 전투 규칙 소유자. */
 public final class BattleManager {
@@ -102,6 +103,7 @@ public final class BattleManager {
             snapshots.put(p.spec.getId(), new ParticipantState(p.spec.getId(), p.spec.getName(),
                     p.hp, p.spec.getMaxHp(), p.controller.getState(), p.eliminated,
                     p.spec.getCharacter().getId(), p.spec.getCharacter().getItemSlots(), p.items,
+                    p.itemCharges,
                     p.fever, Math.max(0, p.feverUntil - elapsedMillis),
                     Math.max(0, p.warpUntil - elapsedMillis), p.tank.getPendingLines(),
                     p.tank.getWaitRemainingMillis(elapsedMillis), gravityMillis(p),
@@ -168,9 +170,7 @@ public final class BattleManager {
         if (!("garbage_bomb".equals(id) || "nullify".equals(id)) && !self)
             return reject("INVALID_TARGET", actorId);
         if ("heal".equals(id) && source.hp == source.spec.getMaxHp()) return reject("NO_EFFECT", actorId);
-        if ("fever_charge".equals(id) && source.feverUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
         if ("time_warp".equals(id) && source.warpUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
-        if ("nullify".equals(id) && target.items.isEmpty()) return reject("NO_EFFECT", actorId);
         List<BattleEvent> events = new ArrayList<BattleEvent>();
         String removedByNullify = null;
         if ("heal".equals(id)) {
@@ -181,13 +181,19 @@ public final class BattleManager {
             sendGarbage(source, target, source.tank.cancel(1), null, events);
         else if ("line_cleaner".equals(id)) {
             ActionResult clean = source.engine.clearBottomGarbageLine();
-            if (!clean.isAccepted()) return rejectWithEvents(clean.getReason(), actorId, events);
-            processCore(source, clean, events);
+            if (clean.isAccepted()) processCore(source, clean, events);
+            else if (!"No garbage line to clean".equals(clean.getReason()))
+                return rejectWithEvents(clean.getReason(), actorId, events);
         } else if ("fever_charge".equals(id)) chargeFever(source, 20);
-        else if ("time_warp".equals(id)) source.warpUntil = elapsedMillis + 5000;
-        else if ("nullify".equals(id))
-            removedByNullify = target.items.remove(itemRandom.nextInt(target.items.size()));
-        source.items.remove(id);
+        else if ("time_warp".equals(id)) {
+            source.warpUntil = elapsedMillis + 5000;
+            source.warpSlotIndex = source.items.indexOf(id);
+        }
+        else if ("nullify".equals(id) && !target.items.isEmpty()) {
+            int removedIndex = itemRandom.nextInt(target.items.size());
+            removedByNullify = removeItemAt(target, removedIndex);
+        }
+        if (!"time_warp".equals(id)) consumeItem(source, id);
         events.add(event(BattleEvent.Type.ITEM_USED, actorId, target.spec.getId(), 1, id, null));
         if (removedByNullify != null)
             events.add(event(BattleEvent.Type.ITEM_REMOVED, actorId,
@@ -219,6 +225,7 @@ public final class BattleManager {
         while (remaining > 0 && status == BattleState.Status.RUNNING) {
             long step = Math.min(50, remaining);
             elapsedMillis += step; remaining -= step;
+            expireTimeWarpItems();
             for (Participant p : participants.values()) {
                 if (p.eliminated) continue;
                 p.gravityAccumulated += step;
@@ -244,6 +251,7 @@ public final class BattleManager {
     public synchronized BattleResult tick() {
         if (status != BattleState.Status.RUNNING) return reject("TICK requires RUNNING", null);
         elapsedMillis += 400;
+        expireTimeWarpItems();
         List<BattleEvent> events = new ArrayList<BattleEvent>();
         for (Participant p : participants.values()) {
             if (p.eliminated) continue;
@@ -340,10 +348,10 @@ public final class BattleManager {
                 + (boost ? .5 : 0);
         DamageManager.Attack computed = damageManager.forLineClear(clear, buff, shield ? .3 : 0);
         int damage = computed.getDamage();
-        if (boost && source.items.remove("damage_boost"))
+        if (boost && consumeItem(source, "damage_boost"))
             events.add(event(BattleEvent.Type.ITEM_USED, source.spec.getId(),
                     source.spec.getId(), 1, "damage_boost", null));
-        if (shield && damage > 0 && target.items.remove("shield"))
+        if (shield && damage > 0 && consumeItem(target, "shield"))
             events.add(event(BattleEvent.Type.ITEM_USED, target.spec.getId(),
                     target.spec.getId(), 1, "shield", null));
         int before = target.hp;
@@ -381,11 +389,35 @@ public final class BattleManager {
     private void acquire(Participant p, String id, List<BattleEvent> events) {
         if (ITEM_IDS.contains(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) {
             p.items.add(id);
+            p.itemCharges.add(ItemSpec.initialChargesOf(id));
             events.add(event(BattleEvent.Type.ITEM_ACQUIRED, p.spec.getId(),
                     p.spec.getId(), 1, id, null));
         }
     }
     private String randomItem() { return ITEM_IDS.get(itemRandom.nextInt(ITEM_IDS.size())); }
+    private static boolean consumeItem(Participant p, String id) {
+        int index = p.items.indexOf(id);
+        if (index < 0) return false;
+        int left = p.itemCharges.get(index) - 1;
+        if (left > 0) p.itemCharges.set(index, left);
+        else removeItemAt(p, index);
+        return true;
+    }
+    private static String removeItemAt(Participant p, int index) {
+        String removed = p.items.remove(index);
+        p.itemCharges.remove(index);
+        if (index == p.warpSlotIndex) p.warpSlotIndex = -1;
+        else if (index < p.warpSlotIndex) p.warpSlotIndex--;
+        return removed;
+    }
+    private void expireTimeWarpItems() {
+        for (Participant p : participants.values()) {
+            if (p.warpUntil > 0 && p.warpUntil <= elapsedMillis) {
+                p.warpUntil = 0;
+                if (p.warpSlotIndex >= 0) removeItemAt(p, p.warpSlotIndex);
+            }
+        }
+    }
     static List<String> monsterItems(int level) {
         switch (level) {
             case 0: return java.util.Collections.emptyList();
@@ -474,6 +506,7 @@ public final class BattleManager {
         private final Controller controller;
         private final GarbageTank tank;
         private final List<String> items = new ArrayList<String>();
+        private final List<Integer> itemCharges = new ArrayList<Integer>();
         private final int baseGravityMillis;
         private final double extraAttackBuff;
         private final int extraGarbage;
@@ -482,6 +515,7 @@ public final class BattleManager {
         private int fever;
         private long feverUntil;
         private long warpUntil;
+        private int warpSlotIndex = -1;
         private long gravityAccumulated;
         private int maxCombo;
         private int totalDamage;

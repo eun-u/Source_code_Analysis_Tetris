@@ -4,14 +4,37 @@ import java.io.BufferedInputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
+import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 
-/** 차용한 배경음·효과음의 PCM 형식과 두 채널 설정을 확인한다. */
+/** CC0 효과음·캠퍼스 배경음의 PCM 형식과 두 채널 설정을 확인한다. */
 public final class AudioServiceTest {
     private AudioServiceTest() { }
     public static void main(String[] args) throws Exception {
-        for (String name : new String[] { "click", "nextlog", "weekSummary", "background" }) {
+        Set<String> unique = new HashSet<>();
+        for (AudioService.Event event : AudioService.Event.values()) {
+            String path = AudioService.effectResource(event);
+            check(unique.add(path), "duplicate sound for " + event);
+            try (InputStream source = AudioServiceTest.class.getResourceAsStream(path)) {
+                check(source != null, event + " resource missing: " + path);
+                try (AudioInputStream stream = AudioSystem.getAudioInputStream(
+                        new BufferedInputStream(source))) {
+                    AudioFormat format = stream.getFormat();
+                    check(AudioFormat.Encoding.PCM_SIGNED.equals(format.getEncoding()),
+                            event + " must be uncompressed PCM for Java 8");
+                    check(format.getSampleSizeInBits() == 16, event + " must be 16-bit");
+                    check(format.getChannels() == 1, event + " must be mono");
+                    check(stream.getFrameLength() > 0 && stream.getFrameLength() <=
+                            format.getFrameRate() * 1.5, event + " must be a short cue");
+                }
+            }
+        }
+        check(unique.size() == AudioService.Event.values().length, "one cue per event");
+        for (String name : new String[] { "background" }) {
             try (InputStream source = AudioServiceTest.class.getResourceAsStream(
                         "/audio/university/" + name + ".wav")) {
                 check(source != null, name + " resource missing");
@@ -23,7 +46,8 @@ public final class AudioServiceTest {
                 }
             }
         }
-        Path folder = Files.createTempDirectory("tetris-audio-test-");
+        Path folder = Files.createTempDirectory(
+                Files.createDirectories(Paths.get("out", "audio-test")), "sound-");
         Path settings = folder.resolve("sound.properties");
         AudioService service = new AudioService(settings);
         service.setMuted(true);

@@ -21,12 +21,25 @@ public final class BattleSnapshots {
             List<String> items, int fever, long feverRemainingMillis, long timeWarpRemainingMillis,
             int pendingGarbageLines, long garbageWaitRemainingMillis, int gravityMillis,
             int maxCombo, int totalDamage) {
+        return participant(id, name, hp, maxHp, state, eliminated, characterId, itemSlots,
+                items, items == null ? null : java.util.Collections.nCopies(items.size(), 1),
+                fever, feverRemainingMillis, timeWarpRemainingMillis, pendingGarbageLines,
+                garbageWaitRemainingMillis, gravityMillis, maxCombo, totalDamage);
+    }
+
+    public static ParticipantState participant(String id, String name, int hp, int maxHp,
+            GameState state, boolean eliminated, String characterId, int itemSlots,
+            List<String> items, List<Integer> itemCharges, int fever,
+            long feverRemainingMillis, long timeWarpRemainingMillis,
+            int pendingGarbageLines, long garbageWaitRemainingMillis, int gravityMillis,
+            int maxCombo, int totalDamage) {
         if (id == null || id.trim().isEmpty() || id.length() > 128 || name == null
                 || name.trim().isEmpty() || name.length() > 128 || maxHp <= 0 || hp < 0 || hp > maxHp
                 || state == null || !id.equals(state.getActorId())
                 || ((hp == 0 || state.getStatus() == GameState.Status.GAME_OVER) && !eliminated)
                 || characterId == null || characterId.trim().isEmpty() || itemSlots < 1
-                || items == null || items.size() > itemSlots || fever < 0 || fever > 100
+                || items == null || items.size() > itemSlots || itemCharges == null
+                || itemCharges.size() != items.size() || fever < 0 || fever > 100
                 || feverRemainingMillis < 0 || timeWarpRemainingMillis < 0
                 || pendingGarbageLines < 0 || garbageWaitRemainingMillis < 0
                 || gravityMillis < 1 || maxCombo < 0 || totalDamage < 0) {
@@ -35,8 +48,11 @@ public final class BattleSnapshots {
         for (String item : items) if (item == null || item.trim().isEmpty()) {
             throw new IllegalArgumentException("Invalid item snapshot");
         }
+        for (Integer charges : itemCharges) if (charges == null || charges < 1 || charges > 2) {
+            throw new IllegalArgumentException("Invalid item charges");
+        }
         return new ParticipantState(id, name, hp, maxHp, CoreSnapshots.copyOf(state), eliminated,
-                characterId, itemSlots, items, fever, feverRemainingMillis, timeWarpRemainingMillis,
+                characterId, itemSlots, items, itemCharges, fever, feverRemainingMillis, timeWarpRemainingMillis,
                 pendingGarbageLines, garbageWaitRemainingMillis, gravityMillis, maxCombo, totalDamage);
     }
 
@@ -59,7 +75,7 @@ public final class BattleSnapshots {
             }
             copied.put(entry.getKey(), participant(p.getId(), p.getName(), p.getHp(), p.getMaxHp(),
                     p.getGameState(), p.isEliminated(), p.getCharacterId(), p.getItemSlots(),
-                    p.getItems(), p.getFever(), p.getFeverRemainingMillis(),
+                    p.getItems(), p.getItemCharges(), p.getFever(), p.getFeverRemainingMillis(),
                     p.getTimeWarpRemainingMillis(), p.getPendingGarbageLines(),
                     p.getGarbageWaitRemainingMillis(), p.getGravityMillis(), p.getMaxCombo(),
                     p.getTotalDamage()));

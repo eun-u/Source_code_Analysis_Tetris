@@ -27,13 +27,13 @@ import javax.sound.sampled.FloatControl;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
-/** 대학생 시뮬레이션 배경음과 게임 효과음을 UI 스레드와 분리해 재생한다. */
+/** 캠퍼스 배경음과 퍼즐 조작·전투 효과음을 UI 스레드와 분리해 재생한다. */
 public final class AudioService implements AutoCloseable {
     public enum Event {
-        BUTTON(Sound.CLICK), MOVE(Sound.MOVE), ROTATE(Sound.ROTATE),
+        BUTTON(Sound.BUTTON), MOVE(Sound.MOVE), ROTATE(Sound.ROTATE),
         DROP(Sound.DROP), LINE_CLEAR(Sound.LINE_CLEAR), ATTACK(Sound.ATTACK),
-        HIT(Sound.HIT), ITEM_ACQUIRE(Sound.NEXT), ITEM_USE(Sound.ITEM_USE),
-        HEAL(Sound.HEAL), FEVER(Sound.FEVER), VICTORY(Sound.SUMMARY),
+        HIT(Sound.HIT), ITEM_ACQUIRE(Sound.ITEM_ACQUIRE), ITEM_USE(Sound.ITEM_USE),
+        HEAL(Sound.HEAL), FEVER(Sound.FEVER), VICTORY(Sound.VICTORY),
         DEFEAT(Sound.DEFEAT);
 
         private final Sound sound;
@@ -41,12 +41,19 @@ public final class AudioService implements AutoCloseable {
     }
 
     private enum Sound {
-        CLICK("click.wav", 2, 50), NEXT("nextlog.wav", 1, 140),
-        MOVE(null, 2, 45), ROTATE(null, 1, 90), DROP(null, 1, 90),
-        LINE_CLEAR(null, 1, 120), ATTACK(null, 1, 100), HIT(null, 1, 100),
-        ITEM_USE(null, 1, 120),
-        HEAL(null, 1, 140), FEVER(null, 1, 300),
-        SUMMARY("weekSummary.wav", 1, 260), DEFEAT(null, 1, 300);
+        BUTTON("kenney/button.wav", 2, 50),
+        MOVE("kenney/move.wav", 2, 45),
+        ROTATE("kenney/rotate.wav", 2, 70),
+        DROP("kenney/drop.wav", 2, 90),
+        LINE_CLEAR("kenney/line-clear.wav", 2, 120),
+        ATTACK("kenney/attack.wav", 1, 100),
+        HIT("kenney/hit.wav", 2, 100),
+        ITEM_ACQUIRE("kenney/item-acquire.wav", 1, 140),
+        ITEM_USE("kenney/item-use.wav", 1, 120),
+        HEAL("kenney/heal.wav", 1, 140),
+        FEVER("kenney/fever.wav", 1, 300),
+        VICTORY("kenney/victory.wav", 1, 260),
+        DEFEAT("kenney/defeat.wav", 1, 300);
         private final String file;
         private final int voices;
         private final long minIntervalMillis;
@@ -97,6 +104,12 @@ public final class AudioService implements AutoCloseable {
     /** 오디오 장치가 없거나 지원되지 않는 환경에서는 false이다. */
     public boolean isAvailable() { return available; }
     public boolean isBgmAvailable() { return bgmAvailable; }
+
+    /** 이벤트별 실제 리소스 경로를 테스트에서 검증할 수 있도록 제공한다. */
+    static String effectResource(Event event) {
+        if (event == null) throw new IllegalArgumentException("event");
+        return "/audio/" + event.sound.file;
+    }
 
     /** 홈과 전투에서 이어지는 배경음. 반복 호출해도 재시작하지 않는다. */
     public void startBgm() {
@@ -181,7 +194,7 @@ public final class AudioService implements AutoCloseable {
     private void loadClips() {
         boolean opened = false;
         try {
-            PcmData pcm = loadPcm("background.wav");
+            PcmData pcm = loadPcm("university/background.wav");
             bgmClip = AudioSystem.getClip();
             bgmClip.open(pcm.format, pcm.bytes, 0, pcm.bytes.length);
             bgmAvailable = true;
@@ -194,7 +207,7 @@ public final class AudioService implements AutoCloseable {
         }
         for (Sound sound : Sound.values()) {
             try {
-                PcmData pcm = sound.file == null ? makeEffectPcm(sound) : loadPcm(sound.file);
+                PcmData pcm = loadPcm(sound.file);
                 List<Clip> pool = new ArrayList<>();
                 for (int i = 0; i < sound.voices; i++) {
                     try {
@@ -217,7 +230,7 @@ public final class AudioService implements AutoCloseable {
     }
 
     private static PcmData loadPcm(String file) throws IOException, UnsupportedAudioFileException {
-        String path = "/audio/university/" + file;
+        String path = "/audio/" + file;
         InputStream resource = AudioService.class.getResourceAsStream(path);
         if (resource == null) throw new IOException("Missing audio resource: " + path);
         try (InputStream source = new BufferedInputStream(resource);
@@ -234,103 +247,6 @@ public final class AudioService implements AutoCloseable {
                 return new PcmData(pcmFormat, bytes.toByteArray());
             }
         }
-    }
-
-    /** 작은 전투 동작은 외부 코덱 없이 서로 다른 짧은 전자음으로 만든다. */
-    private static PcmData makeEffectPcm(Sound sound) {
-        final int sampleRate = 22050;
-        final double duration;
-        switch (sound) {
-            case MOVE: duration = .055; break;
-            case ROTATE: duration = .12; break;
-            case DROP: duration = .18; break;
-            case LINE_CLEAR: duration = .4; break;
-            case ATTACK: duration = .23; break;
-            case HIT: duration = .26; break;
-            case ITEM_USE: duration = .3; break;
-            case HEAL: duration = .4; break;
-            case FEVER: duration = .65; break;
-            case DEFEAT: duration = .57; break;
-            default: throw new IllegalArgumentException("Not a synthesized sound: " + sound);
-        }
-        int sampleCount = (int) (sampleRate * duration);
-        byte[] bytes = new byte[sampleCount * 2];
-        double phase = 0;
-        int noiseSeed = 0x49bc0731 + sound.ordinal() * 2791;
-        for (int i = 0; i < sampleCount; i++) {
-            double t = i / (double) sampleRate;
-            double progress = i / (double) sampleCount;
-            double frequency;
-            double harmonics = 0;
-            double noiseMix = 0;
-            double decay = 1.4;
-            switch (sound) {
-                case MOVE:
-                    frequency = 340 - 90 * progress;
-                    decay = 2.4;
-                    break;
-                case ROTATE:
-                    frequency = 460 + 290 * progress;
-                    harmonics = .18;
-                    break;
-                case DROP:
-                    frequency = 210 - 155 * progress;
-                    noiseMix = .28;
-                    decay = 2.2;
-                    break;
-                case LINE_CLEAR:
-                    frequency = 450 + 860 * progress;
-                    harmonics = .26;
-                    decay = .8;
-                    break;
-                case ATTACK:
-                    frequency = 930 - 710 * progress;
-                    harmonics = .31;
-                    noiseMix = .12;
-                    break;
-                case HIT:
-                    frequency = 190 - 130 * progress;
-                    noiseMix = .47;
-                    decay = 2.1;
-                    break;
-                case ITEM_USE:
-                    frequency = 420 + 570 * progress + 42 * Math.sin(t * 47);
-                    harmonics = .24;
-                    break;
-                case HEAL:
-                    frequency = 470 + 340 * progress;
-                    harmonics = .12;
-                    decay = .8;
-                    break;
-                case FEVER:
-                    frequency = new double[] { 523, 659, 784, 1047 }[
-                            Math.min(3, (int) (progress * 4))];
-                    harmonics = .2;
-                    decay = .55;
-                    break;
-                case DEFEAT:
-                    frequency = new double[] { 392, 330, 262, 196 }[
-                            Math.min(3, (int) (progress * 4))];
-                    harmonics = .16;
-                    decay = .65;
-                    break;
-                default: throw new IllegalArgumentException("Unsupported sound: " + sound);
-            }
-            phase += 2 * Math.PI * frequency / sampleRate;
-            noiseSeed ^= noiseSeed << 13;
-            noiseSeed ^= noiseSeed >>> 17;
-            noiseSeed ^= noiseSeed << 5;
-            double noise = (noiseSeed & 0xffff) / 32768.0 - 1.0;
-            double attack = Math.min(1, t / .006);
-            double release = Math.pow(Math.max(0, 1 - progress), decay);
-            double tone = Math.sin(phase) + harmonics * Math.sin(2 * phase);
-            double sample = .48 * attack * release *
-                    ((1 - noiseMix) * tone + noiseMix * noise);
-            short pcm = (short) (Math.max(-1, Math.min(1, sample)) * 32767);
-            bytes[i * 2] = (byte) pcm;
-            bytes[i * 2 + 1] = (byte) (pcm >>> 8);
-        }
-        return new PcmData(new AudioFormat(sampleRate, 16, 1, true, false), bytes);
     }
 
     private void playSound(Sound sound) {

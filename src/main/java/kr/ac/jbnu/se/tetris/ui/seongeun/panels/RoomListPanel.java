@@ -11,56 +11,90 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.RoomRow;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
 
-public class RoomListPanel extends JPanel {
+/**
+ * 온라인 대전 입구. 서버가 방 목록을 주지 않으므로 방 만들기와 번호 입장을 큰 선택지로 보여 주고,
+ * 목록이 있을 때만 아래에 방 줄을 표시한다.
+ */
+public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
 
-    private GameButton backButton;
-    private GameButton createRoomButton;
-    private JPanel roomContainer;
+    private final GameButton backButton = new GameButton("로비로");
+    private final GameButton createRoomButton = new GameButton("방 만들기");
     private final GameButton joinByIdButton = new GameButton("방 번호로 입장");
+    private final JPanel roomContainer = new JPanel();
+    private final JScrollPane roomScroll;
     private final JLabel connectionLabel = new JLabel("서버 연결 중...");
+    private final JLabel connectionDot = new JLabel("●");
 
     public RoomListPanel() {
-        setLayout(new BorderLayout(0, 14));
+        setLayout(new BorderLayout(0, UniversityPixelTheme.HEADER_GAP));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(18, 22, 18, 22));
+        setBorder(new EmptyBorder(18, UniversityPixelTheme.GUTTER, 18, UniversityPixelTheme.GUTTER));
 
-        JLabel titleLabel = new JLabel("BATTLE LOBBY  /  방 목록");
-        titleLabel.setForeground(UniversityPixelTheme.GOLD);
-        titleLabel.setFont(UniversityPixelTheme.font(23, Font.BOLD));
+        backButton.secondary();
+        backButton.setPreferredSize(new Dimension(96, 38));
+        add(UniversityPixelTheme.screenHeader("ONLINE BATTLE", "1:1 대전 로비", backButton), BorderLayout.NORTH);
 
-        createRoomButton = new GameButton("방 만들기");
-        backButton = new GameButton("로비로");
+        JPanel center = new JPanel(new BorderLayout(0, 14)); center.setOpaque(false);
+        JPanel status = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        status.setBackground(UniversityPixelTheme.PANEL);
+        status.setBorder(UniversityPixelTheme.cardBorder(UniversityPixelTheme.LINE, 2, 8));
+        connectionDot.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        connectionDot.setForeground(UniversityPixelTheme.GOLD);
+        connectionLabel.setForeground(UniversityPixelTheme.TEXT);
+        connectionLabel.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        status.add(connectionDot); status.add(connectionLabel);
+        center.add(status, BorderLayout.NORTH);
 
-        JPanel topButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        topButtonPanel.setOpaque(false);
-        topButtonPanel.add(createRoomButton);
-        topButtonPanel.add(joinByIdButton);
-        topButtonPanel.add(backButton);
+        JPanel choices = new JPanel(new GridLayout(1, 2, 16, 0)); choices.setOpaque(false);
+        choices.add(choice("HOST", "새 방 만들기", "방을 만들면 방 번호가 생깁니다.\n그 번호를 상대에게 알려 주세요.",
+                createRoomButton, UniversityPixelTheme.GOLD));
+        choices.add(choice("JOIN", "번호로 입장", "상대에게 받은 방 번호를 입력해\n바로 대기실로 들어갑니다.",
+                joinByIdButton, UniversityPixelTheme.MINT));
+        JPanel choiceArea = new JPanel(new GridBagLayout()); choiceArea.setOpaque(false);
+        choices.setPreferredSize(new Dimension(640, 260));
+        choiceArea.add(choices);
+        center.add(choiceArea, BorderLayout.CENTER);
 
-        JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.setOpaque(false);
-        topPanel.add(titleLabel, BorderLayout.CENTER);
-        topPanel.add(topButtonPanel, BorderLayout.EAST);
-
-        add(topPanel, BorderLayout.NORTH);
-
-        roomContainer = new JPanel();
         roomContainer.setBackground(UniversityPixelTheme.BG);
         roomContainer.setLayout(new BoxLayout(roomContainer, BoxLayout.Y_AXIS));
-        JScrollPane scrollPane = new JScrollPane(roomContainer);
-        scrollPane.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2));
-        scrollPane.getViewport().setBackground(UniversityPixelTheme.BG);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        roomScroll = new JScrollPane(roomContainer);
+        roomScroll.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2));
+        roomScroll.getViewport().setBackground(UniversityPixelTheme.BG);
+        roomScroll.getVerticalScrollBar().setUnitIncrement(16);
+        roomScroll.setPreferredSize(new Dimension(10, 180));
+        roomScroll.setVisible(false);
+        center.add(roomScroll, BorderLayout.SOUTH);
+        add(center, BorderLayout.CENTER);
 
-        JPanel listArea = new JPanel(new BorderLayout(0, 12));
-        listArea.setOpaque(false);
-        connectionLabel.setForeground(UniversityPixelTheme.TEXT_SUB);
-        connectionLabel.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-        connectionLabel.setBorder(new EmptyBorder(5, 8, 0, 0));
-        listArea.add(connectionLabel, BorderLayout.NORTH);
-        listArea.add(scrollPane, BorderLayout.CENTER);
+        JLabel hint = new JLabel("두 사람이 같은 서버에 있어야 합니다 · LAN 대전은 설정 화면에서 서버를 켜거나 연결하세요",
+                SwingConstants.CENTER);
+        hint.setForeground(UniversityPixelTheme.TEXT_SUB);
+        hint.setFont(UniversityPixelTheme.font(12, Font.PLAIN));
+        add(hint, BorderLayout.SOUTH);
+        setConnected(false);
+    }
 
-        add(listArea, BorderLayout.CENTER);
+    private static JPanel choice(String eyebrow, String title, String body, GameButton action, Color accent) {
+        JPanel card = new JPanel(); card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBackground(UniversityPixelTheme.PANEL);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(accent, 3), new EmptyBorder(22, 18, 20, 18)));
+        JLabel tag = new JLabel(eyebrow, SwingConstants.CENTER);
+        tag.setForeground(accent); tag.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        JLabel heading = new JLabel(title, SwingConstants.CENTER);
+        heading.setForeground(UniversityPixelTheme.TEXT); heading.setFont(UniversityPixelTheme.font(22, Font.BOLD));
+        JLabel text = new JLabel("<html><center>" + body.replace("\n", "<br>") + "</center></html>", SwingConstants.CENTER);
+        text.setForeground(UniversityPixelTheme.TEXT_SUB); text.setFont(UniversityPixelTheme.font(13, Font.PLAIN));
+        action.setAccent(accent);
+        action.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        action.setMaximumSize(new Dimension(200, 44));
+        action.setPreferredSize(new Dimension(200, 44));
+        for (JComponent item : new JComponent[] { tag, heading, text, action })
+            item.setAlignmentX(Component.CENTER_ALIGNMENT);
+        card.add(tag); card.add(Box.createVerticalStrut(6)); card.add(heading);
+        card.add(Box.createVerticalStrut(10)); card.add(text);
+        card.add(Box.createVerticalGlue()); card.add(action);
+        return card;
     }
 
     public void setBackAction(ActionListener listener) {
@@ -72,19 +106,24 @@ public class RoomListPanel extends JPanel {
     }
     public void setJoinByIdAction(ActionListener listener) { joinByIdButton.addActionListener(listener); }
     public void setConnected(boolean connected) {
-        connectionLabel.setText(connected ? "서버 연결됨 · 방 번호를 입력하거나 방을 만드세요."
-                : "서버 연결 중 · 로컬 서버 시작은 로비에서 가능합니다.");
+        connectionDot.setForeground(connected ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
+        connectionLabel.setText(connected ? "서버 연결됨 · 방을 만들거나 번호로 입장하세요."
+                : "서버에 연결하는 중... 잠시 기다려 주세요.");
+        createRoomButton.setEnabled(connected);
+        joinByIdButton.setEnabled(connected);
+    }
+
+    /** 연결 시도가 끝났지만 실패한 상태. "연결 중"과 구분해 다음 행동을 알려 준다. */
+    public void setConnectionFailed(String reason) {
+        setConnected(false);
+        connectionDot.setForeground(UniversityPixelTheme.CORAL);
+        connectionLabel.setText("서버에 연결하지 못했습니다" + (reason == null ? "" : " (" + reason + ")")
+                + " · 로비로 돌아가 다시 시도하세요.");
     }
 
     public void setRooms(List<RoomData> rooms, Consumer<RoomData> joinAction) {
         roomContainer.removeAll();
-        if (rooms.isEmpty()) {
-            JLabel hint = new JLabel("방 번호를 입력하거나 새 방을 만들어 전투하세요.", SwingConstants.CENTER);
-            hint.setFont(UniversityPixelTheme.font(15, Font.BOLD));
-            hint.setBorder(new EmptyBorder(30, 8, 30, 8));
-            hint.setForeground(UniversityPixelTheme.TEXT_SUB);
-            roomContainer.add(hint);
-        }
+        roomScroll.setVisible(!rooms.isEmpty());
 
         for (RoomData room : rooms) {
             RoomRow row = new RoomRow(room);
@@ -103,7 +142,7 @@ public class RoomListPanel extends JPanel {
             roomContainer.add(row);
         }
 
-        roomContainer.revalidate();
-        roomContainer.repaint();
+        revalidate();
+        repaint();
     }
 }
