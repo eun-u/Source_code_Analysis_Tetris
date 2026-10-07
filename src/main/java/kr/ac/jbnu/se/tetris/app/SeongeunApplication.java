@@ -1060,11 +1060,21 @@ public final class SeongeunApplication implements AutoCloseable {
                 break;
             case CONNECTION_FAILED:
             case ERROR:
-            case CLOSED:
+            case CLOSED: {
                 onlineConnected = false;
-                roomList.setConnectionFailed(update.getReasonCode());
-                message("서버 연결을 확인하세요: " + update.getReasonCode());
+                String reason = update.getReasonCode();
+                if ("SERVICE_UNAVAILABLE".equals(reason)) {
+                    roomList.setConnectionFailed("대전 접수가 닫혀 있습니다");
+                    message("온라인 서버는 실행 중이지만 대전 접수가 닫혀 있습니다. 운영자의 접수 재개가 필요합니다.");
+                } else if ("HANDSHAKE_FAILED".equals(reason)) {
+                    roomList.setConnectionFailed("게임 서버 주소를 확인하세요");
+                    message("게임 연결 주소가 올바르지 않습니다. 온라인 설정의 서버 주소는 /ws 경로여야 합니다.");
+                } else {
+                    roomList.setConnectionFailed(reason);
+                    message("서버 연결을 확인하세요: " + reason);
+                }
                 break;
+            }
             case REQUEST_OUTCOME:
                 if (update.getRequestOutcome().getRequestId() == refreshRequestId) {
                     refreshRequestId = -1;

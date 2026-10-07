@@ -218,6 +218,12 @@ public final class RenderGameServer implements AutoCloseable {
             if ("GET".equals(request.method().name()) && "/healthz".equals(path)) {
                 respond(ctx, HttpResponseStatus.OK, "ok"); return;
             }
+            if ("GET".equals(request.method().name()) && "/".equals(path)) {
+                respond(ctx, HttpResponseStatus.OK, "Tetris Ranked PvP server\n"
+                        + "Desktop game endpoint: /ws\n"
+                        + "Match admission: " + (admissionOpen && !draining ? "open" : "closed"));
+                return;
+            }
             if (path.startsWith("/admin/")) { handleAdmin(ctx, request); return; }
             if (!"GET".equals(request.method().name()) || !"/ws".equals(path) || upgrading
                     || !request.decoderResult().isSuccess()) {

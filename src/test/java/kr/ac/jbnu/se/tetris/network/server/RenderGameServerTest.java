@@ -52,9 +52,13 @@ public final class RenderGameServerTest {
         try {
             String base = "http://127.0.0.1:" + server.getPort();
             assertEquals(200, request(base + "/healthz", "GET", null));
+            if (!requestText(base + "/", null).contains("Match admission: closed"))
+                throw new AssertionError("Public server page must explain closed admission");
             assertEquals(401, request(base + "/admin/status", "GET", null));
             assertEquals(503, request(base + "/ws", "GET", "Bearer " + USERS[0]));
             assertEquals(200, request(base + "/admin/open", "POST", "Bearer " + ADMIN));
+            if (!requestText(base + "/", null).contains("Match admission: open"))
+                throw new AssertionError("Public server page must explain open admission");
             fragmentedAndMalformedBoundary(server.getPort());
             oversizeFrameBoundary(server.getPort());
             for (int i = 0; i < probes.length; i++) {
