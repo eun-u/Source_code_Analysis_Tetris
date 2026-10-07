@@ -45,6 +45,18 @@ public final class RpgWireStateTest {
         check(actual.getElapsedMillis() == 61234, "전투 시간 보존");
         check(p.getItems().equals(Arrays.asList("heal", "time_warp", "shield")), "슬롯 순서 보존");
         check(p.getItemCharges().equals(Arrays.asList(2, 1, 1)), "아이템별 충전량 보존");
+        Map<String, ParticipantState> oldCompatible = new LinkedHashMap<String, ParticipantState>();
+        oldCompatible.put("p", BattleSnapshots.participant("p", "학생", 83, 100, game, false,
+                "student", 3, Arrays.asList("shield"), Arrays.asList(1),
+                0, 0, 0, 0, 0, 550, 0, 0));
+        oldCompatible.put("m", participants.get("m"));
+        Map<String, Object> oldCompatiblePacket = WireSnapshots.encode(BattleSnapshots.battle(
+                BattleState.Status.RUNNING, 31, oldCompatible, null, null, 61235));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldCompatiblePlayer = (Map<String, Object>) ((java.util.List<?>)
+                oldCompatiblePacket.get("participants")).get(0);
+        check(!oldCompatiblePlayer.containsKey("itemCharges"),
+                "기본 1회 아이템 스냅샷은 구 클라이언트 호환 필드만 전송");
         Map<String, Object> legacy = WireCodec.object(
                 StrictJson.parse(StrictJson.stringify(WireSnapshots.encode(expected))));
         @SuppressWarnings("unchecked")

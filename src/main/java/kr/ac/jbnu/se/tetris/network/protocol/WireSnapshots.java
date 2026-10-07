@@ -36,7 +36,13 @@ final class WireSnapshots {
             entry.put("characterId", participant.getCharacterId());
             entry.put("itemSlots", participant.getItemSlots());
             entry.put("items", new ArrayList<String>(participant.getItems()));
-            entry.put("itemCharges", new ArrayList<Integer>(participant.getItemCharges()));
+            // 기존 온라인 클라이언트는 알 수 없는 필드를 거부하므로, 기본 1회 아이템만
+            // 있는 공식 PvP 스냅샷에는 확장 필드를 보내지 않는다.
+            boolean hasMultipleCharges = false;
+            for (Integer charge : participant.getItemCharges())
+                if (charge != null && charge.intValue() != 1) hasMultipleCharges = true;
+            if (hasMultipleCharges)
+                entry.put("itemCharges", new ArrayList<Integer>(participant.getItemCharges()));
             entry.put("fever", participant.getFever());
             entry.put("feverRemainingMillis", participant.getFeverRemainingMillis());
             entry.put("timeWarpRemainingMillis", participant.getTimeWarpRemainingMillis());

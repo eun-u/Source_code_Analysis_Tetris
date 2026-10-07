@@ -397,6 +397,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             String item = available ? items.get(i) : null;
             int count = available && i < charges.size() ? charges.get(i) : 1;
             boolean automatic = "damage_boost".equals(item) || "shield".equals(item);
+            boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
             slots[i].setText((i + 1) + "  " + (locked ? "잠김" : item == null ? "빈 슬롯"
                     : ItemSpec.categoryOf(item) + " " + itemShortName(item)
                     + (count > 1 ? " ×" + count : "")));
@@ -406,8 +407,11 @@ public class BattlePanel extends JPanel implements Scrollable {
             slots[i].setToolTipText(locked ? "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다."
                     : item == null ? "비어 있는 슬롯"
                     : itemName(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · "
-                    + (automatic ? "조건이 맞으면 자동 사용" : "클릭 또는 " + (i + 1) + " 키"));
+                    + (automatic ? "조건이 맞으면 자동 사용"
+                    : waitingForEarlierSlot ? "같은 아이템의 앞 슬롯부터 사용"
+                    : "클릭 또는 " + (i + 1) + " 키"));
             slots[i].setEnabled(item != null
+                    && !waitingForEarlierSlot
                     && state.getStatus() == BattleState.Status.RUNNING);
         }
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,

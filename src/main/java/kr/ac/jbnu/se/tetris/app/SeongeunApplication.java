@@ -720,6 +720,10 @@ public final class SeongeunApplication implements AutoCloseable {
         if (participant == null || slot < 0 || slot >= participant.getItems().size()) return;
         String item = participant.getItems().get(slot);
         if (item == null) return;
+        if (participant.getItems().indexOf(item) != slot) {
+            battle.setFeedback("같은 아이템은 앞 슬롯부터 사용합니다.");
+            return;
+        }
         if ("damage_boost".equals(item) || "shield".equals(item)) {
             battle.setFeedback("이 아이템은 조건이 맞으면 자동으로 사용됩니다.");
             return;
