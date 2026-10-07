@@ -2,6 +2,7 @@ services:
   - type: web
     name: tetris-ranked-pvp
     runtime: docker
+    branch: dev
     plan: free
     region: singapore
     dockerfilePath: ./Dockerfile

@@ -36,12 +36,23 @@ begin
   v := public.ranked_run_lease('30000000-0000-4000-8000-000000000002', 'CLAIM');
   if not (v->>'owned')::boolean or not (v->>'enabled')::boolean then
     raise exception 'restart did not auto-open'; end if;
+end $$;
+reset role;
+
+-- Inspect internal tables as the test DB owner. The server role intentionally
+-- has RPC access only; do not widen production grants to make assertions pass.
+do $$ begin
   if (select status from public.matches
       where match_id = '40000000-0000-4000-8000-000000000001') <> 'VOID' then
     raise exception 'old running match not reconciled'; end if;
   if exists (select 1 from public.player_stats where active_match_id =
       '40000000-0000-4000-8000-000000000001') then
     raise exception 'old participant remained active'; end if;
+end $$;
+set role service_role;
+do $$
+declare v jsonb;
+begin
   begin
     perform public.ranked_begin_match('40000000-0000-4000-8000-000000000002',
       '30000000-0000-4000-8000-000000000001', 'pvp-v1',
