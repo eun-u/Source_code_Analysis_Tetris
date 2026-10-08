@@ -2,8 +2,10 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
 import java.awt.*;
 import java.awt.event.ActionListener;
+import java.util.List;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import kr.ac.jbnu.se.tetris.story.StoryDialogueCue;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
@@ -16,6 +18,7 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
     private final JLabel rewardLabel = new JLabel("0", SwingConstants.CENTER);
     private final JLabel rankedStatus = new JLabel("", SwingConstants.CENTER);
     private final JLabel milestone = new JLabel("", SwingConstants.CENTER);
+    private final JTextArea storyDialogue = new JTextArea();
     private final GameButton returnButton = new GameButton("돌아가기");
     private final GameButton lobbyButton = new GameButton("로비로");
     private final GameButton nextButton = new GameButton("다음 전투");
@@ -69,6 +72,20 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
         }
         resultCard.add(notes, BorderLayout.SOUTH);
         content.add(resultCard); content.add(Box.createVerticalStrut(18));
+
+        // 대사 표시는 임시 연결점이다. 문구·횟수·시점·배치는 스토리/프론트 담당자가 자유롭게 바꾼다.
+        storyDialogue.setEditable(false);
+        storyDialogue.setFocusable(false);
+        storyDialogue.setOpaque(false);
+        storyDialogue.setLineWrap(true);
+        storyDialogue.setWrapStyleWord(true);
+        storyDialogue.setForeground(UniversityPixelTheme.TEXT);
+        storyDialogue.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        storyDialogue.setAlignmentX(Component.CENTER_ALIGNMENT);
+        storyDialogue.setMaximumSize(new Dimension(620, 84));
+        storyDialogue.setPreferredSize(new Dimension(620, 84));
+        storyDialogue.setVisible(false);
+        content.add(storyDialogue);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
         buttonPanel.setOpaque(false);
@@ -161,6 +178,15 @@ public class ResultPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.Sce
     public void setReturnAction(ActionListener listener) { returnButton.addActionListener(listener); }
     public void setLobbyAction(ActionListener listener) { lobbyButton.addActionListener(listener); }
     public void setRankedStatus(String text) { rankedStatus.setText(text); }
+    public void setStoryDialogue(List<StoryDialogueCue> cues) {
+        StringBuilder lines = new StringBuilder();
+        if (cues != null) for (StoryDialogueCue cue : cues) {
+            if (lines.length() > 0) lines.append('\n');
+            lines.append(cue.getSpeaker()).append(": ").append(cue.getText());
+        }
+        storyDialogue.setText(lines.toString());
+        storyDialogue.setVisible(lines.length() > 0);
+    }
     public void setStoryActions(boolean story, boolean hasNext, String earnedBadge) {
         nextButton.setVisible(story && hasNext); retryButton.setVisible(story);
         milestone.setText(earnedBadge == null || earnedBadge.isEmpty() ? "" : "획득  ·  " + earnedBadge);

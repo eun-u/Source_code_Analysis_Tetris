@@ -9,16 +9,6 @@ public final class ConnectionOptions {
     private final URI webSocketUri;
     private final String accessToken;
 
-    public ConnectionOptions(String host, int port) {
-        if (host == null || host.trim().isEmpty() || port < 1 || port > 65535) {
-            throw new IllegalArgumentException("Invalid connection options");
-        }
-        this.host = host.trim();
-        this.port = port;
-        this.webSocketUri = null;
-        this.accessToken = null;
-    }
-
     public ConnectionOptions(URI webSocketUri, String accessToken) {
         if (webSocketUri == null || accessToken == null || accessToken.trim().isEmpty()
                 || accessToken.length() > 8192 || webSocketUri.getHost() == null
@@ -51,7 +41,6 @@ public final class ConnectionOptions {
 
     public String getHost() { return host; }
     public int getPort() { return port; }
-    public boolean isWebSocket() { return webSocketUri != null; }
     public URI getWebSocketUri() { return webSocketUri; }
     public String getAccessToken() { return accessToken; }
 }

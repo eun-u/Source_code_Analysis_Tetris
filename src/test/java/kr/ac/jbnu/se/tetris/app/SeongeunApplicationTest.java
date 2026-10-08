@@ -5,16 +5,12 @@ import java.awt.Container;
 import java.util.Random;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
 import javax.swing.AbstractButton;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.SwingUtilities;
 import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
 import kr.ac.jbnu.se.tetris.core.GameAction;
-import kr.ac.jbnu.se.tetris.network.ConnectionOptions;
-import kr.ac.jbnu.se.tetris.network.server.LocalGameServer;
 
 /** 성은 원본 버튼에서 실제 세션까지 이어지는 최소 흐름 검증. */
 public final class SeongeunApplicationTest {
@@ -107,100 +103,7 @@ public final class SeongeunApplicationTest {
                 app.close();
             }
         });
-        onlineFlow();
-        unavailableServerKeepsRoomList();
         System.out.println("PASS SeongeunApplicationTest");
-    }
-
-    private static void unavailableServerKeepsRoomList() throws Exception {
-        final int unavailablePort;
-        try (LocalGameServer server = new LocalGameServer(0)) {
-            server.start();
-            unavailablePort = server.getPort();
-        }
-        final SeongeunApplication[] holder = new SeongeunApplication[1];
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                holder[0] = newTestApp(30);
-                holder[0].openOnline(new ConnectionOptions("127.0.0.1", unavailablePort));
-            });
-            awaitEdt(() -> holder[0].getMatchSnapshot().getPhase() == SessionPhase.FAILED
-                    && "ROOM_LIST".equals(holder[0].getCurrentScreen()),
-                    "unavailable server stays in room list without a game result");
-        } finally {
-            SwingUtilities.invokeAndWait(() -> { if (holder[0] != null) holder[0].close(); });
-        }
-    }
-
-    private static void onlineFlow() throws Exception {
-        final SeongeunApplication[] apps = new SeongeunApplication[2];
-        try (LocalGameServer server = new LocalGameServer(0)) {
-            server.start();
-            try {
-                SwingUtilities.invokeAndWait(() -> {
-                    for (int index = 0; index < apps.length; index++) {
-                        apps[index] = newTestApp(index + 21);
-                        apps[index].openOnline(new ConnectionOptions("127.0.0.1", server.getPort()));
-                    }
-                });
-                awaitEdt(() -> apps[0].isOnlineConnected() && apps[1].isOnlineConnected(), "TCP connection");
-                SwingUtilities.invokeAndWait(() -> apps[0].createRoomWithName("원본 방"));
-                awaitEdt(() -> apps[0].getRoomState() != null, "server room state");
-                String roomId = onEdtString(() -> apps[0].getRoomState().getRoomId());
-                SwingUtilities.invokeAndWait(() -> apps[1].joinRoom(roomId));
-                awaitEdt(() -> apps[1].getRoomState() != null
-                        && apps[1].getRoomState().getReadyByParticipantId().size() == 2,
-                        "two confirmed participants");
-                SwingUtilities.invokeAndWait(() -> {
-                    buttonNamed(apps[0].getScreens(), "waitingReady").doClick();
-                    buttonNamed(apps[1].getScreens(), "waitingReady").doClick();
-                });
-                awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
-                        && BATTLE.equals(apps[1].getCurrentScreen())
-                        && apps[0].getMatchSnapshot().getPhase() == SessionPhase.RUNNING,
-                        "server match started");
-                long before = onEdtLong(() -> apps[0].getMatchSnapshot().getBattleState().getVersion());
-                SwingUtilities.invokeAndWait(() -> apps[0].submit(GameAction.Type.HARD_DROP));
-                awaitEdt(() -> apps[0].getMatchSnapshot().getBattleState().getVersion() > before,
-                        "server input reflected");
-                long deadline = System.nanoTime() + 15_000_000_000L;
-                while (!onEdt(() -> RESULT.equals(apps[0].getCurrentScreen()))
-                        && System.nanoTime() < deadline) {
-                    SwingUtilities.invokeAndWait(() -> apps[0].submit(GameAction.Type.HARD_DROP));
-                    Thread.sleep(50);
-                }
-                awaitEdt(() -> RESULT.equals(apps[0].getCurrentScreen())
-                        && RESULT.equals(apps[1].getCurrentScreen()), "server result delivered");
-                SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "대기방으로").doClick();
-                    button(apps[1].getScreens(), "대기방으로").doClick();
-                });
-                awaitEdt(() -> WAITING_ROOM.equals(apps[0].getCurrentScreen())
-                        && WAITING_ROOM.equals(apps[1].getCurrentScreen()), "result returned to waiting room");
-                SwingUtilities.invokeAndWait(() -> {
-                    buttonNamed(apps[0].getScreens(), "waitingReady").doClick();
-                    buttonNamed(apps[1].getScreens(), "waitingReady").doClick();
-                });
-                awaitEdt(() -> BATTLE.equals(apps[0].getCurrentScreen())
-                        && BATTLE.equals(apps[1].getCurrentScreen()), "server rematch started");
-                SwingUtilities.invokeAndWait(() -> {
-                    button(apps[0].getScreens(), "대전 포기 [ESC]").doClick();
-                    assert LOBBY.equals(apps[0].getCurrentScreen());
-                    assert apps[0].getMatchSnapshot() == null;
-                });
-                awaitEdt(() -> RESULT.equals(apps[1].getCurrentScreen()), "opponent forfeit result");
-            } finally {
-                SwingUtilities.invokeAndWait(() -> {
-                    for (SeongeunApplication app : apps) if (app != null) app.close();
-                });
-            }
-        }
-    }
-
-    private static boolean onEdt(BooleanSupplier condition) throws Exception {
-        AtomicBoolean value = new AtomicBoolean();
-        SwingUtilities.invokeAndWait(() -> value.set(condition.getAsBoolean()));
-        return value.get();
     }
 
     private static SeongeunApplication newTestApp(long seed) {
@@ -211,24 +114,6 @@ public final class SeongeunApplicationTest {
             save.toFile().deleteOnExit();
             return new SeongeunApplication(new Random(seed), new PlayerSaveStore(save));
         } catch (java.io.IOException error) { throw new AssertionError(error); }
-    }
-
-    private static String onEdtString(java.util.function.Supplier<String> supplier) throws Exception {
-        final String[] value = new String[1];
-        SwingUtilities.invokeAndWait(() -> value[0] = supplier.get());
-        return value[0];
-    }
-
-    private static long onEdtLong(java.util.function.LongSupplier supplier) throws Exception {
-        final long[] value = new long[1];
-        SwingUtilities.invokeAndWait(() -> value[0] = supplier.getAsLong());
-        return value[0];
-    }
-
-    private static void awaitEdt(BooleanSupplier condition, String label) throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!onEdt(condition) && System.nanoTime() < deadline) Thread.sleep(10);
-        if (!onEdt(condition)) throw new AssertionError(label);
     }
 
     private static AbstractButton button(Component root, String text) {
@@ -281,5 +166,4 @@ public final class SeongeunApplicationTest {
     private static final String STORY_STAGE = "STORY_STAGE";
     private static final String BATTLE = "BATTLE";
     private static final String RESULT = "RESULT";
-    private static final String WAITING_ROOM = "WAITING_ROOM";
 }

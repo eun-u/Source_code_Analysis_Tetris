@@ -9,6 +9,9 @@ if (-not $PublicConfigPath) {
     if (-not (Test-Path -LiteralPath $PublicConfigPath)) {
         $PublicConfigPath = Join-Path $taskOut 'tetris-client.properties'
     }
+    if (-not (Test-Path -LiteralPath $PublicConfigPath)) {
+        $PublicConfigPath = Join-Path $taskRoot 'src\main\resources\online-defaults.properties'
+    }
 }
 $publicValues = @{}
 foreach ($line in [IO.File]::ReadAllLines($PublicConfigPath)) {
@@ -66,14 +69,14 @@ Java 8 이상을 설치하고 play.cmd 또는 tetris.jar를 실행하세요.
 로컬 시작: 계정 없이 스토리·튜토리얼·연습·상점 이용.
 온라인 로그인: 아이디/비밀번호로 가입 또는 로그인 → Online Battle → 방 생성/입장 → 두 사람 READY.
 아이디는 영문자로 시작하는 영문/숫자/밑줄 3~20자입니다.
-PvP 랭킹: 서버가 확정한 공식 경기 전적만 표시. 로컬 PvE/LAN 기록은 제외.
+PvP 랭킹: 서버가 확정한 공식 경기 전적만 표시. 로컬 PvE 기록은 제외.
 아이디 계정은 이메일이 없으므로 비밀번호 셀프 복구가 불가능합니다.
-Render Free 서버는 절전 후 첫 연결이 지연되고, 운영자가 대전 접수를 다시 열어야 합니다.
+Render Free 서버는 유휴 시 절전되어 첫 연결이 지연될 수 있습니다. 대전 접수 상태는 서버가 DB에서 복원합니다.
 온라인 아이템 채굴 규칙은 업데이트된 서버와 접속할 때 적용됩니다.
 
 조작: ←→ 이동 / ↑↓ 회전 / D 한 칸 낙하 / SPACE 즉시 낙하 / C HOLD
 P 로컬 일시정지 / 1~4 아이템 / ESC 돌아가기
-로비의 설정에서 BGM/효과음 음량·음소거, LAN 접속, 5단계 조작 튜토리얼을 설정합니다.
+로비의 설정에서 BGM/효과음 음량·음소거와 5단계 조작 튜토리얼을 설정합니다.
 첫 로컬 시작에서 튜토리얼을 직접 진행하며, 설정의 '다시 보지 않기'를 저장할 수 있습니다.
 창은 크기를 조절할 수 있으며 플레이 영역 비율을 4:3으로 유지합니다.
 

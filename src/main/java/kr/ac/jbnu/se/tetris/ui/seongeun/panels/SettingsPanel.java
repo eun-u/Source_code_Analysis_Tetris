@@ -19,12 +19,10 @@ import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
-/** 게임 중에는 숨기는 오디오·온라인 계정·조작 학습·LAN 설정 화면. */
+/** 게임 중에는 숨기는 오디오·온라인 계정·조작 학습 설정 화면. */
 public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final PixelButton back = new PixelButton("로비로");
     private final PixelButton tutorial = new PixelButton("튜토리얼 시작");
-    private final PixelButton lanConnect = new PixelButton("LAN 서버 연결...");
-    private final PixelButton lanHost = new PixelButton("LAN 서버 시작");
     private final PixelButton onlineAccount = new PixelButton("로그인 / 가입");
     private final JLabel onlineAccountStatus = text("로컬 플레이 · 로그인 필요", 13, UniversityPixelTheme.TEXT_SUB);
     private final JCheckBox skipTutorial = new JCheckBox("다시 보지 않기");
@@ -84,20 +82,6 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         center.add(columns);
         add(center, BorderLayout.CENTER);
 
-        JPanel lan = new JPanel(new BorderLayout(16, 0));
-        lan.setBackground(UniversityPixelTheme.PANEL);
-        lan.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2),
-                new EmptyBorder(8, 12, 8, 12)));
-        JPanel lanText = new JPanel(); lanText.setOpaque(false);
-        lanText.setLayout(new BoxLayout(lanText, BoxLayout.Y_AXIS));
-        lanText.add(text("LAN 대전", 15, UniversityPixelTheme.TEXT));
-        lan.add(lanText, BorderLayout.WEST);
-        lanConnect.secondary(); lanHost.secondary();
-        lanConnect.setPreferredSize(new Dimension(140, 38)); lanHost.setPreferredSize(new Dimension(140, 38));
-        JPanel lanButtons = new JPanel(new GridLayout(1, 2, 8, 0)); lanButtons.setOpaque(false);
-        lanButtons.add(lanConnect); lanButtons.add(lanHost); lan.add(lanButtons, BorderLayout.EAST);
-        add(lan, BorderLayout.SOUTH);
     }
 
     private static JSlider slider() {
@@ -174,8 +158,6 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         onlineAccount.setEnabled(available && !busy);
     }
     public void setTutorialAction(ActionListener listener) { tutorial.addActionListener(listener); }
-    public void setLanConnectAction(ActionListener listener) { lanConnect.addActionListener(listener); }
-    public void setLanHostAction(ActionListener listener) { lanHost.addActionListener(listener); }
     public void setBgmMuteAction(Consumer<Boolean> action) {
         bgmMute.addActionListener(event -> { if (!loading) action.accept(bgmMute.isSelected()); });
     }

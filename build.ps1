@@ -1,10 +1,8 @@
 ﻿param(
-    [ValidateSet('Build', 'Test', 'Run', 'Server', 'CloudServer', 'GuiTest', 'Preview', 'NetworkFixture')]
+    [ValidateSet('Build', 'Test', 'Run', 'CloudServer', 'GuiTest', 'Preview', 'NetworkFixture')]
     [string]$Task = 'Build',
     [string]$JdkHome = '',
-    [switch]$AllowVisibleDesktop,
-    [ValidateRange(1, 65535)]
-    [int]$Port = 28080
+    [switch]$AllowVisibleDesktop
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
@@ -76,8 +74,6 @@ if ($Task -eq 'Preview') {
     & $java '-Djava.awt.headless=false' -ea -cp $testClasspath kr.ac.jbnu.se.tetris.ui.seongeun.BoardKeyboardDesktopSmoke
 } elseif ($Task -eq 'Run') {
     & (Join-Path $selectedJdk 'bin\javaw.exe') -jar $jarPath
-} elseif ($Task -eq 'Server') {
-    & $java '-Djava.awt.headless=true' -cp $serverJar kr.ac.jbnu.se.tetris.network.server.LocalGameServer $Port
 } elseif ($Task -eq 'CloudServer') {
     & $java '-Djava.awt.headless=true' '-Xmx256m' -jar $serverJar
 }

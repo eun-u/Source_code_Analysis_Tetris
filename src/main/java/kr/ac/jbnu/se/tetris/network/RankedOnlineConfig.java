@@ -1,6 +1,7 @@
 package kr.ac.jbnu.se.tetris.network;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Reader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,12 @@ public final class RankedOnlineConfig {
         if (file != null && Files.isRegularFile(file)) {
             try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                 properties.load(reader);
+            }
+        } else {
+            // 공개 접속 정보만 기본값으로 배포해 새 PC의 dev 빌드도 온라인 서버를 찾는다.
+            // 외부 파일·환경 변수·시스템 속성은 기존처럼 우선하며 비밀 키/토큰은 포함하지 않는다.
+            try (InputStream defaults = RankedOnlineConfig.class.getResourceAsStream("/online-defaults.properties")) {
+                if (defaults != null) properties.load(defaults);
             }
         }
         String server = value(properties, "server.url", "TETRIS_SERVER_URL");
