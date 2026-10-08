@@ -66,7 +66,7 @@ public final class WebSocketNetworkClient implements NetworkClient {
 
     @Override public long connect(ConnectionOptions options) {
         requireOpen();
-        if (options == null || !options.isWebSocket()) throw new IllegalArgumentException("WebSocket URI required");
+        if (options == null) throw new IllegalArgumentException("WebSocket URI required");
         if (!started.compareAndSet(false, true)) throw new IllegalStateException("ALREADY_CONNECTING");
         long id = nextId.incrementAndGet();
         daemon(() -> open(options), "tetris-ws-connect").start();

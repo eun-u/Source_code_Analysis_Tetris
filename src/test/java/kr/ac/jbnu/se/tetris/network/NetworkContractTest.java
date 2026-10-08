@@ -1,5 +1,6 @@
 package kr.ac.jbnu.se.tetris.network;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,7 +22,8 @@ public final class NetworkContractTest {
         check(outcome(seen, early).getReasonCode().equals("NOT_CONNECTED")
                 && fake.getSentRoomCommands().isEmpty(), "접속 전 방 생성 거절");
 
-        long connect = fake.connect(new ConnectionOptions("127.0.0.1", 8080));
+        long connect = fake.connect(new ConnectionOptions(URI.create("ws://127.0.0.1:8080/ws"),
+                "fixture-token"));
         fake.emit(NetworkUpdate.connected());
         fake.complete(connect, true, null, null, null, null);
         fake.drain();

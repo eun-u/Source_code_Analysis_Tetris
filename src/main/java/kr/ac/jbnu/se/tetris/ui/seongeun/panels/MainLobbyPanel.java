@@ -45,7 +45,7 @@ public class MainLobbyPanel extends JPanel {
         localButton.setName("lobbyLocal");
         settingsButton.secondary();
         settingsButton.setPreferredSize(new Dimension(84, 34));
-        settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 · LAN 설정");
+        settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 설정");
         account.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         coins.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         add(logo); add(menu); add(nextCard); add(account); add(coins); add(settingsButton);
