@@ -11,6 +11,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.LayoutManager;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -225,8 +226,8 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JPanel leftColumn = column();
     private final JPanel rightColumn = column();
     // PvE 전용 HUD: 온라인 대전의 기존 좌우 열은 그대로 보존한다.
-    private final JPanel pveHoldPanel = new JPanel(new BorderLayout(0, 5));
-    private final JPanel pveNextPanel = new JPanel();
+    private final JPanel pveHoldPanel = battlePreviewFrame(new BorderLayout(0, 3));
+    private final JPanel pveNextPanel = battlePreviewFrame(null);
     private final JPanel pveFooter = new JPanel(null);
     private final JPanel pveFeverPanel = new JPanel(null) {
         @Override protected void paintComponent(Graphics graphics) {
@@ -319,34 +320,59 @@ public class BattlePanel extends JPanel implements Scrollable {
         showPveHud(true);
     }
 
+    /** PvE HOLD/NEXT outer shell. Existing PvP previews are not touched. */
+    private static JPanel battlePreviewFrame(LayoutManager layout) {
+        JPanel panel = new JPanel(layout) {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    int w = getWidth(), h = getHeight();
+                    if (w < 10 || h < 10) return;
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setColor(new Color(0x111919));
+                    g.fillRoundRect(0, 0, w, h, 20, 20);
+                    g.setColor(new Color(0x728473));
+                    g.fillRoundRect(3, 3, w - 6, h - 6, 16, 16);
+                    g.setColor(new Color(0x2A3934));
+                    g.fillRoundRect(6, 6, w - 12, h - 12, 13, 13);
+                    g.setColor(new Color(255, 255, 255, 72));
+                    g.setStroke(new BasicStroke(1.4f));
+                    g.drawRoundRect(5, 5, w - 11, h - 11, 14, 14);
+                } finally { g.dispose(); }
+            }
+        };
+        panel.setOpaque(false);
+        return panel;
+    }
+
     private void buildPveHud() {
-        Color dark = new Color(0x304C3A);
-        Color cream = new Color(0xF1E7CF);
-        javax.swing.border.Border border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0x66482E), 3, true),
-                new EmptyBorder(6, 7, 6, 7));
-        pveHoldPanel.setBackground(dark);
-        pveHoldPanel.setBorder(border);
+        // PvE: the panel draws its own rounded outer frame; no beige Swing border.
+        pveHoldPanel.setOpaque(false);
+        pveHoldPanel.setBorder(new EmptyBorder(7, 8, 8, 8));
         JLabel holdTitle = label("HOLD");
         holdTitle.setHorizontalAlignment(SwingConstants.CENTER);
-        holdTitle.setForeground(cream);
+        holdTitle.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        holdTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         pveHoldPanel.add(holdTitle, BorderLayout.NORTH);
+        pveHoldPreview.setBattleHudStyle(true);
         pveHoldPanel.add(pveHoldPreview, BorderLayout.CENTER);
 
         pveNextPanel.setLayout(new BoxLayout(pveNextPanel, BoxLayout.Y_AXIS));
-        pveNextPanel.setBackground(dark);
-        pveNextPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0x66482E), 3, true),
-                new EmptyBorder(5, 5, 5, 5)));
+        pveNextPanel.setOpaque(false);
+        pveNextPanel.setBorder(new EmptyBorder(7, 7, 9, 7));
         JLabel nextTitle = label("NEXT");
-        nextTitle.setForeground(cream);
+        nextTitle.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        nextTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         nextTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         pveNextPanel.add(nextTitle);
+        pveNextPanel.add(Box.createVerticalStrut(4));
         for (MiniPiecePreview preview : pveNextPreviews) {
+            preview.setBattleHudStyle(true);
             preview.setAlignmentX(Component.CENTER_ALIGNMENT);
-            preview.setMaximumSize(new Dimension(Integer.MAX_VALUE, 85));
+            preview.setMaximumSize(new Dimension(Integer.MAX_VALUE, 77));
+            preview.setPreferredSize(new Dimension(92, 77));
             pveNextPanel.add(preview);
-            pveNextPanel.add(Box.createVerticalStrut(2));
+            pveNextPanel.add(Box.createVerticalStrut(4));
         }
 
         pveFooter.setOpaque(false);
@@ -660,9 +686,9 @@ public class BattlePanel extends JPanel implements Scrollable {
                 METER, Math.max(0, boardHeight - 2));
 
         // HOLD와 NEXT는 보드 상단 양옆에만 표시한다.
-        int hudWidth = clamp(Math.round(width * 0.105f), 95, 122);
-        pveHoldPanel.setBounds(boardX - hudWidth - 21, boardY + 24, hudWidth, 142);
-        pveNextPanel.setBounds(boardX + boardWidth + 19, boardY + 24, hudWidth, 294);
+        int hudWidth = clamp(Math.round(width * 0.097f), 96, 116);
+        pveHoldPanel.setBounds(boardX - hudWidth - 15, boardY + 18, hudWidth, 132);
+        pveNextPanel.setBounds(boardX + boardWidth + 15, boardY + 18, hudWidth, 282);
 
         // 한 개의 투명 무대에서 캐릭터를 보드 좌우에 그리고, 보드는 그 위에 그린다.
         arena.setBounds(side, top, interiorWidth, Math.max(1, footerTop - top));

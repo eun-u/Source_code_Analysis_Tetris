@@ -11,6 +11,13 @@ public final class MiniPiecePreview extends JComponent {
     private PieceType type;
     private boolean item;
     private int oreCellIndex = -1;
+    // PvE preview slots use a bright cartoon appearance. PvP uses the original skin.
+    private boolean battleHudStyle;
+
+    public void setBattleHudStyle(boolean enabled) {
+        battleHudStyle = enabled;
+        repaint();
+    }
     public MiniPiecePreview(String title) {
         this.title = title;
         setPreferredSize(new Dimension(68, 70));
@@ -30,6 +37,10 @@ public final class MiniPiecePreview extends JComponent {
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
+            if (battleHudStyle) {
+                paintBattleHudPreview(g);
+                return;
+            }
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             g.setColor(UniversityPixelTheme.BLACK); g.fillRect(0, 0, getWidth(), getHeight());
             g.setColor(UniversityPixelTheme.PANEL); g.fillRect(3, 3, getWidth() - 6, getHeight() - 6);
@@ -61,4 +72,72 @@ public final class MiniPiecePreview extends JComponent {
             }
         } finally { g.dispose(); }
     }
+
+    /** PvE-only: inset dark tile with recognizable high-saturation tetromino colors. */
+    private void paintBattleHudPreview(Graphics2D g) {
+        int w = getWidth(), h = getHeight();
+        if (w < 16 || h < 16) return;
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        g.setColor(new Color(0x101B1B));
+        g.fillRoundRect(0, 0, w, h, 10, 10);
+        g.setColor(new Color(0x56685B));
+        g.fillRoundRect(3, 3, w - 6, h - 6, 8, 8);
+        g.setColor(new Color(0x1C292B));
+        g.fillRoundRect(6, 6, w - 12, h - 12, 5, 5);
+        g.setColor(new Color(0x394A4B));
+        g.setStroke(new BasicStroke(1f));
+        g.drawRoundRect(6, 6, w - 13, h - 13, 5, 5);
+
+        // Subtle 4-column board grid; keeps pieces visually readable.
+        g.setColor(new Color(0x344243));
+        int grid = Math.max(12, (w - 18) / 4);
+        for (int x = 8 + grid; x < w - 8; x += grid) g.drawLine(x, 8, x, h - 9);
+        for (int y = 8 + grid; y < h - 8; y += grid) g.drawLine(8, y, w - 9, y);
+
+        if (type == null) return; // Empty HOLD displays an empty slot, no extra text.
+        Piece piece = new Piece(type);
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (int i = 0; i < 4; i++) {
+            minX = Math.min(minX, piece.x(i)); maxX = Math.max(maxX, piece.x(i));
+            minY = Math.min(minY, piece.y(i)); maxY = Math.max(maxY, piece.y(i));
+        }
+        int cols = maxX - minX + 1, rows = maxY - minY + 1;
+        int cell = Math.max(10, Math.min(22, Math.min((w - 22) / cols, (h - 22) / rows)));
+        int left = (w - cols * cell) / 2;
+        int top = (h - rows * cell) / 2;
+        Color block = battlePieceColor(type);
+        for (int i = 0; i < 4; i++) {
+            int x = left + (piece.x(i) - minX) * cell;
+            int y = top + (maxY - piece.y(i)) * cell;
+            // Dark outline, rich color and a single highlight; no concrete texture.
+            g.setColor(new Color(0x0D191D));
+            g.fillRoundRect(x, y, cell, cell, 4, 4);
+            g.setColor(block);
+            g.fillRoundRect(x + 1, y + 1, cell - 2, cell - 2, 3, 3);
+            g.setColor(new Color(255, 255, 255, 105));
+            g.drawLine(x + 3, y + 2, x + cell - 4, y + 2);
+            g.setColor(new Color(0, 0, 0, 70));
+            g.drawLine(x + 2, y + cell - 3, x + cell - 3, y + cell - 3);
+            if (item && i == oreCellIndex) {
+                g.setColor(new Color(0xFFE47B));
+                g.fillOval(x + cell / 2 - 3, y + cell / 2 - 3, 6, 6);
+            }
+        }
+    }
+
+    private static Color battlePieceColor(PieceType type) {
+        switch (type) {
+            case I: return new Color(0x37C9F5);
+            case O: return new Color(0xFFCD45);
+            case T: return new Color(0xC45CF2);
+            case S: return new Color(0x86E855);
+            case Z: return new Color(0xF36961);
+            case J: return new Color(0x4E9BFF);
+            case L: return new Color(0xFF9C47);
+            default: return new Color(0xA0A8B1);
+        }
+    }
+
 }
