@@ -1,55 +1,27 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.BasicStroke;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.LayoutManager;
-import java.awt.Point;
-import java.awt.Rectangle;
-import java.awt.RenderingHints;
+import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.function.IntConsumer;
-
 import javax.imageio.ImageIO;
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.Icon;
-import javax.swing.ImageIcon;
-import javax.swing.JButton;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.Scrollable;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.Timer;
+import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-
-import kr.ac.jbnu.se.tetris.audio.AudioService;
-import kr.ac.jbnu.se.tetris.battle.BattleEvent;
-import kr.ac.jbnu.se.tetris.battle.BattleState;
-import kr.ac.jbnu.se.tetris.battle.ParticipantState;
-import kr.ac.jbnu.se.tetris.core.BoardState;
-import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.battle.*;
 import kr.ac.jbnu.se.tetris.core.GameState;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.core.BoardState;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
+import kr.ac.jbnu.se.tetris.audio.AudioService;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CartoonBattleTopHud;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GarbageMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.OreFlightLayer;
@@ -198,6 +170,77 @@ public class BattlePanel extends JPanel implements Scrollable {
         g.setColor(new Color(0xFFF8E9));
         g.drawString(text, tx, ty);
     }
+    // Compact, readable rounded message banner below the FEVER HUD.
+    private static JLabel createBattleStatusBanner() {
+        JLabel banner = new JLabel("") {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    int w = getWidth(), h = getHeight();
+                    if (w < 10 || h < 10) return;
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    // Translucent light gray: let the campus art show through without washing out text.
+                    g.setColor(new Color(34, 38, 41, 65));
+                    g.fillRoundRect(1, 3, w - 2, h - 3, 17, 17);
+                    g.setColor(new Color(238, 241, 244, 235));
+                    g.fillRoundRect(0, 0, w, h - 3, 17, 17);
+                    g.setColor(new Color(112, 119, 125, 200));
+                    g.setStroke(new BasicStroke(1.5f));
+                    g.drawRoundRect(1, 1, w - 3, h - 6, 15, 15);
+                    g.setColor(new Color(255, 255, 255, 110));
+                    g.drawRoundRect(3, 3, w - 7, h - 10, 13, 13);
+
+                    // Small warning badge, with dark ink on the pale surface.
+                    int cy = (h - 3) / 2;
+                    g.setColor(new Color(0xE6B656));
+                    g.fillOval(11, cy - 8, 16, 16);
+                    g.setColor(new Color(0x4A3D2D));
+                    g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g.drawLine(19, cy - 4, 19, cy + 1);
+                    g.fillOval(18, cy + 4, 2, 2);
+                } finally {
+                    g.dispose();
+                }
+                super.paintComponent(graphics);
+            }
+        };
+        banner.setOpaque(false);
+        banner.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        banner.setForeground(UniversityPixelTheme.TEXT);
+        banner.setBorder(new EmptyBorder(4, 37, 6, 12));
+        return banner;
+    }
+
+    // Theme.apply() normally maps unrecognized white JLabel text to the dark theme TEXT.
+    // Restore true white immediately before JLabel paints (including after theme re-application).
+    private static JLabel whiteFeverLabel(String text) {
+        JLabel label = new JLabel(text) {
+            @Override protected void paintComponent(Graphics graphics) {
+                if (!Color.WHITE.equals(getForeground())) setForeground(Color.WHITE);
+                super.paintComponent(graphics);
+            }
+        };
+        label.setForeground(Color.WHITE);
+        label.setFont(new Font("Dialog", Font.BOLD, 16));
+        return label;
+    }
+
+    // Adjust the banner to its message length without covering all item slots.
+    private void layoutStatusBanner() {
+        int width = getWidth(), height = getHeight();
+        if (width <= 0 || height <= 0) return;
+        int margin = pveMargin(width, height);
+        int side = margin + 12, bottom = margin + 23;
+        String message = status.getText() == null ? "" : status.getText();
+        int available = Math.max(0, width - side * 2 - 8);
+        int desired = status.getFontMetrics(status.getFont()).stringWidth(message) + 53;
+        int bubbleWidth = Math.min(available, Math.max(160, desired));
+        Rectangle bounds = new Rectangle(side + 4, height - bottom + 7, bubbleWidth, 38);
+        if (!bounds.equals(status.getBounds())) status.setBounds(bounds);
+        status.setVisible(!message.trim().isEmpty());
+    }
+
     private final PixelArena arena = new PixelArena();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
     private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
@@ -210,9 +253,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JLabel gauge = label("FEVER 0%"), pending = label("가비지 0");
     private final JLabel warp = label(" ");
     private final JLabel stats = label("<html>LINES 0<br>COMBO 0</html>");
-    private final JLabel status = label("");
+    private final JLabel status = createBattleStatusBanner();
     private final JLabel clock = label("00:00");
-    private final JLabel levelChip = UniversityPixelTheme.chip("LV 1", UniversityPixelTheme.GOLD);
+    private final JLabel levelChip = CartoonBattleTopHud.levelChip("LV 1", UniversityPixelTheme.GOLD);
     private final JLabel title = label("MONSTER BATTLE");
     private final Board playerBoard = new Board(playerStatus, true);
     private final Board enemyBoard = new Board(enemyStatus, false);
@@ -220,9 +263,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JButton[] slots = new JButton[4];
     private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
-    private final JButton backButton = button("전투 포기 [ESC]");
+    private final JButton backButton = CartoonBattleTopHud.quitButton("전투 포기 [ESC]");
     private final PixelMeter feverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
-    private final JPanel topBar = new JPanel(new BorderLayout(10, 0));
+    private final JPanel topBar = new CartoonBattleTopHud(levelChip, title, clock, (PixelButton) backButton);
     private final JPanel leftColumn = column();
     private final JPanel rightColumn = column();
     // PvE 전용 HUD: 온라인 대전의 기존 좌우 열은 그대로 보존한다.
@@ -254,8 +297,8 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final MiniPiecePreview[] pveNextPreviews = {
         new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
     };
-    private final JLabel pveFeverLabel = label("FEVER");
-    private final JLabel pveFeverPercent = label("0%");
+    private final JLabel pveFeverLabel = whiteFeverLabel("FEVER");
+    private final JLabel pveFeverPercent = whiteFeverLabel("0%");
     private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
@@ -274,23 +317,14 @@ public class BattlePanel extends JPanel implements Scrollable {
         setBackground(BG);
         playerBoard.setAutomaticEffects(false); enemyBoard.setAutomaticEffects(false);
 
-        // 상단: 레벨·과정 이름과 시간, 포기 버튼.
-        topBar.setOpaque(false);
-        JPanel heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0)); heading.setOpaque(false);
+        // Compact pastel HUD; same labels, timer updates, and quit button callbacks.
         levelChip.setFont(UniversityPixelTheme.font(14, Font.BOLD));
-        title.setFont(UniversityPixelTheme.font(17, Font.BOLD));
-        heading.add(levelChip); heading.add(title);
-        topBar.add(heading, BorderLayout.CENTER);
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0)); actions.setOpaque(false);
-        clock.setFont(UniversityPixelTheme.font(18, Font.BOLD));
-        clock.setForeground(UniversityPixelTheme.GOLD);
-        actions.add(clock);
+        title.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+        title.setForeground(UniversityPixelTheme.TEXT);
+        clock.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        clock.setForeground(UniversityPixelTheme.TEXT);
         ((PixelButton) backButton).primary();
-        backButton.setPreferredSize(new Dimension(136, 34));
-        backButton.setFocusable(false);
         backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
-        actions.add(backButton);
-        topBar.add(actions, BorderLayout.EAST);
         add(topBar);
 
         buildLeftColumn();
@@ -309,8 +343,6 @@ public class BattlePanel extends JPanel implements Scrollable {
         add(arena);
         buildEnemyColumn();
         add(enemyColumn);
-        status.setFont(UniversityPixelTheme.font(12, Font.BOLD));
-        status.setForeground(UniversityPixelTheme.TEXT_SUB);
         add(status);
         add(oreFlights);
         // Swing은 인덱스 0을 맨 앞에 그린다. 채굴 광원이 보드와 슬롯 위를 지나야 한다.
@@ -379,9 +411,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFeverPanel.setOpaque(false);
         pveFeverPanel.setBorder(null);
         pveFeverLabel.setText("FEVER");
-        pveFeverLabel.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        pveFeverLabel.setForeground(Color.WHITE);
         pveFeverLabel.setFont(new Font("Dialog", Font.BOLD, 16));
-        pveFeverPercent.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        pveFeverPercent.setForeground(Color.WHITE);
         pveFeverPercent.setFont(new Font("Dialog", Font.BOLD, 17));
         pveFeverPercent.setHorizontalAlignment(SwingConstants.RIGHT);
         pveFeverPanel.add(pveFeverLabel);
@@ -656,10 +688,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (width <= 0 || height <= 0) return;
         oreFlights.setBounds(0, 0, width, height);
         int margin = pveMargin(width, height);
-        int side = margin + 12, top = margin + 54, bottom = margin + 23;
-        topBar.setBounds(side + 4, margin + 9, Math.max(0, width - side * 2 - 8), 36);
-        status.setBounds(side + 4, height - bottom + 3,
-                Math.max(0, width - side * 2 - 8), 17);
+        int side = margin + 12, top = margin + 68, bottom = margin + 23;
+        topBar.setBounds(side + 4, margin + 6, Math.max(0, width - side * 2 - 8), 50);
+        layoutStatusBanner();
         resultTestButton.setVisible(false);
         if (online) {
             showPveHud(false);
@@ -908,7 +939,8 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;
         status.setText("▶ " + text);
-        status.setForeground(UniversityPixelTheme.GOLD);
+        status.setForeground(UniversityPixelTheme.CORAL);
+        layoutStatusBanner();
     }
     public Board getPlayerBoard() { return playerBoard; }
     public Board getEnemyBoard() { return enemyBoard; }
@@ -1004,9 +1036,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
                 state.getElapsedMillis() / 1000 % 60));
         if (System.currentTimeMillis() >= feedbackUntil) {
-            status.setForeground(UniversityPixelTheme.TEXT_SUB);
+            status.setForeground(UniversityPixelTheme.TEXT);
             status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
                     : "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기");
+            layoutStatusBanner();
         }
     }
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
