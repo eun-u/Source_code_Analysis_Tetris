@@ -85,6 +85,7 @@ public final class PixelArena extends JComponent {
     private String monsterArtPath;
     private String chapter = "university";
     private boolean online;
+    private boolean widePve;
     private MonsterTier pattern = MonsterTier.NORMAL;
     private long playerHitAt = -1, monsterHitAt = -1, playerAttackAt = -1, monsterAttackAt = -1;
     private long playerPlacementAt = -1, monsterPlacementAt = -1;
@@ -150,6 +151,13 @@ public final class PixelArena extends JComponent {
 
     public void setOnline(boolean online) {
         this.online = online;
+        repaint();
+    }
+
+    /** PvE에서 플레이어와 몬스터를 중앙 보드 양옆에 그리는 투명 오버레이 모드. */
+    public void setWidePve(boolean enabled) {
+        if (widePve == enabled) return;
+        widePve = enabled;
         repaint();
     }
 
@@ -320,12 +328,14 @@ public final class PixelArena extends JComponent {
             long now = System.currentTimeMillis();
             Stage stage = new Stage(w, h);
 
-            g.setColor(UniversityPixelTheme.BLACK);
-            g.fillRect(0, 0, w, h);
+            if (!widePve || online) {
+                g.setColor(UniversityPixelTheme.BLACK);
+                g.fillRect(0, 0, w, h);
+            }
             Graphics2D world = (Graphics2D) g.create();
             int[] shake = shakeOffset(now);
             world.translate(shake[0], shake[1]);
-            paintBackdrop(world, stage, now);
+            if (!widePve || online) paintBackdrop(world, stage, now);
             paintMonster(world, stage, now);
             paintPlayer(world, stage, now);
             paintVisuals(world, stage, now);
@@ -336,7 +346,7 @@ public final class PixelArena extends JComponent {
             paintPlates(g, stage, now);
             paintIntro(g, stage, now);
             paintFinish(g, stage, now);
-            paintFrame(g, w, h, now);
+            if (!widePve || online) paintFrame(g, w, h, now);
         } finally { g.dispose(); }
     }
 
@@ -348,6 +358,19 @@ public final class PixelArena extends JComponent {
 
         Stage(int w, int h) {
             this.w = w; this.h = h;
+            if (widePve && !online) {
+                top = 40;
+                bottom = h - 22;
+                horizon = h - 100;
+                monsterSize = Math.max(64, Math.min(Math.round(w * 0.18f), Math.round(h * 0.29f)));
+                monsterX = w - Math.max(105, Math.round(w * 0.12f));
+                monsterFoot = h - 45;
+                portraitW = Math.max(56, Math.min(Math.round(w * 0.16f), Math.round(h * 0.23f)));
+                portraitH = portraitW * 7 / 6;
+                portraitX = Math.max(12, Math.round(w * 0.12f) - portraitW / 2);
+                portraitY = monsterFoot - portraitH;
+                return;
+            }
             top = 62;
             bottom = h - 58;
             int span = Math.max(80, bottom - top);
@@ -545,7 +568,7 @@ public final class PixelArena extends JComponent {
         float pose = effectsEnabled ? attackPose(attackAge) : 0f;
         int advance = attackAdvance(s, true);
         if (!online && pattern == MonsterTier.BOSS) advance = Math.max(7, advance / 3);
-        x += Math.round(pose * advance);
+        x += (widePve && !online ? -1 : 1) * Math.round(pose * advance);
         y -= attackLift(attackAge, size);
         long hitAge = now - monsterHitAt;
         boolean hit = monsterHitAt >= 0 && hitAge >= 0 && hitAge < 300;
@@ -581,7 +604,7 @@ public final class PixelArena extends JComponent {
         Composite prior = g.getComposite();
         if (fall > 0)
             g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.30f, 1f - fall * 0.70f)));
-        boolean mirrored = !online;
+        boolean mirrored = !online && !widePve;
         BufferedImage scaled = scaled(art, size, size, mirrored);
         if (attackAge >= 130 && attackAge < IMPACT_MS)
             paintAfterimages(g, scaled, x, y, -1, (attackAge - 130) / (float) (IMPACT_MS - 130));
@@ -603,7 +626,7 @@ public final class PixelArena extends JComponent {
         long attackAge = now - playerAttackAt;
         float pose = effectsEnabled ? attackPose(attackAge) : 0f;
         int advance = attackAdvance(s, false);
-        x -= Math.round(pose * advance);
+        x += (widePve && !online ? 1 : -1) * Math.round(pose * advance);
         y -= attackLift(attackAge, ph);
         if (effectsEnabled && (attackAge < 0 || attackAge >= 720))
             y += Math.round(Math.sin(now / (online ? 380.0 : 430.0)) * (online ? 4 : 2));
@@ -618,7 +641,7 @@ public final class PixelArena extends JComponent {
         Color trim = feverActive ? PINK : MINT;
         BufferedImage playerArt = poseArt(PLAYER_ART, PLAYER_WINDUP, PLAYER_STRIKE, PLAYER_HURT,
                 attackAge, hitAge);
-        BufferedImage sprite = playerArt == null ? null : scaled(playerArt, pw, ph, true);
+        BufferedImage sprite = playerArt == null ? null : scaled(playerArt, pw, ph, !widePve);
         if (sprite != null && attackAge >= 130 && attackAge < IMPACT_MS)
             paintAfterimages(g, sprite, x, y, 1, (attackAge - 130) / (float) (IMPACT_MS - 130));
         g.setColor(new Color(0, 0, 0, 100));
@@ -756,7 +779,7 @@ public final class PixelArena extends JComponent {
 
     /** PvP의 두 선수는 동일한 직접 타격 프레임을 좌우 반전해 쓴다. */
     private void paintHumanAttack(Graphics2D g, Stage s, long age, int seed, boolean rival) {
-        int direction = rival ? 1 : -1;
+        int direction = widePve && !online ? (rival ? -1 : 1) : (rival ? 1 : -1);
         int actorX = rival ? s.monsterX : s.playerCenterX();
         int actorY = rival ? s.monsterCenterY() : s.playerCenterY();
         int foot = rival || online ? s.monsterFoot : s.portraitY + s.portraitH;
@@ -1170,6 +1193,22 @@ public final class PixelArena extends JComponent {
     }
 
     private void paintPlates(Graphics2D g, Stage s, long now) {
+        if (widePve && !online) {
+            int hpY = Math.max(86, s.h - 335);
+            int plateWidth = Math.min(205, Math.max(120, s.w / 5));
+            int playerMain = shownMain(playerTrailFrom, playerHp, playerTrailAt, now);
+            int playerTrail = shownTrail(playerTrailFrom, playerHp, playerTrailAt, now);
+            int monsterMain = shownMain(monsterTrailFrom, monsterHp, monsterTrailAt, now);
+            int monsterTrail = shownTrail(monsterTrailFrom, monsterHp, monsterTrailAt, now);
+            paintHpPlate(g, 6, hpY, plateWidth, 46, playerName, "PLAYER",
+                    playerMain, playerTrail, playerHp, playerMax, MINT,
+                    playerHitAt >= 0 && now - playerHitAt >= 0 && now - playerHitAt < 200);
+            paintHpPlate(g, s.w - plateWidth - 6, hpY, plateWidth, 46, monsterName,
+                    pattern == MonsterTier.BOSS ? "BOSS" : pattern == MonsterTier.ELITE ? "ELITE" : "MONSTER",
+                    monsterMain, monsterTrail, monsterHp, monsterMax, CORAL,
+                    monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < 200);
+            return;
+        }
         int monsterMain = shownMain(monsterTrailFrom, monsterHp, monsterTrailAt, now);
         int monsterTrail = shownTrail(monsterTrailFrom, monsterHp, monsterTrailAt, now);
         String tier = online ? "RIVAL" : pattern == MonsterTier.BOSS ? "BOSS" : pattern == MonsterTier.ELITE ? "ELITE" : "MONSTER";
