@@ -1,25 +1,53 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.function.IntConsumer;
+
 import javax.imageio.ImageIO;
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
-import kr.ac.jbnu.se.tetris.battle.*;
-import kr.ac.jbnu.se.tetris.core.GameState;
-import kr.ac.jbnu.se.tetris.core.GameEvent;
-import kr.ac.jbnu.se.tetris.core.BoardState;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
+
 import kr.ac.jbnu.se.tetris.audio.AudioService;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
+import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.battle.ParticipantState;
+import kr.ac.jbnu.se.tetris.core.BoardState;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GarbageMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
@@ -72,7 +100,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             }
             BufferedImage image = ImageIO.read(stream);
             if (image == null) return null;
-            return new ImageIcon(image.getScaledInstance(38, 38, Image.SCALE_SMOOTH));
+            return new ImageIcon(image.getScaledInstance(48, 48, Image.SCALE_SMOOTH));
         } catch (IOException e) {
             System.err.println("아이템 아이콘 로딩 실패: " + path + " / " + e.getMessage());
             return null;
@@ -200,12 +228,33 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JPanel pveHoldPanel = new JPanel(new BorderLayout(0, 5));
     private final JPanel pveNextPanel = new JPanel();
     private final JPanel pveFooter = new JPanel(null);
-    private final JPanel pveFeverPanel = new JPanel(null);
+    private final JPanel pveFeverPanel = new JPanel(null) {
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            try {
+                int w = getWidth(), h = getHeight();
+                if (w < 5 || h < 5) return;
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(new Color(0x273A35));
+                g.fillRoundRect(0, 0, w, h, 22, 22);
+                g.setStroke(new BasicStroke(2f));
+                g.setColor(new Color(0x13201D));
+                g.drawRoundRect(1, 1, w - 3, h - 3, 22, 22);
+                g.setStroke(new BasicStroke(1.2f));
+                g.setColor(new Color(0x9AAB9B));
+                g.drawRoundRect(4, 4, w - 9, h - 9, 17, 17);
+            } finally {
+                g.dispose();
+            }
+        }
+    };
     private final MiniPiecePreview pveHoldPreview = new MiniPiecePreview("HOLD");
     private final MiniPiecePreview[] pveNextPreviews = {
         new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
     };
-    private final JLabel pveFeverLabel = label("FEVER 0%");
+    private final JLabel pveFeverLabel = label("FEVER");
+    private final JLabel pveFeverPercent = label("0%");
     private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
@@ -301,11 +350,17 @@ public class BattlePanel extends JPanel implements Scrollable {
         }
 
         pveFooter.setOpaque(false);
-        pveFeverPanel.setBackground(dark);
-        pveFeverPanel.setBorder(BorderFactory.createLineBorder(new Color(0x66482E), 3, true));
-        pveFeverLabel.setForeground(cream);
+        pveFeverPanel.setOpaque(false);
+        pveFeverPanel.setBorder(null);
+        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        pveFeverLabel.setFont(new Font("Dialog", Font.BOLD, 16));
+        pveFeverPercent.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        pveFeverPercent.setFont(new Font("Dialog", Font.BOLD, 17));
+        pveFeverPercent.setHorizontalAlignment(SwingConstants.RIGHT);
         pveFeverPanel.add(pveFeverLabel);
         pveFeverPanel.add(pveFeverBar);
+        pveFeverPanel.add(pveFeverPercent);
         pveFooter.add(pveFeverPanel);
         for (int i = 0; i < pveSlots.length; i++) {
             final int index = i;
@@ -592,7 +647,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         enemyColumn.setBounds(0, 0, 0, 0);
         playerName.setVisible(false);
         int interiorWidth = Math.max(0, width - side * 2);
-        int footerHeight = 78;
+        int footerHeight = Math.max(88, Math.min(96, height / 9));
         int footerTop = height - bottom - footerHeight;
         int boardAreaHeight = Math.max(220, footerTop - top - 12);
         int cell = Math.max(9, Math.min((boardAreaHeight - 8) / 22,
@@ -612,20 +667,21 @@ public class BattlePanel extends JPanel implements Scrollable {
         // 한 개의 투명 무대에서 캐릭터를 보드 좌우에 그리고, 보드는 그 위에 그린다.
         arena.setBounds(side, top, interiorWidth, Math.max(1, footerTop - top));
         // 네 개의 아이템을 레퍼런스처럼 정사각형으로 묶고 우측에 정렬한다.
-        int itemGap = 8;
-        int itemSize = Math.max(48, Math.min(70, (interiorWidth - 185 - itemGap * 3) / 4));
+        int itemGap = 10;
+        int itemSize = Math.max(54, Math.min(84, (interiorWidth - 230 - itemGap * 3) / 4));
         int itemGroupWidth = itemSize * 4 + itemGap * 3;
         int itemStartX = interiorWidth - itemGroupWidth;
-        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .37f), 180, 390),
-                Math.max(120, itemStartX - 16));
+        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .38f), 190, 390),
+                Math.max(130, itemStartX - 18));
         pveFooter.setBounds(side, footerTop, interiorWidth, footerHeight);
-        pveFeverPanel.setBounds(0, 0, feverWidth, footerHeight);
+        pveFeverPanel.setBounds(0, 4, feverWidth, footerHeight - 7);
         for (int i = 0; i < pveSlots.length; i++) {
             pveSlots[i].setBounds(itemStartX + i * (itemSize + itemGap),
-                    footerHeight - itemSize - 4, itemSize, itemSize);
+                    footerHeight - itemSize - 2, itemSize, itemSize);
         }
-        pveFeverLabel.setBounds(14, 7, feverWidth - 28, 23);
-        pveFeverBar.setBounds(14, 37, feverWidth - 28, 25);
+        pveFeverLabel.setBounds(16, 7, feverWidth - 32, 23);
+        pveFeverBar.setBounds(14, 33, Math.max(20, feverWidth - 99), 27);
+        pveFeverPercent.setBounds(feverWidth - 78, 29, 62, 30);
     }
 
     private void showPveHud(boolean pve) {
@@ -875,9 +931,10 @@ public class BattlePanel extends JPanel implements Scrollable {
                 : "FEVER " + local.getFever() + "%");
         feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
-        pveFeverLabel.setText(gauge.getText());
+        pveFeverLabel.setText("FEVER");
+        pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
         pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
-        pveFeverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
+        pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
         warp.setText(local.getTimeWarpRemainingMillis() > 0
                 ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
         int incoming = local.getPendingGarbageLines();

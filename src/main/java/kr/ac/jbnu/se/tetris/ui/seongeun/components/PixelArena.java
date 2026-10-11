@@ -1194,19 +1194,19 @@ public final class PixelArena extends JComponent {
 
     private void paintPlates(Graphics2D g, Stage s, long now) {
         if (widePve && !online) {
-            int hpY = Math.max(86, s.h - 335);
-            int plateWidth = Math.min(205, Math.max(120, s.w / 5));
             int playerMain = shownMain(playerTrailFrom, playerHp, playerTrailAt, now);
             int playerTrail = shownTrail(playerTrailFrom, playerHp, playerTrailAt, now);
             int monsterMain = shownMain(monsterTrailFrom, monsterHp, monsterTrailAt, now);
             int monsterTrail = shownTrail(monsterTrailFrom, monsterHp, monsterTrailAt, now);
-            paintHpPlate(g, 6, hpY, plateWidth, 46, playerName, "PLAYER",
-                    playerMain, playerTrail, playerHp, playerMax, MINT,
-                    playerHitAt >= 0 && now - playerHitAt >= 0 && now - playerHitAt < 200);
-            paintHpPlate(g, s.w - plateWidth - 6, hpY, plateWidth, 46, monsterName,
-                    pattern == MonsterTier.BOSS ? "BOSS" : pattern == MonsterTier.ELITE ? "ELITE" : "MONSTER",
-                    monsterMain, monsterTrail, monsterHp, monsterMax, CORAL,
-                    monsterHitAt >= 0 && now - monsterHitAt >= 0 && now - monsterHitAt < 200);
+
+            int hpWidth = Math.min(150, Math.max(110, s.w / 8));
+            int playerX = Math.max(6, Math.min(s.w - hpWidth - 6, s.playerCenterX() - hpWidth / 2));
+            int monsterX = Math.max(6, Math.min(s.w - hpWidth - 6, s.monsterX - hpWidth / 2));
+            int playerY = Math.max(48, s.portraitY - 42);
+            int monsterY = Math.max(48, s.monsterFoot - s.monsterSize - 42);
+
+            paintReferenceHpBar(g, playerX, playerY, hpWidth, playerMain, playerTrail, playerHp, playerMax, false);
+            paintReferenceHpBar(g, monsterX, monsterY, hpWidth, monsterMain, monsterTrail, monsterHp, monsterMax, true);
             return;
         }
         int monsterMain = shownMain(monsterTrailFrom, monsterHp, monsterTrailAt, now);
@@ -1219,6 +1219,52 @@ public final class PixelArena extends JComponent {
         paintHpPlate(g, 8, s.h - 52, s.w - 16, 44, playerName, feverActive ? "FEVER" : online ? "YOU" : "HP", playerMain, playerTrail,
                 playerHp, playerMax, feverActive ? PINK : MINT,
                 now - playerHitAt >= 0 && now - playerHitAt < 200 && playerHitAt >= 0);
+    }
+
+    /** PvE HP: 흰색 테두리 숫자 + 도톰한 녹색/빨간색 캡슐 게이지. */
+    private static void paintReferenceHpBar(Graphics2D graphics, int x, int y, int width,
+                                            int main, int trail, int hp, int max, boolean enemy) {
+        if (width <= 18) return;
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int maxHp = Math.max(1, max);
+            String numbers = Math.max(0, hp) + "/" + maxHp;
+            g.setFont(new Font("Dialog", Font.BOLD, 15));
+            FontMetrics fm = g.getFontMetrics();
+            int textX = x + (width - fm.stringWidth(numbers)) / 2;
+            int textY = y + fm.getAscent();
+            g.setColor(new Color(0x1F1D1B));
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    if (dx != 0 || dy != 0) g.drawString(numbers, textX + dx, textY + dy);
+                }
+            }
+            g.setColor(Color.WHITE);
+            g.drawString(numbers, textX, textY);
+
+            int bx = x + 1, barY = y + 21, bw = width - 2, barH = 20;
+            int innerX = bx + 3, innerY = barY + 3, innerW = bw - 6, innerH = barH - 6;
+            g.setColor(new Color(0x101818));
+            g.fillRoundRect(bx, barY, bw, barH, 18, 18);
+            g.setColor(new Color(0x3B4142));
+            g.fillRoundRect(innerX, innerY, innerW, innerH, 13, 13);
+
+            java.awt.Shape oldClip = g.getClip();
+            g.clip(new java.awt.geom.RoundRectangle2D.Float(innerX, innerY, innerW, innerH, 13, 13));
+            int trailW = (int) Math.round(innerW * Math.max(0, Math.min(maxHp, trail)) / (double) maxHp);
+            int mainW = (int) Math.round(innerW * Math.max(0, Math.min(maxHp, main)) / (double) maxHp);
+            g.setColor(new Color(0xF1E8C9));
+            g.fillRect(innerX, innerY, trailW, innerH);
+            g.setColor(enemy ? new Color(0xF35B50) : new Color(0x87E765));
+            g.fillRect(innerX, innerY, mainW, innerH);
+            g.setColor(new Color(255, 255, 255, 78));
+            g.fillRect(innerX, innerY + 1, mainW, Math.max(2, innerH / 3));
+            g.setClip(oldClip);
+        } finally {
+            g.dispose();
+        }
     }
 
     private static void paintHpPlate(Graphics2D g, int x, int y, int width, int height, String name, String tag,
