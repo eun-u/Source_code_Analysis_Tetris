@@ -13,10 +13,10 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
     private static final int COLUMNS = 10, ROWS = 22;
-    private static final Color EMPTY = new Color(0x091E2B);
-    private static final Color GRID = new Color(0x254558);
-    private static final Color PLAYER_FRAME = UniversityPixelTheme.MINT;
-    private static final Color ENEMY_FRAME = UniversityPixelTheme.CORAL;
+    private static final Color EMPTY = new Color(0x293039);
+    private static final Color GRID = new Color(0x414B55);
+    private static final Color PLAYER_FRAME = new Color(0xB3BCC4);
+    private static final Color ENEMY_FRAME = new Color(0xB3BCC4);
     private final JLabel statusbar;
     private GameState state;
     private Consumer<GameAction.Type> inputHandler;
