@@ -43,6 +43,14 @@ public class MainLobbyPanel extends JPanel {
         storyButton.setName("lobbyStory");
         onlineButton.setName("lobbyOnline");
         localButton.setName("lobbyLocal");
+
+        // Keep original GameMenu.Item buttons and their listeners; change only their rendering.
+        storyButton.setImageResource("/ui/campus-rpg/buttons/lobby_story.png");
+        onlineButton.setImageResource("/ui/campus-rpg/buttons/lobby_online.png");
+        localButton.setImageResource("/ui/campus-rpg/buttons/lobby_localmode.png");
+        tutorialButton.setImageResource("/ui/campus-rpg/buttons/lobby_tutorial.png");
+        characterButton.setImageResource("/ui/campus-rpg/buttons/lobby_shop.png");
+        serverButton.setImageResource("/ui/campus-rpg/buttons/lobby_ranking.png");
         settingsButton.secondary();
         settingsButton.setPreferredSize(new Dimension(84, 34));
         settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 설정");
@@ -62,25 +70,62 @@ public class MainLobbyPanel extends JPanel {
         setAccountStatus("로컬 플레이");
     }
 
-    @Override public void doLayout() {
+    @Override
+    public void doLayout() {
         int w = getWidth(), h = getHeight();
         int pad = UniversityPixelTheme.GUTTER;
+
+        // 1. 우측 상단 설정 버튼
         Dimension settings = settingsButton.getPreferredSize();
         settingsButton.setBounds(w - pad - settings.width, 16, settings.width, settings.height);
-        Dimension accountSize = account.getPreferredSize(), coinSize = coins.getPreferredSize();
-        account.setBounds(w - pad - settings.width - 10 - accountSize.width, 22, accountSize.width, accountSize.height);
-        coins.setBounds(account.getX() - 8 - coinSize.width, 22, coinSize.width, coinSize.height);
-        int logoHeight = Math.max(90, Math.min(130, h / 6));
-        logo.setBounds(pad, 14, Math.min(520, w / 2), logoHeight);
-        int menuWidth = Math.max(270, Math.min(360, w * 36 / 100));
-        int itemHeight = Math.max(40, Math.min(54, (h - logoHeight - 90) / 6 - 4));
-        int menuHeight = itemHeight * 6 + 4 * 5;
-        menu.setBounds(pad, logo.getY() + logoHeight + 8, menuWidth, menuHeight);
+
+        // 2. 계정 정보 및 코인
+        Dimension accountSize = account.getPreferredSize();
+        Dimension coinSize = coins.getPreferredSize();
+
+        account.setBounds(w - pad - settings.width - 10 - accountSize.width,
+                22, accountSize.width, accountSize.height);
+
+        coins.setBounds(account.getX() - 8 - coinSize.width,
+                22, coinSize.width, coinSize.height);
+
+        // 3. 메인 로고: 기존 크기 유지
+        int baseMenuWidth = Math.max(310, Math.min(430, w * 38 / 100));
+
+        int logoHeight = Math.max(145, Math.min(248, Math.round(h * 0.40f)));
+        int logoWidth = Math.min(baseMenuWidth, Math.round(logoHeight * (1448f / 1086f)));
+        int logoX = pad + (baseMenuWidth - logoWidth) / 2;
+
+        logo.setBounds(logoX, 14, logoWidth, logoHeight);
+
+        // 4. 메뉴 버튼 전체 너비: 기존 대비 83%
+        int menuWidth = Math.round(baseMenuWidth * 0.90f);
+
+        // 메뉴 버튼을 로고 아래 중앙에 배치
+        int menuX = pad + (baseMenuWidth - menuWidth) / 2;
+        int menuY = logo.getY() + logoHeight + 8;
+
+        // 5. 메뉴 버튼 높이: 기존 대비 85%
+        int itemGap = 4;
+        int availableMenuHeight = Math.max(200, h - menuY - pad);
+
+        int baseItemHeight = Math.max(38, Math.min(76,
+                (availableMenuHeight - itemGap * 5) / 6));
+
+        int itemHeight = Math.round(baseItemHeight * 0.90f);
+
+        // 버튼 6개와 버튼 사이 간격 5개
+        int menuHeight = itemHeight * 6 + itemGap * 5;
+
+        menu.setBounds(menuX, menuY, menuWidth, menuHeight);
+
+        // 6. NEXT BATTLE 카드: 기존 크기 유지
         int cardWidth = Math.max(230, Math.min(330, w * 30 / 100));
         int cardHeight = Math.max(250, Math.min(380, h * 46 / 100));
-        nextCard.setBounds(w - pad - cardWidth, h - 40 - cardHeight, cardWidth, cardHeight);
-    }
 
+        nextCard.setBounds(w - pad - cardWidth,
+                h - 40 - cardHeight, cardWidth, cardHeight);
+    }
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
@@ -103,44 +148,44 @@ public class MainLobbyPanel extends JPanel {
     }
 
     /** 블록이 떨어져 쌓이는 듯한 로고. 화면이 보일 때마다 짧게 등장 연출을 한다. */
+    /** Draw only the transparent illustrated logo; never draw the legacy text logo. */
     private static final class Logo extends JComponent {
+        private static final BufferedImage IMAGE = readLogoImage();
         long shownAt;
 
+        private static BufferedImage readLogoImage() {
+            String path = "/ui/campus-rpg/tetris-monster-logo.png";
+            try (java.io.InputStream input = MainLobbyPanel.class.getResourceAsStream(path)) {
+                if (input == null) {
+                    System.err.println("Lobby logo resource missing: " + path);
+                    return null;
+                }
+                return javax.imageio.ImageIO.read(input);
+            } catch (java.io.IOException error) {
+                System.err.println("Lobby logo failed to load: " + error.getMessage());
+                return null;
+            }
+        }
+
         @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            if (IMAGE == null || getWidth() <= 0 || getHeight() <= 0) return;
             Graphics2D g = (Graphics2D) graphics.create();
             try {
-                g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                long now = System.currentTimeMillis(), age = shownAt == 0 ? 1000 : now - shownAt;
-                int h = getHeight();
-                int big = Math.max(34, Math.min(58, h * 46 / 100));
-                float drop = Math.min(1f, age / 380f);
-                float ease = 1 - (1 - drop) * (1 - drop);
-                int offset = Math.round((1 - ease) * -40);
-                Color[] blocks = { new Color(105, 164, 170), new Color(193, 156, 90),
-                        new Color(157, 140, 174), MINT, UniversityPixelTheme.CORAL };
-                int bx = 0, by = 6 + offset;
-                for (int i = 0; i < blocks.length; i++) {
-                    g.setColor(UniversityPixelTheme.BLACK);
-                    g.fillRect(bx + i * 16 + 2, by + 2, 14, 14);
-                    g.setColor(blocks[i]);
-                    g.fillRect(bx + i * 16, by, 14, 14);
-                    g.setColor(new Color(255, 255, 255, 90));
-                    g.fillRect(bx + i * 16 + 2, by + 2, 10, 3);
-                }
-                g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-                g.setColor(MINT);
-                g.drawString("TETRIS MONSTER", 90, by + 12);
-                g.setFont(UniversityPixelTheme.font(big, Font.BOLD));
-                FontMetrics m = g.getFontMetrics();
-                int baseline = 22 + m.getAscent() + offset;
-                String text = "CAMPUS QUEST";
-                g.setColor(new Color(111, 124, 123, 85));
-                g.drawString(text, 2, baseline + 2);
-                g.setColor(UniversityPixelTheme.TEXT);
-                g.drawString(text, 0, baseline);
-                g.setColor(GOLD);
-                g.fillRect(1, baseline + 5, Math.min(m.stringWidth(text), 156), 3);
-            } finally { g.dispose(); }
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                        RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.setRenderingHint(RenderingHints.KEY_RENDERING,
+                        RenderingHints.VALUE_RENDER_QUALITY);
+                double scale = Math.min(getWidth() / (double) IMAGE.getWidth(),
+                        getHeight() / (double) IMAGE.getHeight());
+                int imageW = Math.max(1, (int) Math.round(IMAGE.getWidth() * scale));
+                int imageH = Math.max(1, (int) Math.round(IMAGE.getHeight() * scale));
+                int x = (getWidth() - imageW) / 2;
+                int y = (getHeight() - imageH) / 2;
+                g.drawImage(IMAGE, x, y, imageW, imageH, null);
+            } finally {
+                g.dispose();
+            }
         }
     }
 
@@ -239,7 +284,11 @@ public class MainLobbyPanel extends JPanel {
     /** 스토리 진행도를 메뉴 배지와 다음 전투 카드에 보여 준다. */
     public void setStoryProgress(int cleared, int total) {
         storyButton.setText(cleared == 0 ? "스토리 시작" : cleared >= total ? "다시 플레이" : "이어하기");
-        storyButton.setBadge(cleared + " / " + total, GOLD);
+        // The supplied PNG already says "스토리 시작". Show the dynamic state as a badge.
+        String progress = cleared + " / " + total;
+        storyButton.setBadge(cleared <= 0 ? progress
+                : (cleared >= total ? "다시 플레이" : "이어하기") + " · " + progress, GOLD);
+        storyButton.setToolTipText(storyButton.getText() + " · " + progress);
         nextCard.cleared = cleared; nextCard.total = total;
         repaint();
     }
