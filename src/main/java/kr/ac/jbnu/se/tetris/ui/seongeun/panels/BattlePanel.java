@@ -6,6 +6,8 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.function.IntConsumer;
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -45,6 +47,128 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final BufferedImage GRADUATION_BG = readBackdrop("/ui/campus-rpg/graduation-bg.png");
     private static final BufferedImage EMPLOYMENT_BG = readBackdrop("/ui/campus-rpg/employment-bg.png");
 
+    // UI 리소스는 최초 한 번만 로드하고 전투 갱신 시 재사용한다.
+    private static final Map<String, ImageIcon> ITEM_ICONS = loadItemIcons();
+
+    private static Map<String, ImageIcon> loadItemIcons() {
+        Map<String, ImageIcon> icons = new HashMap<>();
+        icons.put("damage_boost", loadItemIcon("item_damage.png"));
+        icons.put("garbage_bomb", loadItemIcon("item_bomb.png"));
+        icons.put("heal", loadItemIcon("item_heal.png"));
+        icons.put("shield", loadItemIcon("item_shield.png"));
+        icons.put("line_cleaner", loadItemIcon("item_line_cleaner.png"));
+        icons.put("fever_charge", loadItemIcon("item_fever.png"));
+        icons.put("time_warp", loadItemIcon("item_time.png"));
+        icons.put("nullify", loadItemIcon("item_nullify.png"));
+        return icons;
+    }
+
+    private static ImageIcon loadItemIcon(String filename) {
+        String path = "/ui/campus-rpg/icons/" + filename;
+        try (InputStream stream = BattlePanel.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                System.err.println("아이템 아이콘 파일을 찾지 못했습니다: " + path);
+                return null;
+            }
+            BufferedImage image = ImageIO.read(stream);
+            if (image == null) return null;
+            return new ImageIcon(image.getScaledInstance(38, 38, Image.SCALE_SMOOTH));
+        } catch (IOException e) {
+            System.err.println("아이템 아이콘 로딩 실패: " + path + " / " + e.getMessage());
+            return null;
+        }
+    }
+
+    // PvE 아이템 버튼: 중앙 아이콘, 우상단 실제 남은 횟수, 하단 1~4번 단축키
+    private static JButton createPveItemButton(String text) {
+        JButton button = new JButton() {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    int w = getWidth(), h = getHeight();
+                    if (w < 15 || h < 15) return;
+                    boolean active = isEnabled();
+                    boolean pressed = getModel().isPressed();
+                    boolean hover = getModel().isRollover();
+
+                    // 두꺼운 둥근 어두운 프레임 + 안쪽 패널
+                    g.setColor(new Color(0x101714));
+                    g.fillRoundRect(0, 0, w, h - 2, 18, 18);
+                    g.setColor(new Color(0x929E8B));
+                    g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
+                    g.setColor(pressed ? new Color(0x253529)
+                            : hover ? new Color(0x425B4C) : new Color(0x34443C));
+                    g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+                    g.setColor(new Color(0x233128));
+                    g.setStroke(new BasicStroke(2f));
+                    g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
+                    if (!active) {
+                        g.setColor(new Color(0, 0, 0, 48));
+                        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+                    }
+
+                    // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
+                    Icon icon = getIcon();
+                    if (icon != null) {
+                        int iconX = (w - icon.getIconWidth()) / 2;
+                        int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
+                        icon.paintIcon(this, g, iconX, iconY);
+                    }
+
+                    // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
+                    Object countValue = getClientProperty("hudCharges");
+                    int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
+                    if (icon != null && count > 0) {
+                        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
+                        g.setColor(new Color(0x1B100B));
+                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
+                        g.setColor(new Color(0xC69362));
+                        g.fillRoundRect(bx, by, bw, bh, 10, 10);
+                        g.setColor(new Color(0x765036));
+                        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
+                        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
+                    }
+
+                    // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
+                    Object hotkeyValue = getClientProperty("hudHotkey");
+                    if (hotkeyValue instanceof Number) {
+                        String hotkey = String.valueOf(((Number) hotkeyValue).intValue());
+                        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
+                        g.setColor(new Color(0x102923));
+                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+                        g.setColor(new Color(0x78DCC0));
+                        g.fillRoundRect(bx, by, bw, bh, 8, 8);
+                        g.setColor(new Color(0x43B99A));
+                        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
+                        drawBadgeNumber(g, hotkey, bx, by, bw, bh, 16);
+                    }
+                } finally {
+                    g.dispose();
+                }
+            }
+        };
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setBorder(BorderFactory.createEmptyBorder());
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        return button;
+    }
+
+    private static void drawBadgeNumber(Graphics2D g, String text,
+                                        int x, int y, int w, int h, int size) {
+        g.setFont(new Font("Dialog", Font.BOLD, size));
+        FontMetrics fm = g.getFontMetrics();
+        int tx = x + (w - fm.stringWidth(text)) / 2;
+        int ty = y + (h - fm.getHeight()) / 2 + fm.getAscent();
+        g.setColor(new Color(0x18231E));
+        g.drawString(text, tx + 1, ty + 2);
+        g.setColor(new Color(0xFFF8E9));
+        g.drawString(text, tx, ty);
+    }
     private final PixelArena arena = new PixelArena();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
     private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
@@ -185,7 +309,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFooter.add(pveFeverPanel);
         for (int i = 0; i < pveSlots.length; i++) {
             final int index = i;
-            JButton slot = button((i + 1) + " 빈 슬롯");
+            JButton slot = createPveItemButton("빈 슬롯");
+            slot.putClientProperty("hudHotkey", i + 1);
             slot.setFont(UniversityPixelTheme.font(12, Font.BOLD));
             slot.setFocusable(false);
             slot.addActionListener(event -> {
@@ -486,14 +611,18 @@ public class BattlePanel extends JPanel implements Scrollable {
 
         // 한 개의 투명 무대에서 캐릭터를 보드 좌우에 그리고, 보드는 그 위에 그린다.
         arena.setBounds(side, top, interiorWidth, Math.max(1, footerTop - top));
-        int feverWidth = clamp(Math.round(interiorWidth * .37f), 230, 390);
+        // 네 개의 아이템을 레퍼런스처럼 정사각형으로 묶고 우측에 정렬한다.
         int itemGap = 8;
+        int itemSize = Math.max(48, Math.min(70, (interiorWidth - 185 - itemGap * 3) / 4));
+        int itemGroupWidth = itemSize * 4 + itemGap * 3;
+        int itemStartX = interiorWidth - itemGroupWidth;
+        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .37f), 180, 390),
+                Math.max(120, itemStartX - 16));
         pveFooter.setBounds(side, footerTop, interiorWidth, footerHeight);
         pveFeverPanel.setBounds(0, 0, feverWidth, footerHeight);
-        int itemWidth = Math.max(50, (interiorWidth - feverWidth - itemGap * 5) / 4);
         for (int i = 0; i < pveSlots.length; i++) {
-            pveSlots[i].setBounds(feverWidth + itemGap + i * (itemWidth + itemGap),
-                    6, itemWidth, footerHeight - 12);
+            pveSlots[i].setBounds(itemStartX + i * (itemSize + itemGap),
+                    footerHeight - itemSize - 4, itemSize, itemSize);
         }
         pveFeverLabel.setBounds(14, 7, feverWidth - 28, 23);
         pveFeverBar.setBounds(14, 37, feverWidth - 28, 25);
@@ -780,9 +909,13 @@ public class BattlePanel extends JPanel implements Scrollable {
             slots[i].setEnabled(item != null
                     && !waitingForEarlierSlot
                     && state.getStatus() == BattleState.Status.RUNNING);
-            pveSlots[i].setText(slots[i].getText());
+            // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
+            ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
+            pveSlots[i].setIcon(icon);
+            pveSlots[i].setDisabledIcon(icon);
+            pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
+            pveSlots[i].setText("");
             pveSlots[i].setToolTipText(slots[i].getToolTipText());
-            pveSlots[i].setBackground(slots[i].getBackground());
             pveSlots[i].setEnabled(slots[i].isEnabled());
         }
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
