@@ -1,6 +1,16 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.AlphaComposite;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.event.HierarchyEvent;
 import java.awt.event.MouseAdapter;
@@ -9,8 +19,15 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+
 import javax.imageio.ImageIO;
-import javax.swing.*;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.Timer;
+
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameMenu;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
@@ -75,10 +92,25 @@ public class MainLobbyPanel extends JPanel {
 
     /** 우측 상단 설정 아이콘. 기존 버튼 클릭 이벤트는 그대로 연결된다. */
     private JButton createSettingsIconButton() {
-        JButton button = new JButton();
+        JButton button = new JButton("설정") {
+            @Override
+            protected void paintComponent(Graphics graphics) {
+                javax.swing.Icon icon = getIcon();
+
+                if (icon == null) {
+                    super.paintComponent(graphics);
+                    return;
+                }
+
+                int x = (getWidth() - icon.getIconWidth()) / 2;
+                int y = (getHeight() - icon.getIconHeight()) / 2;
+                icon.paintIcon(this, graphics, x, y);
+            }
+        };
+
         ImageIcon icon = loadScaledIcon(SETTINGS_ICON_PATH, SETTINGS_ICON_SIZE, SETTINGS_ICON_SIZE);
         if (icon != null) button.setIcon(icon);
-        else button.setText("설정");
+
         button.setBorderPainted(false);
         button.setContentAreaFilled(false);
         button.setOpaque(false);
@@ -86,6 +118,8 @@ public class MainLobbyPanel extends JPanel {
         button.setFocusable(false);
         button.setPreferredSize(new Dimension(SETTINGS_ICON_SIZE, SETTINGS_ICON_SIZE));
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.getAccessibleContext().setAccessibleName("설정");
+
         return button;
     }
 
