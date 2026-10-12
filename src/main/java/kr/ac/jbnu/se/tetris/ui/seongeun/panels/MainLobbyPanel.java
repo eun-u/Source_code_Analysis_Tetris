@@ -7,10 +7,11 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameArt;
-import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameMenu;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
@@ -20,6 +21,10 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
  */
 public class MainLobbyPanel extends JPanel {
     private static final BufferedImage CAMPUS = loadCampus();
+    private static final BufferedImage LOBBY_LOGO = loadLobbyLogo();
+    private static final BufferedImage COIN_IMAGE = loadCoinImage();
+    private static final String SETTINGS_ICON_PATH = "/ui/campus-rpg/buttons/lobby_settings.png";
+    private static final int SETTINGS_ICON_SIZE = 52;
     private static final String SIGNED_IN = "온라인 PvP 로그인 완료";
     private static final Color GOLD = UniversityPixelTheme.GOLD, MINT = UniversityPixelTheme.MINT;
 
@@ -30,9 +35,9 @@ public class MainLobbyPanel extends JPanel {
     private final GameMenu.Item tutorialButton = menu.add("튜토리얼", null, MINT);
     private final GameMenu.Item characterButton = menu.add("캐릭터 / 상점", null, GOLD);
     private final GameMenu.Item serverButton = menu.add("PvP 랭킹", null, MINT);
-    private final GameButton settingsButton = new GameButton("설정");
+    private final JButton settingsButton = createSettingsIconButton();
     private final JLabel account = UniversityPixelTheme.chip("로컬 플레이", UniversityPixelTheme.PANEL_LIGHT);
-    private final JLabel coins = UniversityPixelTheme.chip("0 COINS", GOLD);
+    private final CoinBadge coins = new CoinBadge();
     private final Logo logo = new Logo();
     private final NextBattleCard nextCard = new NextBattleCard();
     private final Timer animation = new Timer(40, event -> repaint());
@@ -47,15 +52,13 @@ public class MainLobbyPanel extends JPanel {
         // Keep original GameMenu.Item buttons and their listeners; change only their rendering.
         storyButton.setImageResource("/ui/campus-rpg/buttons/lobby_story.png");
         onlineButton.setImageResource("/ui/campus-rpg/buttons/lobby_online.png");
-        localButton.setImageResource("/ui/campus-rpg/buttons/lobby_localmode.png");
         tutorialButton.setImageResource("/ui/campus-rpg/buttons/lobby_tutorial.png");
         characterButton.setImageResource("/ui/campus-rpg/buttons/lobby_shop.png");
         serverButton.setImageResource("/ui/campus-rpg/buttons/lobby_ranking.png");
-        settingsButton.secondary();
-        settingsButton.setPreferredSize(new Dimension(84, 34));
+        // Match the user's local-mode PNG; if missing, GameMenu keeps its drawn fallback.
+        localButton.setImageResource("/ui/campus-rpg/buttons/lobby_localmode.png");
         settingsButton.setToolTipText("소리 · 온라인 계정 · 튜토리얼 설정");
         account.setFont(UniversityPixelTheme.font(12, Font.BOLD));
-        coins.setFont(UniversityPixelTheme.font(12, Font.BOLD));
         add(logo); add(menu); add(nextCard); add(account); add(coins); add(settingsButton);
         nextCard.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent event) { storyButton.doClick(); }
@@ -70,63 +73,203 @@ public class MainLobbyPanel extends JPanel {
         setAccountStatus("로컬 플레이");
     }
 
-    @Override
-    public void doLayout() {
+    /** 우측 상단 설정 아이콘. 기존 버튼 클릭 이벤트는 그대로 연결된다. */
+    private JButton createSettingsIconButton() {
+        JButton button = new JButton();
+        ImageIcon icon = loadScaledIcon(SETTINGS_ICON_PATH, SETTINGS_ICON_SIZE, SETTINGS_ICON_SIZE);
+        if (icon != null) button.setIcon(icon);
+        else button.setText("설정");
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(false);
+        button.setOpaque(false);
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        button.setPreferredSize(new Dimension(SETTINGS_ICON_SIZE, SETTINGS_ICON_SIZE));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return button;
+    }
+
+    /** 프로젝트 리소스 PNG를 한 번만 읽어 버튼 아이콘으로 사용한다. */
+    private static ImageIcon loadScaledIcon(String path, int width, int height) {
+        URL url = MainLobbyPanel.class.getResource(path);
+        if (url == null) {
+            System.err.println("Missing resource: " + path);
+            return null;
+        }
+        try {
+            BufferedImage image = ImageIO.read(url);
+            if (image == null) return null;
+            Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+            return new ImageIcon(scaled);
+        } catch (IOException error) {
+            System.err.println("Cannot load icon: " + path + " (" + error.getMessage() + ")");
+            return null;
+        }
+    }
+
+    /** 코인 PNG가 왼쪽 둥근 끝을 덮는 캡슐형 배지. */
+    private static final class CoinBadge extends JComponent {
+        private static final int BADGE_HEIGHT = 52;
+        private static final int ICON_SIZE = 50;
+        private static final int BODY_HEIGHT = 40;
+        private static final int TEXT_LEFT = 59;
+        private static final int TEXT_RIGHT_PADDING = 11;
+        private static final int MIN_WIDTH = 140;
+        // 원본 PNG의 넓은 투명 여백을 무시하고 실제 코인 그림만 확대한다.
+        private static final int[] COIN_CROP = findCoinCrop();
+
+        private int value;
+
+        CoinBadge() {
+            setOpaque(false);
+            setFont(UniversityPixelTheme.font(22, Font.BOLD));
+            setToolTipText("보유 코인");
+        }
+
+        void setValue(int amount) {
+            value = amount;
+            revalidate();
+            repaint();
+        }
+
+        /** 이미지 자체에 포함된 투명 여백을 제거할 잘라내기 좌표를 한 번만 계산. */
+        private static int[] findCoinCrop() {
+            if (COIN_IMAGE == null) return null;
+            int left = COIN_IMAGE.getWidth();
+            int top = COIN_IMAGE.getHeight();
+            int right = -1;
+            int bottom = -1;
+            for (int y = 0; y < COIN_IMAGE.getHeight(); y++) {
+                for (int x = 0; x < COIN_IMAGE.getWidth(); x++) {
+                    int alpha = (COIN_IMAGE.getRGB(x, y) >>> 24) & 0xff;
+                    if (alpha > 24) {
+                        left = Math.min(left, x);
+                        top = Math.min(top, y);
+                        right = Math.max(right, x);
+                        bottom = Math.max(bottom, y);
+                    }
+                }
+            }
+            return right >= left && bottom >= top
+                    ? new int[] {left, top, right + 1, bottom + 1} : null;
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            String text = String.format(java.util.Locale.ROOT, "%,d", value);
+            FontMetrics fm = getFontMetrics(getFont());
+            int requiredWidth = TEXT_LEFT + fm.stringWidth(text) + TEXT_RIGHT_PADDING;
+            return new Dimension(Math.max(MIN_WIDTH, requiredWidth), BADGE_HEIGHT);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+
+                int w = getWidth();
+                int h = getHeight();
+                if (w <= 0 || h <= 0) return;
+
+                // 배지의 둥근 왼쪽 끝은 코인 이미지 뒤로 숨겨진다.
+                int iconSize = Math.min(ICON_SIZE, h);
+                int iconY = (h - iconSize) / 2;
+                int bodyX = iconSize / 2 - 1;
+                int bodyH = Math.min(BODY_HEIGHT, h - 4);
+                int bodyY = (h - bodyH) / 2;
+                int bodyW = Math.max(1, w - bodyX - 3);
+
+                // 부드러운 입체 그림자, 진한 외곽선, 진짜 알약 형태 배경.
+                g.setColor(new Color(33, 37, 27, 105));
+                g.fillRoundRect(bodyX + 1, bodyY + 3, bodyW, bodyH, bodyH, bodyH);
+                g.setColor(new Color(54, 42, 31));
+                g.fillRoundRect(bodyX, bodyY, bodyW, bodyH, bodyH, bodyH);
+                g.setPaint(new GradientPaint(bodyX, bodyY + 2, new Color(107, 127, 78),
+                        bodyX, bodyY + bodyH - 2, new Color(66, 82, 55)));
+                g.fillRoundRect(bodyX + 2, bodyY + 2, Math.max(1, bodyW - 4), bodyH - 4,
+                        bodyH - 4, bodyH - 4);
+                g.setColor(new Color(207, 229, 172, 90));
+                g.drawRoundRect(bodyX + 4, bodyY + 4, Math.max(1, bodyW - 8), bodyH - 8,
+                        bodyH - 8, bodyH - 8);
+
+                // 아이콘을 배경보다 나중에 그려 겹치는 부분을 깔끔하게 덮는다.
+                if (COIN_IMAGE != null && COIN_CROP != null) {
+                    g.drawImage(COIN_IMAGE, 0, iconY, iconSize, iconY + iconSize,
+                            COIN_CROP[0], COIN_CROP[1], COIN_CROP[2], COIN_CROP[3], null);
+                } else {
+                    g.setColor(new Color(255, 207, 58));
+                    g.fillOval(2, iconY + 2, iconSize - 4, iconSize - 4);
+                    g.setColor(new Color(80, 44, 24));
+                    g.drawOval(2, iconY + 2, iconSize - 5, iconSize - 5);
+                }
+
+                // 코인을 제외한 숫자 공간의 가로·세로 중앙 정렬.
+                String text = String.format(java.util.Locale.ROOT, "%,d", value);
+                g.setFont(getFont());
+                FontMetrics fm = g.getFontMetrics();
+                int textLeft = Math.min(TEXT_LEFT, w - 1);
+                int textAreaWidth = Math.max(0, w - textLeft - TEXT_RIGHT_PADDING);
+                int textX = textLeft + Math.max(0, (textAreaWidth - fm.stringWidth(text)) / 2);
+                int textY = (h - fm.getHeight()) / 2 + fm.getAscent();
+
+                g.setColor(new Color(35, 41, 27, 185));
+                g.drawString(text, textX + 1, textY + 2);
+                g.setColor(Color.WHITE);
+                g.drawString(text, textX, textY);
+            } finally {
+                g.dispose();
+            }
+        }
+    }
+
+    @Override public void doLayout() {
         int w = getWidth(), h = getHeight();
         int pad = UniversityPixelTheme.GUTTER;
 
-        // 1. 우측 상단 설정 버튼
+        // 상단 3종 UI는 설정 아이콘(52px)을 기준으로 수직 중앙 정렬.
         Dimension settings = settingsButton.getPreferredSize();
-        settingsButton.setBounds(w - pad - settings.width, 16, settings.width, settings.height);
-
-        // 2. 계정 정보 및 코인
         Dimension accountSize = account.getPreferredSize();
         Dimension coinSize = coins.getPreferredSize();
-
-        account.setBounds(w - pad - settings.width - 10 - accountSize.width,
-                22, accountSize.width, accountSize.height);
-
+        int topY = 16;
+        settingsButton.setBounds(w - pad - settings.width, topY, settings.width, settings.height);
+        account.setBounds(settingsButton.getX() - 10 - accountSize.width,
+                topY + (settings.height - accountSize.height) / 2,
+                accountSize.width, accountSize.height);
         coins.setBounds(account.getX() - 8 - coinSize.width,
-                22, coinSize.width, coinSize.height);
+                topY + (settings.height - coinSize.height) / 2,
+                coinSize.width, coinSize.height);
 
-        // 3. 메인 로고: 기존 크기 유지
+        // Keep the illustrated logo at its original size.
         int baseMenuWidth = Math.max(310, Math.min(430, w * 38 / 100));
-
         int logoHeight = Math.max(145, Math.min(248, Math.round(h * 0.40f)));
         int logoWidth = Math.min(baseMenuWidth, Math.round(logoHeight * (1448f / 1086f)));
         int logoX = pad + (baseMenuWidth - logoWidth) / 2;
-
         logo.setBounds(logoX, 14, logoWidth, logoHeight);
 
-        // 4. 메뉴 버튼 전체 너비: 기존 대비 83%
+        // Scale six menu buttons, but retain their original gaps.
         int menuWidth = Math.round(baseMenuWidth * 0.90f);
-
-        // 메뉴 버튼을 로고 아래 중앙에 배치
         int menuX = pad + (baseMenuWidth - menuWidth) / 2;
         int menuY = logo.getY() + logoHeight + 8;
-
-        // 5. 메뉴 버튼 높이: 기존 대비 85%
-        int itemGap = 4;
+        int itemGap = 4; // Must match GameMenu GridLayout vertical gap.
         int availableMenuHeight = Math.max(200, h - menuY - pad);
-
         int baseItemHeight = Math.max(38, Math.min(76,
                 (availableMenuHeight - itemGap * 5) / 6));
-
         int itemHeight = Math.round(baseItemHeight * 0.90f);
-
-        // 버튼 6개와 버튼 사이 간격 5개
         int menuHeight = itemHeight * 6 + itemGap * 5;
-
         menu.setBounds(menuX, menuY, menuWidth, menuHeight);
 
-        // 6. NEXT BATTLE 카드: 기존 크기 유지
+        // Keep the existing next-battle card dimensions and placement.
         int cardWidth = Math.max(230, Math.min(330, w * 30 / 100));
         int cardHeight = Math.max(250, Math.min(380, h * 46 / 100));
-
-        nextCard.setBounds(w - pad - cardWidth,
-                h - 40 - cardHeight, cardWidth, cardHeight);
+        nextCard.setBounds(w - pad - cardWidth, h - 40 - cardHeight, cardWidth, cardHeight);
     }
+
     @Override protected void paintComponent(Graphics graphics) {
+        super.paintComponent(graphics); // Clear the previous frame, including positions used before a resize.
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             int w = getWidth(), h = getHeight();
@@ -147,45 +290,29 @@ public class MainLobbyPanel extends JPanel {
         } finally { g.dispose(); }
     }
 
-    /** 블록이 떨어져 쌓이는 듯한 로고. 화면이 보일 때마다 짧게 등장 연출을 한다. */
-    /** Draw only the transparent illustrated logo; never draw the legacy text logo. */
+    /** PNG logo replaces the old pixel blocks, TETRIS MONSTER, and CAMPUS QUEST lettering. */
     private static final class Logo extends JComponent {
-        private static final BufferedImage IMAGE = readLogoImage();
         long shownAt;
 
-        private static BufferedImage readLogoImage() {
-            String path = "/ui/campus-rpg/tetris-monster-logo.png";
-            try (java.io.InputStream input = MainLobbyPanel.class.getResourceAsStream(path)) {
-                if (input == null) {
-                    System.err.println("Lobby logo resource missing: " + path);
-                    return null;
-                }
-                return javax.imageio.ImageIO.read(input);
-            } catch (java.io.IOException error) {
-                System.err.println("Lobby logo failed to load: " + error.getMessage());
-                return null;
-            }
-        }
-
         @Override protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            if (IMAGE == null || getWidth() <= 0 || getHeight() <= 0) return;
+            if (LOBBY_LOGO == null || getWidth() <= 0 || getHeight() <= 0) return;
             Graphics2D g = (Graphics2D) graphics.create();
             try {
-                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                        RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g.setRenderingHint(RenderingHints.KEY_RENDERING,
-                        RenderingHints.VALUE_RENDER_QUALITY);
-                double scale = Math.min(getWidth() / (double) IMAGE.getWidth(),
-                        getHeight() / (double) IMAGE.getHeight());
-                int imageW = Math.max(1, (int) Math.round(IMAGE.getWidth() * scale));
-                int imageH = Math.max(1, (int) Math.round(IMAGE.getHeight() * scale));
-                int x = (getWidth() - imageW) / 2;
-                int y = (getHeight() - imageH) / 2;
-                g.drawImage(IMAGE, x, y, imageW, imageH, null);
-            } finally {
-                g.dispose();
-            }
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                long age = shownAt == 0 ? 1000 : Math.max(0, System.currentTimeMillis() - shownAt);
+                float progress = Math.min(1.0f, age / 350f);
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, progress));
+
+                // Fit inside the header without cropping or stretching the transparent PNG.
+                double scale = Math.min(getWidth() / (double) LOBBY_LOGO.getWidth(),
+                        getHeight() / (double) LOBBY_LOGO.getHeight());
+                int dw = Math.max(1, (int) Math.round(LOBBY_LOGO.getWidth() * scale));
+                int dh = Math.max(1, (int) Math.round(LOBBY_LOGO.getHeight() * scale));
+                int x = (getWidth() - dw) / 2;
+                int y = (getHeight() - dh) / 2 + Math.round((1 - progress) * -10);
+                g.drawImage(LOBBY_LOGO, x, y, dw, dh, null);
+            } finally { g.dispose(); }
         }
     }
 
@@ -199,13 +326,19 @@ public class MainLobbyPanel extends JPanel {
         private String cachedKey;
 
         NextBattleCard() {
+            setOpaque(true);
+            setBackground(new Color(0xF1EFE6));
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            setToolTipText("클릭하면 스토리 지도로 이동합니다.");
+            // No native Swing tooltip: it can extend beyond the right edge of the lobby.
+            // The hand cursor and card click listener already indicate interactivity.
+            setToolTipText(null);
         }
 
         @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics); // The card has an opaque backing to avoid stale paint artifacts.
             Graphics2D g = (Graphics2D) graphics.create();
             try {
+                g.clipRect(0, 0, getWidth(), getHeight());
                 g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
                 g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
                 int w = getWidth(), h = getHeight();
@@ -251,6 +384,34 @@ public class MainLobbyPanel extends JPanel {
                 String progress = cleared + " / " + total + " CLEAR";
                 g.drawString(progress, w - 20 - g.getFontMetrics().stringWidth(progress), barY - 6);
             } finally { g.dispose(); }
+        }
+    }
+
+    private static BufferedImage loadLobbyLogo() {
+        String path = "/ui/campus-rpg/tetris-monster-logo.png";
+        try (InputStream stream = MainLobbyPanel.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                System.err.println("Missing lobby logo image: " + path);
+                return null;
+            }
+            return ImageIO.read(stream);
+        } catch (IOException error) {
+            System.err.println("Cannot load lobby logo: " + error.getMessage());
+            return null;
+        }
+    }
+
+    private static BufferedImage loadCoinImage() {
+        String path = "/ui/campus-rpg/icons/lobby_coin.png";
+        try (InputStream stream = MainLobbyPanel.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                System.err.println("Missing coin image: " + path);
+                return null;
+            }
+            return ImageIO.read(stream);
+        } catch (IOException error) {
+            System.err.println("Cannot load coin image: " + error.getMessage());
+            return null;
         }
     }
 
@@ -304,7 +465,7 @@ public class MainLobbyPanel extends JPanel {
     }
 
     public void setCoins(int amount) {
-        UniversityPixelTheme.setChip(coins, amount + " COINS", GOLD);
+        coins.setValue(amount);
         revalidate();
         repaint();
     }
