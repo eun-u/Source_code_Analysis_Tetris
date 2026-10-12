@@ -2,10 +2,20 @@ package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import javax.imageio.ImageIO;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 
 /** Clean, saturated cartoon skin shared by the board, HOLD and NEXT. */
 public final class ConcreteBlockSkin {
+    private static final String ORE_PATH = "/ui/campus-rpg/ore-tile.png";
+    private static final BufferedImage ORE_IMAGE = loadOreImage();
+    private static final Rectangle ORE_VISIBLE_AREA = findVisibleArea(ORE_IMAGE);
+
     private ConcreteBlockSkin() { }
 
     public static Color color(PieceType type) {
@@ -37,8 +47,12 @@ public final class ConcreteBlockSkin {
             return;
         }
 
-        // The old concrete-tile.png/ore-tile.png texture is deliberately NOT loaded.
-        // Every cell uses one clean, saturated color independent of source PNGs.
+        // An item/ore cell uses the actual PNG. Ordinary cells keep their bright cartoon colors.
+        if (ore && ORE_IMAGE != null && ORE_VISIBLE_AREA != null) {
+            paintOreImage(g, x, y, size);
+            return;
+        }
+
         g.setColor(new Color(0x17242C));
         g.fillRect(x, y, size, size);
         int inset = size >= 6 ? 1 : 0;
@@ -66,7 +80,63 @@ public final class ConcreteBlockSkin {
         if (ore) paintOreMark(g, x, y, size, false);
     }
 
-    /** Retain a legible ore indicator even without the previous texture file. */
+    /** Render the supplied artwork without stretching or including its transparent margins. */
+    private static void paintOreImage(Graphics2D g, int x, int y, int size) {
+        g.setColor(new Color(0x17242C));
+        g.fillRect(x, y, size, size);
+
+        int padding = size >= 12 ? 1 : 0;
+        int available = Math.max(1, size - 2 * padding);
+        double scale = Math.min((double) available / ORE_VISIBLE_AREA.width,
+                (double) available / ORE_VISIBLE_AREA.height);
+        int width = Math.max(1, (int) Math.round(ORE_VISIBLE_AREA.width * scale));
+        int height = Math.max(1, (int) Math.round(ORE_VISIBLE_AREA.height * scale));
+        int dx = x + (size - width) / 2;
+        int dy = y + (size - height) / 2;
+
+        Graphics2D imageGraphics = (Graphics2D) g.create();
+        try {
+            imageGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            imageGraphics.drawImage(ORE_IMAGE, dx, dy, dx + width, dy + height,
+                    ORE_VISIBLE_AREA.x, ORE_VISIBLE_AREA.y,
+                    ORE_VISIBLE_AREA.x + ORE_VISIBLE_AREA.width,
+                    ORE_VISIBLE_AREA.y + ORE_VISIBLE_AREA.height, null);
+        } finally {
+            imageGraphics.dispose();
+        }
+    }
+
+    private static BufferedImage loadOreImage() {
+        try (InputStream input = ConcreteBlockSkin.class.getResourceAsStream(ORE_PATH)) {
+            if (input == null) {
+                System.err.println("Missing item block image: " + ORE_PATH);
+                return null;
+            }
+            return ImageIO.read(input);
+        } catch (IOException error) {
+            System.err.println("Cannot load item block image " + ORE_PATH + ": " + error.getMessage());
+            return null;
+        }
+    }
+
+    /** Ignore the transparent outer canvas of the PNG before fitting it in one block. */
+    private static Rectangle findVisibleArea(BufferedImage image) {
+        if (image == null) return null;
+        int left = image.getWidth(), top = image.getHeight(), right = -1, bottom = -1;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if ((image.getRGB(x, y) >>> 24) <= 8) continue;
+                if (x < left) left = x;
+                if (x > right) right = x;
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+            }
+        }
+        return right < left ? null : new Rectangle(left, top, right - left + 1, bottom - top + 1);
+    }
+
+    /** Retain a legible ore indicator when the PNG cannot be loaded or for ghost cells. */
     private static void paintOreMark(Graphics2D g, int x, int y, int size, boolean ghost) {
         if (size < 8) return;
         int unit = Math.max(1, size / 8);
