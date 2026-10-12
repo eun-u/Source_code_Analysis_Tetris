@@ -22,10 +22,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
 import javax.imageio.ImageIO;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 
 /**
@@ -381,8 +383,8 @@ public final class PixelArena extends JComponent {
                     : Math.max(60, Math.min(Math.round((w - 20) * 0.56f), Math.round(span * 0.66f)));
             monsterX = Math.round(w * (online ? 0.28f : 0.31f));
             monsterFoot = horizon + Math.round(monsterSize * 0.10f);
-            portraitW = online ? monsterSize : Math.max(46, Math.min(Math.round(w * (PLAYER_IDLE == null ? 0.30f : 0.35f)),
-                    Math.round(span * (PLAYER_IDLE == null ? 0.26f : 0.31f))));
+            portraitW = online ? monsterSize : Math.max(46, Math.min(Math.round(w * (PLAYER_IDLE == null ? 0.36f : 0.42f)),
+                    Math.round(span * (PLAYER_IDLE == null ? 0.31f : 0.37f))));
             portraitH = online ? portraitW : portraitW * 7 / 6;
             portraitX = online ? Math.round(w * 0.72f) - portraitW / 2 : w - portraitW - 14;
             // 근접 공격 때 두 전투원이 실제로 만나는 높이. PvE의 작은 주인공만 약간 앞쪽에 둔다.
@@ -1231,7 +1233,7 @@ public final class PixelArena extends JComponent {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             int maxHp = Math.max(1, max);
             String numbers = Math.max(0, hp) + "/" + maxHp;
-            g.setFont(new Font("Dialog", Font.BOLD, 15));
+            g.setFont(UniversityPixelTheme.font(15, Font.BOLD));
             FontMetrics fm = g.getFontMetrics();
             int textX = x + (width - fm.stringWidth(numbers)) / 2;
             int textY = y + fm.getAscent();
