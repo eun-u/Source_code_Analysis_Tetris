@@ -1,25 +1,54 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.LayoutManager;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.function.IntConsumer;
+
 import javax.imageio.ImageIO;
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
-import kr.ac.jbnu.se.tetris.battle.*;
-import kr.ac.jbnu.se.tetris.core.GameState;
-import kr.ac.jbnu.se.tetris.core.GameEvent;
-import kr.ac.jbnu.se.tetris.core.BoardState;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
+
 import kr.ac.jbnu.se.tetris.audio.AudioService;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
+import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.battle.ParticipantState;
+import kr.ac.jbnu.se.tetris.core.BoardState;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CartoonBattleTopHud;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GarbageMeter;
@@ -161,7 +190,7 @@ public class BattlePanel extends JPanel implements Scrollable {
 
     private static void drawBadgeNumber(Graphics2D g, String text,
                                         int x, int y, int w, int h, int size) {
-        g.setFont(new Font("Dialog", Font.BOLD, size));
+        g.setFont(UniversityPixelTheme.font(size, Font.BOLD));
         FontMetrics fm = g.getFontMetrics();
         int tx = x + (w - fm.stringWidth(text)) / 2;
         int ty = y + (h - fm.getHeight()) / 2 + fm.getAscent();
@@ -222,7 +251,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             }
         };
         label.setForeground(Color.WHITE);
-        label.setFont(new Font("Dialog", Font.BOLD, 16));
+        label.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         return label;
     }
 
@@ -412,9 +441,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFeverPanel.setBorder(null);
         pveFeverLabel.setText("FEVER");
         pveFeverLabel.setForeground(Color.WHITE);
-        pveFeverLabel.setFont(new Font("Dialog", Font.BOLD, 16));
+        pveFeverLabel.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         pveFeverPercent.setForeground(Color.WHITE);
-        pveFeverPercent.setFont(new Font("Dialog", Font.BOLD, 17));
+        pveFeverPercent.setFont(UniversityPixelTheme.font(17, Font.BOLD));
         pveFeverPercent.setHorizontalAlignment(SwingConstants.RIGHT);
         pveFeverPanel.add(pveFeverLabel);
         pveFeverPanel.add(pveFeverBar);
