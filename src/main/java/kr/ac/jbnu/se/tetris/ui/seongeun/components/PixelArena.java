@@ -1320,6 +1320,9 @@ public final class PixelArena extends JComponent {
 
     /** 전투 시작 안내: 상대 이름과 READY → FIGHT! */
     private void paintIntro(Graphics2D g, Stage s, long now) {
+        // PvE는 중앙 보드가 무대 위에 놓여 READY/FIGHT 배너가 뒤에 가려진다.
+        // 진행을 가리는 중복 연출을 제거하고 온라인 대전의 시작 연출만 유지한다.
+        if (widePve && !online) return;
         if (introAt < 0 || finishedAt >= 0) return;
         long age = now - introAt;
         if (age > 1500) { introAt = -1; return; }
