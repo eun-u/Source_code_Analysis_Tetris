@@ -557,6 +557,11 @@ public final class SeongeunApplication implements AutoCloseable {
         }
     }
 
+    /** 이미 클리어한 전투를 다시 이겼을 때는 첫 클리어 보상의 20%만 준다. */
+    private static int repeatReward(int firstClearReward) {
+        return firstClearReward / 5;
+    }
+
     private static int storyReward(MonsterTier tier) {
         switch (tier) {
             case NORMAL: return 30;
@@ -687,8 +692,12 @@ public final class SeongeunApplication implements AutoCloseable {
                 if (disposition == StoryProgressService.ResultDisposition.APPLIED_WIN) {
                     EncounterRun won = progress.getActiveRun();
                     boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
-                    int reward = firstClear ? storyReward(won.getMonster().getTier()) : 0;
-                    if (commitSave(saveData.withFirstClear(won.getEncounterId(), reward))) earnedReward = reward;
+                    int fullReward = storyReward(won.getMonster().getTier());
+                    int reward = firstClear ? fullReward : repeatReward(fullReward);
+                    PlayerSaveStore.Data next = firstClear
+                            ? saveData.withFirstClear(won.getEncounterId(), reward)
+                            : saveData.withCoins(reward);
+                    if (commitSave(next)) earnedReward = reward;
                 }
             }
             CommandOutcome outcome = update.getOutcome();
