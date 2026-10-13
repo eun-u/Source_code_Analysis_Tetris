@@ -48,29 +48,19 @@ public class ScenePanel extends JPanel {
     }
 
     public static void paintBackdrop(Graphics2D g, int w, int h, long now) {
-        g.setPaint(new GradientPaint(0, 0, new Color(0xD8DDD5), 0, h, UniversityPixelTheme.BG));
+        g.setColor(new Color(0xA9E0F9));
         g.fillRect(0, 0, w, h);
-        if (CAMPUS != null && w > 0 && h > 0) {
-            int width = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
-            g.setComposite(AlphaComposite.SrcOver.derive(0.27f));
-            g.drawImage(CAMPUS, (w - width) / 2, 0, width, h, null);
-            g.setComposite(AlphaComposite.SrcOver);
+        BufferedImage scene = CampusArt.image("/ui/campus-rpg/reference-scene.jpg");
+        if (scene != null && w > 0 && h > 0) {
+            double scale = Math.max(w / (double) scene.getWidth(), h / (double) scene.getHeight());
+            int dw = (int) Math.ceil(scene.getWidth() * scale);
+            int dh = (int) Math.ceil(scene.getHeight() * scale);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(scene, (w - dw) / 2, (h - dh) / 2, dw, dh, null);
         }
-        // 제목과 메뉴가 놓이는 상단은 같은 밝기로 묶어 읽기 쉽게 한다.
-        g.setPaint(new GradientPaint(0, 0, new Color(235, 234, 222, 54), 0, h,
-                new Color(211, 214, 203, 54)));
-        g.fillRect(0, 0, w, h);
-        int cell = Math.max(8, Math.min(15, w / 80));
-        for (int i = 0; i < 4; i++) {
-            long cycle = 17000 + i * 1900L;
-            float t = ((now + i * 3711L) % cycle) / (float) cycle;
-            int x = Math.floorMod(i * 211 + 40, Math.max(1, w - cell));
-            int y = Math.round(-cell + (h + cell * 2) * t);
-            g.setColor(new Color(66, 80, 80, 12));
-            g.fillRect(x, y, cell, cell);
-            g.setColor(new Color(150, 101, 31, 21));
-            g.drawLine(x, y, x + cell - 1, y);
-        }
+        g.setColor(new Color(252, 250, 241, 36));
+        g.fillRect(0,0,w,h);
     }
 
     private static BufferedImage readCampus() {
