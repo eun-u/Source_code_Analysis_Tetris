@@ -569,13 +569,31 @@ public final class RenderGameServer implements AutoCloseable {
         }
     }
 
+    /** 헷갈리는 문자(0/O, 1/I/L)를 뺀 31자. 6자리면 약 8.9억 가지라 방 수가 적은 서버에서는 충돌이 사실상 없다. */
+    private static final String ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final int ROOM_CODE_LENGTH = 6;
+    private final java.security.SecureRandom roomCodeRandom = new java.security.SecureRandom();
+
+    /** 현재 열려 있는 방과 겹치지 않는 짧은 방 코드를 만든다. 20번 시도해도 겹치면 null. */
+    private String newRoomCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            StringBuilder code = new StringBuilder(ROOM_CODE_LENGTH);
+            for (int i = 0; i < ROOM_CODE_LENGTH; i++)
+                code.append(ROOM_CODE_ALPHABET.charAt(roomCodeRandom.nextInt(ROOM_CODE_ALPHABET.length())));
+            if (!rooms.containsKey(code.toString())) return code.toString();
+        }
+        return null;
+    }
+
     private void createRoom(Peer peer, long requestId, RoomCommand command) {
         if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
         if (command.getMaxParticipants() == null || command.getMaxParticipants().intValue() != 2) {
             outcome(peer, requestId, false, "ROOM_SIZE_NOT_SUPPORTED"); return;
         }
-        Room room = new Room();
+        String code = newRoomCode();
+        if (code == null) { outcome(peer, requestId, false, "ROOM_CODE_EXHAUSTED"); return; }
+        Room room = new Room(code);
         rooms.put(room.id, room);
         room.members.put(peer.id, peer);
         room.ready.put(peer.id, Boolean.FALSE);
@@ -588,7 +606,7 @@ public final class RenderGameServer implements AutoCloseable {
     private void joinRoom(Peer peer, long requestId, String roomId) {
         if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
-        Room room = rooms.get(roomId);
+        Room room = rooms.get(roomId == null ? null : roomId.trim().toUpperCase(java.util.Locale.ROOT));
         if (room == null) { outcome(peer, requestId, false, "ROOM_NOT_FOUND"); return; }
         if (room.members.size() >= 2) { outcome(peer, requestId, false, "ROOM_FULL"); return; }
         if (room.starting || room.saveState == SaveState.PENDING || room.saveState == SaveState.FAILED
@@ -1098,7 +1116,7 @@ public final class RenderGameServer implements AutoCloseable {
     private enum SaveState { NONE, PENDING, SAVED, FAILED, VOID }
 
     private static final class Room {
-        private final String id = UUID.randomUUID().toString();
+        private final String id;
         private final Map<String, Peer> members = new LinkedHashMap<String, Peer>();
         private final Map<String, Boolean> ready = new LinkedHashMap<String, Boolean>();
         private long version;
@@ -1111,6 +1129,7 @@ public final class RenderGameServer implements AutoCloseable {
         private long lastTickNanos;
         private long lastBroadcastNanos;
         private SaveState saveState = SaveState.NONE;
+        private Room(String id) { this.id = id; }
     }
 
     private static final class MatchAttempt {

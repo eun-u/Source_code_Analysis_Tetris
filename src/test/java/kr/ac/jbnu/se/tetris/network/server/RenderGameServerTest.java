@@ -84,11 +84,29 @@ public final class RenderGameServerTest {
             if (probes[0].awaitOutcome(forgedId).getRequestOutcome().isAccepted()) {
                 throw new AssertionError("Cross-account token refresh accepted");
             }
+            java.util.Set<String> roomCodes = new java.util.HashSet<String>();
             for (int pair = 0; pair < 3; pair++) {
                 Probe first = probes[pair * 2], second = probes[pair * 2 + 1];
                 first.client.send(RoomCommand.createRoom(2));
                 NetworkUpdate created = first.await(NetworkUpdate.Type.ROOM_STATE);
-                second.client.send(RoomCommand.joinRoom(created.getRoomId()));
+                // 방 코드는 헷갈리는 문자(0/O/1/I/L)를 뺀 6자리 영숫자이고 방마다 달라야 한다.
+                if (!created.getRoomId().matches("[A-HJ-NP-Z2-9]{6}")) {
+                    throw new AssertionError("Room code must be 6 chars: " + created.getRoomId());
+                }
+                if (!roomCodes.add(created.getRoomId())) {
+                    throw new AssertionError("Duplicate room code: " + created.getRoomId());
+                }
+                // 존재하지 않는 코드로 입장하면 ROOM_NOT_FOUND여야 한다(이미 방에 있는 사람 말고 다른 참가자가 시도).
+                if (pair == 0) {
+                    long missing = probes[5].client.send(RoomCommand.joinRoom("ZZZZZZ"));
+                    NetworkUpdate rejected = probes[5].awaitOutcome(missing);
+                    if (rejected.getRequestOutcome().isAccepted()
+                            || !"ROOM_NOT_FOUND".equals(rejected.getRequestOutcome().getReasonCode())) {
+                        throw new AssertionError("Unknown room code must be ROOM_NOT_FOUND");
+                    }
+                }
+                // 소문자로 입력해도 같은 방에 입장해야 한다.
+                second.client.send(RoomCommand.joinRoom(created.getRoomId().toLowerCase()));
                 second.await(NetworkUpdate.Type.ROOM_STATE);
                 first.client.send(RoomCommand.setReady(true));
                 second.client.send(RoomCommand.setReady(true));
@@ -129,6 +147,7 @@ public final class RenderGameServerTest {
         pvpGravityFollowsRealTime(verifier);
         timeWarpSlowsOnlyItsUserOnServer(verifier);
         pvpSpeedsUpAfterOneMinuteOnServer(verifier);
+        roomCodesAreShortAndAvoidExistingRooms(verifier);
         lostFinishResponseKeepsOrder(verifier);
         orphanPendingVisibleInDrainStatus(verifier);
         slowAuthRefreshMustNotBlockRanking();
@@ -784,6 +803,39 @@ public final class RenderGameServerTest {
         for (kr.ac.jbnu.se.tetris.battle.ParticipantState p : update.getBattleState().getParticipants().values())
             total += p.getGameState().getTick();
         return total;
+    }
+
+    /**
+     * 방 코드 생성기 검증: 항상 6자리이고, 헷갈리는 문자(0/O/1/I/L)를 쓰지 않으며, 31개 문자를 고르게 쓰고,
+     * 이미 열려 있는 방의 코드와는 절대 겹치지 않는다(2만 개 방을 채워 놓고 계속 뽑아 확인).
+     */
+    @SuppressWarnings("unchecked")
+    private static void roomCodesAreShortAndAvoidExistingRooms(TokenVerifier verifier) throws Exception {
+        RenderGameServer server = new RenderGameServer(verifier, new TestStore(), ADMIN, 0);
+        try {
+            java.lang.reflect.Method generator = RenderGameServer.class.getDeclaredMethod("newRoomCode");
+            generator.setAccessible(true);
+            java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
+            roomsField.setAccessible(true);
+            Map<String, Object> rooms = (Map<String, Object>) roomsField.get(server);
+            Class<?> roomClass = Class.forName(RenderGameServer.class.getName() + "$Room");
+            java.lang.reflect.Constructor<?> roomConstructor = roomClass.getDeclaredConstructor(String.class);
+            roomConstructor.setAccessible(true);
+            java.util.Set<Character> usedChars = new java.util.HashSet<Character>();
+            for (int i = 0; i < 20000; i++) {
+                String code = (String) generator.invoke(server);
+                if (code == null || !code.matches("[A-HJ-NP-Z2-9]{6}"))
+                    throw new AssertionError("Bad room code: " + code);
+                if (rooms.containsKey(code)) throw new AssertionError("Room code collided with open room: " + code);
+                for (char c : code.toCharArray()) usedChars.add(c);
+                rooms.put(code, roomConstructor.newInstance(code));
+            }
+            if (usedChars.size() != 31)
+                throw new AssertionError("Room code alphabet not fully used: " + usedChars.size());
+            System.out.println("roomCodesAreShortAndAvoidExistingRooms: 20000 unique codes, 31 characters used");
+        } finally {
+            server.close();
+        }
     }
 
     private static Probe connectProbe(String user, int port) throws Exception {
