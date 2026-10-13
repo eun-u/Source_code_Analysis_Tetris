@@ -55,7 +55,8 @@ public final class RankedOnlineUiFlowTest {
         auth.start();
         RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
         SeongeunApplication[] apps = new SeongeunApplication[2];
-        String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey"};
+        String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey",
+                "tetris.online.provider"};
         String[] previous = new String[keys.length];
         for (int i = 0; i < keys.length; i++) previous[i] = System.getProperty(keys[i]);
         try {
@@ -65,6 +66,7 @@ public final class RankedOnlineUiFlowTest {
             System.setProperty(keys[0], "ws://127.0.0.1:" + port + "/ws");
             System.setProperty(keys[1], "http://127.0.0.1:" + auth.getAddress().getPort());
             System.setProperty(keys[2], "public-test-key");
+            System.setProperty(keys[3], "supabase");
             edt(() -> {
                 apps[0] = new SeongeunApplication(new Random(1), null);
                 apps[1] = new SeongeunApplication(new Random(2), null);

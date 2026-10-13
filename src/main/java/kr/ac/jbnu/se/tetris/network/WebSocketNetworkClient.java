@@ -36,6 +36,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +49,9 @@ import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 
 /** The same game protocol over authenticated WebSocket text messages. */
 public final class WebSocketNetworkClient implements NetworkClient {
+    private static final long COLD_START_RETRY_MILLIS = 75000;
+    private final boolean retryColdStart;
+    private final long retryDeadlineMillis;
     private final AtomicLong nextId = new AtomicLong();
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -63,6 +67,20 @@ public final class WebSocketNetworkClient implements NetworkClient {
     private volatile Channel channel;
     private volatile String matchId;
     private volatile boolean connected;
+    private volatile Attempt openingAttempt;
+
+    public WebSocketNetworkClient() { this(false); }
+
+    /** Retry only the first connection; room commands and gameplay are never replayed. */
+    public WebSocketNetworkClient(boolean retryColdStart) {
+        this(retryColdStart, COLD_START_RETRY_MILLIS);
+    }
+
+    WebSocketNetworkClient(boolean retryColdStart, long retryDeadlineMillis) {
+        if (retryDeadlineMillis < 1) throw new IllegalArgumentException("retryDeadlineMillis");
+        this.retryColdStart = retryColdStart;
+        this.retryDeadlineMillis = retryDeadlineMillis;
+    }
 
     @Override public long connect(ConnectionOptions options) {
         requireOpen();
@@ -74,6 +92,34 @@ public final class WebSocketNetworkClient implements NetworkClient {
     }
 
     private void open(ConnectionOptions options) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(retryDeadlineMillis);
+        int attemptNumber = 0;
+        while (!closed.get()) {
+            Attempt result = openAttempt(options, deadline);
+            if (closed.get() || result.success) return;
+            if (!retryColdStart || !result.retryable || System.nanoTime() >= deadline) {
+                terminate(result.reason, true);
+                return;
+            }
+            attemptNumber++;
+            long delay = Math.min(5000L, 500L << Math.min(attemptNumber, 3));
+            delay = Math.min(delay, Math.max(0L,
+                    TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+            if (delay <= 0) { terminate(result.reason, true); return; }
+            try { Thread.sleep(delay); }
+            catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                terminate("CONNECTION_FAILED", true);
+                return;
+            }
+        }
+    }
+
+    private Attempt openAttempt(ConnectionOptions options, long deadline) {
+        Attempt attempt = new Attempt();
+        openingAttempt = attempt;
+        NioEventLoopGroup group = null;
+        Channel opened = null;
         try {
             URI uri = options.getWebSocketUri();
             final WebSocketClientHandshaker handshaker = WebSocketClientHandshakerFactory.newHandshaker(uri,
@@ -82,9 +128,10 @@ public final class WebSocketNetworkClient implements NetworkClient {
                     WireCodec.MAX_FRAME_BYTES);
             final SslContext ssl = "wss".equalsIgnoreCase(uri.getScheme())
                     ? SslContextBuilder.forClient().build() : null;
-            ioGroup = new NioEventLoopGroup(1,
+            group = new NioEventLoopGroup(1,
                     (java.util.concurrent.ThreadFactory) task -> daemon(task, "tetris-ws-io"));
-            Bootstrap bootstrap = new Bootstrap().group(ioGroup).channel(NioSocketChannel.class)
+            ioGroup = group;
+            Bootstrap bootstrap = new Bootstrap().group(group).channel(NioSocketChannel.class)
                     .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
                     .handler(new ChannelInitializer<SocketChannel>() {
                         @Override protected void initChannel(SocketChannel ch) {
@@ -101,11 +148,6 @@ public final class WebSocketNetworkClient implements NetworkClient {
                                     new SimpleChannelInboundHandler<Object>() {
                                 @Override public void channelActive(ChannelHandlerContext ctx) {
                                     handshaker.handshake(ctx.channel());
-                                    ctx.executor().schedule(() -> {
-                                        if (!closed.get() && !handshaker.isHandshakeComplete()) {
-                                            terminate("HANDSHAKE_TIMEOUT", true);
-                                        }
-                                    }, 90, TimeUnit.SECONDS);
                                 }
                                 @Override protected void channelRead0(ChannelHandlerContext ctx, Object value)
                                         throws Exception {
@@ -116,10 +158,16 @@ public final class WebSocketNetworkClient implements NetworkClient {
                                             String reason = response.status().code() == 401 ? "AUTH_INVALID"
                                                     : response.status().code() == 503 ? "SERVICE_UNAVAILABLE"
                                                     : "HANDSHAKE_FAILED";
-                                            terminate(reason, true);
+                                            attempt.finish(reason, response.status().code() == 503, false);
+                                            ctx.close();
                                             return;
                                         }
                                         handshaker.finishHandshake(ctx.channel(), response);
+                                        if (closed.get() || openingAttempt != attempt
+                                                || !attempt.finish(null, false, true)) {
+                                            ctx.close();
+                                            return;
+                                        }
                                         connected = true;
                                         drain();
                                         return;
@@ -136,28 +184,56 @@ public final class WebSocketNetworkClient implements NetworkClient {
                                     }
                                 }
                                 @Override public void channelInactive(ChannelHandlerContext ctx) {
-                                    terminate(connected ? "CONNECTION_LOST" : "CONNECTION_FAILED", !connected);
+                                    if (!attempt.success) attempt.finish("CONNECTION_FAILED", true, false);
+                                    else terminate("CONNECTION_LOST", false);
                                 }
                                 @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable error) {
-                                    terminate(connected ? "CONNECTION_LOST" : "CONNECTION_FAILED", !connected);
+                                    if (!attempt.success) {
+                                        attempt.finish("CONNECTION_FAILED", true, false);
+                                        ctx.close();
+                                    } else terminate("CONNECTION_LOST", false);
                                 }
                                 @Override public void userEventTriggered(ChannelHandlerContext ctx, Object event) {
                                     if (event instanceof IdleStateEvent
                                             && ((IdleStateEvent) event).state() == IdleState.READER_IDLE) {
-                                        terminate(connected ? "CONNECTION_IDLE_TIMEOUT" : "HANDSHAKE_TIMEOUT",
-                                                !connected);
+                                        if (!attempt.success) {
+                                            attempt.finish("HANDSHAKE_TIMEOUT", true, false);
+                                            ctx.close();
+                                        } else terminate("CONNECTION_IDLE_TIMEOUT", false);
                                     }
                                 }
                             });
                         }
                     });
-            Channel opened = bootstrap.connect(options.getHost(), options.getPort()).sync().channel();
+            io.netty.channel.ChannelFuture future = bootstrap.connect(options.getHost(), options.getPort());
+            if (!future.await(6, TimeUnit.SECONDS) || !future.isSuccess()) {
+                future.channel().close();
+                attempt.finish("CONNECTION_FAILED", true, false);
+                return attempt;
+            }
+            opened = future.channel();
             channel = opened;
-            if (closed.get()) opened.close();
-            else drain();
+            if (closed.get()) attempt.finish("CLIENT_CLOSED", false, false);
+            long handshakeWaitMillis = retryColdStart
+                    ? Math.min(20000L, Math.max(1L,
+                            TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())))
+                    : TimeUnit.SECONDS.toMillis(90);
+            if (!attempt.done.await(handshakeWaitMillis, TimeUnit.MILLISECONDS)) {
+                attempt.finish("HANDSHAKE_TIMEOUT", true, false);
+            }
+            if (attempt.success) drain();
         } catch (Exception error) {
-            terminate("CONNECTION_FAILED", true);
+            attempt.finish("CONNECTION_FAILED", true, false);
+        } finally {
+            if (!attempt.success) {
+                if (opened != null) opened.close();
+                if (group != null) group.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+                if (channel == opened) channel = null;
+                if (ioGroup == group) ioGroup = null;
+            }
+            if (openingAttempt == attempt) openingAttempt = null;
         }
+        return attempt;
     }
 
     @Override public synchronized long send(RoomCommand command) {
@@ -262,6 +338,8 @@ public final class WebSocketNetworkClient implements NetworkClient {
 
     private void terminate(String reason, boolean connectionFailure) {
         if (!closed.compareAndSet(false, true)) return;
+        Attempt pending = openingAttempt;
+        if (pending != null) pending.finish(reason, false, false);
         connected = false;
         Channel current = channel;
         if (current != null) current.close();
@@ -298,6 +376,22 @@ public final class WebSocketNetworkClient implements NetworkClient {
                 java.util.logging.Logger.getLogger(WebSocketNetworkClient.class.getName())
                         .log(java.util.logging.Level.WARNING, "Network listener failed", error);
             }
+        }
+    }
+
+    private static final class Attempt {
+        private final CountDownLatch done = new CountDownLatch(1);
+        private final AtomicBoolean decided = new AtomicBoolean();
+        private volatile String reason = "CONNECTION_FAILED";
+        private volatile boolean retryable;
+        private volatile boolean success;
+        private boolean finish(String reason, boolean retryable, boolean success) {
+            if (!decided.compareAndSet(false, true)) return false;
+            this.reason = reason;
+            this.retryable = retryable;
+            this.success = success;
+            done.countDown();
+            return true;
         }
     }
 }

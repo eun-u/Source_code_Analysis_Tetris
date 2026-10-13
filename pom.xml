@@ -7,12 +7,15 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>8</maven.compiler.source><maven.compiler.target>8</maven.compiler.target>
     <netty.version>4.2.18.Final</netty.version><gson.version>2.13.2</gson.version>
+    <firebase-admin.version>9.11.0</firebase-admin.version>
     <skipTests>false</skipTests>
   </properties>
   <dependencies>
     <dependency><groupId>io.netty</groupId><artifactId>netty-codec-http</artifactId><version>${netty.version}</version></dependency>
     <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId><version>${netty.version}</version></dependency>
     <dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>${gson.version}</version></dependency>
+    <!-- Server only at packaging time; the desktop client contains no Admin SDK. -->
+    <dependency><groupId>com.google.firebase</groupId><artifactId>firebase-admin</artifactId><version>${firebase-admin.version}</version></dependency>
   </dependencies>
   <build>
     <finalName>tetris</finalName>
@@ -42,12 +45,13 @@
         <executions>
           <execution><id>client</id><phase>package</phase><goals><goal>shade</goal></goals><configuration>
             <outputFile>${project.build.directory}/tetris-client.jar</outputFile>
-            <filters combine.children="append"><filter><artifact>kr.ac.jbnu.se:tetris</artifact><excludes><exclude>kr/ac/jbnu/se/tetris/network/server/**</exclude><exclude>kr/ac/jbnu/se/tetris/auth/SupabaseTokenVerifier*</exclude><exclude>kr/ac/jbnu/se/tetris/ranking/SupabaseRankedMatchStore*</exclude></excludes></filter></filters>
+            <artifactSet><includes><include>kr.ac.jbnu.se:tetris</include><include>io.netty:*</include><include>com.google.code.gson:gson</include></includes></artifactSet>
+            <filters combine.children="append"><filter><artifact>kr.ac.jbnu.se:tetris</artifact><excludes><exclude>kr/ac/jbnu/se/tetris/network/server/**</exclude><exclude>kr/ac/jbnu/se/tetris/firebase/server/**</exclude><exclude>kr/ac/jbnu/se/tetris/migration/**</exclude><exclude>kr/ac/jbnu/se/tetris/auth/SupabaseTokenVerifier*</exclude><exclude>kr/ac/jbnu/se/tetris/ranking/SupabaseRankedMatchStore*</exclude></excludes></filter></filters>
             <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"><mainClass>kr.ac.jbnu.se.tetris.Tetris</mainClass></transformer></transformers>
           </configuration></execution>
           <execution><id>server</id><phase>package</phase><goals><goal>shade</goal></goals><configuration>
             <outputFile>${project.build.directory}/tetris-server.jar</outputFile>
-            <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"><mainClass>kr.ac.jbnu.se.tetris.network.server.RenderGameServer</mainClass></transformer></transformers>
+            <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/><transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"><mainClass>kr.ac.jbnu.se.tetris.network.server.RenderGameServer</mainClass></transformer></transformers>
           </configuration></execution>
         </executions>
       </plugin>

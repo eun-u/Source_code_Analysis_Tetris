@@ -9,7 +9,7 @@ import kr.ac.jbnu.se.tetris.supabase.SupabaseHttp;
 import kr.ac.jbnu.se.tetris.supabase.SupabaseHttpException;
 
 /** Desktop authentication client. Requests are synchronous and must run off the EDT. */
-public final class SupabaseAuthService {
+public final class SupabaseAuthService implements AuthService {
     private final SupabaseHttp http;
     private AuthSession session;
 

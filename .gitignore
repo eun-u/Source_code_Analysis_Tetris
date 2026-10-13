@@ -39,4 +39,8 @@ bin/
 /.env.*
 !/.env.example
 /tetris-client.properties
+/.migration-private/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 *.log
