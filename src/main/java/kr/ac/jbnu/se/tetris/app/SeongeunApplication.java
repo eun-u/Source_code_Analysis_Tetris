@@ -595,6 +595,7 @@ public final class SeongeunApplication implements AutoCloseable {
         show(BATTLE);
         ((LocalMatchSession) match).startClock();
         renderMatch();
+        showStoryCue(dialogues.onEncounterStart(run));
     }
 
     private void startLocal(LocalGameSession.Mode mode) {
@@ -705,18 +706,33 @@ public final class SeongeunApplication implements AutoCloseable {
                 battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
             renderMatch();
             battle.applyEvents(update.getEvents(), update.getSnapshot().getLocalParticipantId());
-            if (storyBattle) showStoryHpDialogue(update.getSnapshot());
+            if (storyBattle) showStoryDialogues(update.getSnapshot(), update.getEvents());
         });
     }
 
-    private void showStoryHpDialogue(SessionSnapshot snapshot) {
+    /** 전투 상태와 방금 일어난 이벤트로 몬스터·플레이어 대사(HP 감소, 위기, 강공격, 30초 대화)를 띄운다. */
+    private void showStoryDialogues(SessionSnapshot snapshot, List<kr.ac.jbnu.se.tetris.battle.BattleEvent> events) {
         EncounterRun run = progress.getActiveRun();
         BattleState state = snapshot.getBattleState();
         if (run == null || state == null || state.getParticipant(run.getMonsterParticipantId()) == null) return;
         kr.ac.jbnu.se.tetris.battle.ParticipantState monster =
                 state.getParticipant(run.getMonsterParticipantId());
-        StoryDialogueCue cue = dialogues.onMonsterHp(run, monster.getHp(), monster.getMaxHp());
-        if (cue != null) battle.setFeedback(cue.getSpeaker() + ": " + cue.getText());
+        showStoryCue(dialogues.onMonsterHp(run, monster.getHp(), monster.getMaxHp()));
+        showStoryCue(dialogues.onMonsterCrisis(run, monster.getHp(), monster.getMaxHp()));
+        // 강공격: 플레이어가 한 번에 4줄 이상 지웠을 때(대사집 기준).
+        for (kr.ac.jbnu.se.tetris.battle.BattleEvent event : events) {
+            kr.ac.jbnu.se.tetris.core.GameEvent core = event.getCoreEvent();
+            if (event.getType() == kr.ac.jbnu.se.tetris.battle.BattleEvent.Type.CORE_EVENT && core != null
+                    && core.getType() == kr.ac.jbnu.se.tetris.core.GameEvent.Type.LINE_CLEAR
+                    && run.getLocalParticipantId().equals(event.getActorId())) {
+                showStoryCue(dialogues.onPlayerLineClear(run, core.getLineCount()));
+            }
+        }
+        for (StoryDialogueCue cue : dialogues.onElapsed(run, state.getElapsedMillis())) showStoryCue(cue);
+    }
+
+    private void showStoryCue(StoryDialogueCue cue) {
+        if (cue != null) battle.showDialogue(cue.getSpeaker(), cue.getText());
     }
 
     private void renderMatch() {

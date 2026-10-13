@@ -17,6 +17,7 @@ import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.BoardState;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.audio.AudioService;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BattleDialogue;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.BattleLog;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
@@ -77,6 +78,8 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JPanel enemyColumn = new JPanel(null);
     /** PvE에서 보스의 공격·아이템 사용을 알려 주는 알림 큐. */
     private final BattleLog battleLog = new BattleLog();
+    /** PvE에서 몬스터·플레이어의 대사를 한 줄씩 순서대로 보여 주는 말풍선. */
+    private final BattleDialogue dialogue = new BattleDialogue();
     private IntConsumer itemAction;
     private long feedbackUntil;
     private AudioService audio;
@@ -132,6 +135,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         // 알림은 무대 위에 보이되 광석 연출보다는 아래에 둔다.
         add(battleLog);
         setComponentZOrder(battleLog, 1);
+        add(dialogue);
+        setComponentZOrder(dialogue, 2);
     }
 
     private void buildLeftColumn() {
@@ -395,6 +400,8 @@ public class BattlePanel extends JPanel implements Scrollable {
             enemyColumn.setVisible(true);
             battleLog.setVisible(false);
             battleLog.setBounds(0, 0, 0, 0);
+            dialogue.setVisible(false);
+            dialogue.setBounds(0, 0, 0, 0);
             layoutOnline(width, side, top, Math.max(100, height - top - bottom));
             resultTestButton.setVisible(false);
             return;
@@ -431,6 +438,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         // 몬스터 체력바 바로 아래, 몬스터 그림 위쪽 빈 하늘 영역에 알림을 띄운다.
         battleLog.setVisible(true);
         battleLog.setBounds(arenaX + 10, areaTop + 56, Math.max(0, arenaWidth - 20), BattleLog.preferredHeight());
+        // 대사는 무대 아래쪽(플레이어 체력바 바로 위)에 띄운다. 체력바 높이만큼 비워 둔다.
+        dialogue.setVisible(true);
+        dialogue.setBounds(arenaX + 10, areaTop + areaHeight - DIALOGUE_BOTTOM_RESERVE - BattleDialogue.HEIGHT,
+                Math.max(0, arenaWidth - 20), BattleDialogue.HEIGHT);
         resultTestButton.setVisible(false);
     }
 
@@ -540,6 +551,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         repaint();
     }
     public void resetFeedback() {
+        dialogue.clear();
         feedbackGeneration++;
         previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
         playerBoard.resetEffects(); enemyBoard.resetEffects();
@@ -694,6 +706,20 @@ public class BattlePanel extends JPanel implements Scrollable {
         oreFlights.launch(from, to, slots[index].getWidth(), slots[index].getHeight());
         return true;
     }
+    /** 대사 상수: 플레이어 체력바(무대 맨 아래)가 차지하는 높이. */
+    private static final int DIALOGUE_BOTTOM_RESERVE = 58;
+
+    /**
+     * 몬스터·플레이어의 대사를 말풍선 대기열에 넣는다(PvE 전용, 온라인에서는 무시).
+     * speaker가 "몬스터"/"플레이어"면 해당 색으로, 그 밖에는 내레이션으로 표시한다.
+     */
+    public void showDialogue(String speaker, String text) {
+        if (online) return;
+        BattleDialogue.Speaker who = "몬스터".equals(speaker) ? BattleDialogue.Speaker.MONSTER
+                : "플레이어".equals(speaker) ? BattleDialogue.Speaker.PLAYER : BattleDialogue.Speaker.NARRATION;
+        dialogue.enqueue(who, text);
+    }
+
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;
         status.setText("▶ " + text);
