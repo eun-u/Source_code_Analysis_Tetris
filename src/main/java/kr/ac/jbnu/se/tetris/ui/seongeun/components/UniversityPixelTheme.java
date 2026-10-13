@@ -58,27 +58,27 @@ import javax.swing.plaf.FontUIResource;
 
 public final class UniversityPixelTheme {
 
-    public static final Color BG = new Color(0xCBD0CB);
+    public static final Color BG = new Color(0xE7EBDE);
 
-    public static final Color PANEL = new Color(0xE3E5DE);
+    public static final Color PANEL = new Color(0xFFF8EB);
 
-    public static final Color PANEL_LIGHT = new Color(0xF1EFE6);
+    public static final Color PANEL_LIGHT = new Color(0xFFFCF4);
 
-    public static final Color TEXT = new Color(0x22333B);
+    public static final Color TEXT = new Color(0x182B40);
 
-    public static final Color TEXT_SUB = new Color(0x45565D);
+    public static final Color TEXT_SUB = new Color(0x486174);
 
-    public static final Color TEXT_MUTED = new Color(0x637277);
+    public static final Color TEXT_MUTED = new Color(0x73808B);
 
-    public static final Color GOLD = new Color(0x96651F);
+    public static final Color GOLD = new Color(0xE9A124);
 
-    public static final Color MINT = new Color(0x28796F);
+    public static final Color MINT = new Color(0x158C6D);
 
-    public static final Color CORAL = new Color(0xB45243);
+    public static final Color CORAL = new Color(0xD7544A);
 
-    public static final Color LINE = new Color(0x99A6A1);
+    public static final Color LINE = new Color(0xD0B992);
 
-    public static final Color BLACK = new Color(0x17242A);
+    public static final Color BLACK = new Color(0x241B1D);
 
     /** 어두운 보드·상태 배지에서만 쓰는 역상 글자색. */
 
@@ -448,13 +448,13 @@ public final class UniversityPixelTheme {
 
         if (eyebrow != null) {
 
-            text.add(label(eyebrow, 12, Font.BOLD, MINT));
+            text.add(label(eyebrow, 14, Font.BOLD, CampusArt.NAVY));
 
             text.add(Box.createVerticalStrut(3));
 
         }
 
-        JLabel heading = label(title, 24, Font.BOLD, TEXT);
+        JLabel heading = label(title, 34, Font.BOLD, CampusArt.NAVY);
 
         heading.setName("screenTitle");
 

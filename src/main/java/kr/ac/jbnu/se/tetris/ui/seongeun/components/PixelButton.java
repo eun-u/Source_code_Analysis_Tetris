@@ -1,6 +1,7 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import javax.swing.*;
 
 /** Swing 화면 전체에서 공통으로 사용하는 절제된 픽셀 버튼. */
@@ -45,53 +46,56 @@ public class PixelButton extends JButton {
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            int width = getWidth(), height = getHeight();
-            if (width < 8 || height < 8) return;
+            int w = getWidth(), h = getHeight();
+            if (w < 12 || h < 12) return;
             boolean enabled = isEnabled();
             boolean pressed = enabled && getModel().isPressed();
             boolean hover = enabled && getModel().isRollover();
-            // 눌린 버튼은 그림자 쪽으로 한 칸 내려가 실제로 눌린 것처럼 보인다.
             int offset = pressed ? 2 : 0;
-            int faceWidth = width - 4, faceHeight = height - 5;
-            if (enabled) {
-                g.setColor(UniversityPixelTheme.LINE);
-                g.fillRect(3, 4, width - 3, height - 4);
+            String value = getText() == null ? "" : getText();
+            String asset = "도전하기".equals(value) ? "challenge_button" : null;
+            BufferedImage image = asset == null ? null
+                    : CampusArt.image("/ui/campus-rpg/reference-icons/" + asset + ".png");
+            // 버튼 이미지에 테두리와 글자가 모두 있으므로 기본 배경·테두리를 또 그리지 않는다.
+            // JButton의 텍스트·리스너는 그대로 유지해 테스트와 실제 클릭이 가능하다.
+            if (image != null && enabled && w > 100 && h > 32) {
+                CampusArt.fit(g, image, offset, offset, w - 3, h - 4);
+                if (isFocusOwner()) {
+                    g.setColor(new Color(0x14568E));
+                    g.setStroke(new BasicStroke(2f));
+                    g.drawRoundRect(5 + offset, 5 + offset, w - 14, h - 16, 16, 16);
+                }
+                return;
             }
-            Color base = !enabled ? UniversityPixelTheme.PANEL
-                    : pressed ? accent.darker() : hover ? lighten(accent) : accent;
-            g.setColor(base);
-            g.fillRect(1 + offset, 1 + offset, faceWidth - 1, faceHeight - 1);
-            g.setColor(enabled ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.LINE);
-            g.drawRect(offset, offset, faceWidth, faceHeight);
-            g.setColor(enabled ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL);
-            g.drawRect(1 + offset, 1 + offset, faceWidth - 2, faceHeight - 2);
-            if (enabled) {
-                // 위·왼쪽은 밝게, 아래·오른쪽은 어둡게 칠한 픽셀 베벨.
-                g.setColor(lighten(base));
-                g.drawLine(3 + offset, 3 + offset, faceWidth - 3 + offset, 3 + offset);
-                g.drawLine(3 + offset, 3 + offset, 3 + offset, faceHeight - 3 + offset);
-                g.setColor(base.darker());
-                g.drawLine(3 + offset, faceHeight - 2 + offset, faceWidth - 2 + offset, faceHeight - 2 + offset);
-                g.drawLine(faceWidth - 2 + offset, 3 + offset, faceWidth - 2 + offset, faceHeight - 2 + offset);
-            }
+            Color base = !enabled ? new Color(0xD1C9B9) : hover ? lighten(accent) : accent;
+            int arc = Math.min(23, Math.max(12, h / 2));
+            g.setColor(new Color(44, 27, 18, 85));
+            g.fillRoundRect(4, 5, w - 7, h - 7, arc, arc);
+            g.setColor(new Color(0x382018));
+            g.fillRoundRect(1 + offset, 1 + offset, w - 6, h - 7, arc, arc);
+            g.setPaint(new GradientPaint(0,offset + 3, lighten(base),0,h - 7 + offset,base));
+            g.fillRoundRect(4 + offset, 4 + offset, w - 12, h - 14, arc - 3, arc - 3);
+            g.setColor(new Color(255,255,255,160));
+            g.setStroke(new BasicStroke(1.8f));
+            g.drawRoundRect(7 + offset, 7 + offset, w - 18, h - 21, arc - 5, arc - 5);
             g.setFont(getFont());
-            g.setColor(enabled ? UniversityPixelTheme.readableOn(base) : UniversityPixelTheme.TEXT_MUTED);
-            FontMetrics metrics = g.getFontMetrics();
-            String text = getText() == null ? "" : getText();
-            int available = Math.max(0, faceWidth - 14);
-            while (text.length() > 1 && metrics.stringWidth(text) > available) {
-                text = text.substring(0, text.length() - 2) + "…";
-            }
-            int x = Math.max(7, (faceWidth - metrics.stringWidth(text)) / 2 + 1) + offset;
-            int y = (faceHeight - metrics.getHeight()) / 2 + metrics.getAscent() + 1 + offset;
-            g.drawString(text, x, y);
+                FontMetrics m = g.getFontMetrics();
+                int avail = Math.max(0, w - 20);
+                while (value.length() > 1 && m.stringWidth(value) > avail) value = value.substring(0, value.length()-2) + "…";
+                Color fg = CampusArt.INK;
+                if (enabled && (accent.equals(UniversityPixelTheme.MINT) || accent.equals(UniversityPixelTheme.CORAL))) fg = Color.WHITE;
+                g.setColor(new Color(255,255,255,130));
+                int tx = (w - m.stringWidth(value)) / 2 + offset;
+                int ty = (h - m.getHeight()) / 2 + m.getAscent() + offset;
+                if (fg.equals(Color.WHITE)) g.drawString(value,tx+1,ty+2);
+                g.setColor(enabled ? fg : new Color(0x817870));
+                g.drawString(value,tx,ty);
             if (isFocusOwner()) {
-                g.setColor(UniversityPixelTheme.readableOn(base));
-                g.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
-                        1f, new float[] { 2f, 2f }, 0f));
-                g.drawRect(5 + offset, 5 + offset, faceWidth - 10, faceHeight - 10);
+                g.setColor(new Color(0x14568E));
+                g.setStroke(new BasicStroke(2f));
+                g.drawRoundRect(5 + offset, 5 + offset, w - 14, h - 16, arc, arc);
             }
         } finally { g.dispose(); }
     }
