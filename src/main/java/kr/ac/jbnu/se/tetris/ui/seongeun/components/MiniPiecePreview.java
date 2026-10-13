@@ -13,6 +13,10 @@ public final class MiniPiecePreview extends JComponent {
     private int oreCellIndex = -1;
     // PvE preview slots use a bright cartoon appearance. PvP uses the original skin.
     private boolean battleHudStyle;
+    private boolean tutorialStyle;
+
+    /** Tutorial uses the same live HOLD/NEXT data with light cards, not the combat skin. */
+    public void setTutorialStyle(boolean enabled) { tutorialStyle = enabled; repaint(); }
 
     public void setBattleHudStyle(boolean enabled) {
         battleHudStyle = enabled;
@@ -37,6 +41,10 @@ public final class MiniPiecePreview extends JComponent {
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
+            if (tutorialStyle) {
+                paintTutorialPreview(g);
+                return;
+            }
             if (battleHudStyle) {
                 paintBattleHudPreview(g);
                 return;
@@ -71,6 +79,47 @@ public final class MiniPiecePreview extends JComponent {
                 g.fillRect(getWidth() - 12, 3, 6, 6);
             }
         } finally { g.dispose(); }
+    }
+
+    private void paintTutorialPreview(Graphics2D g) {
+        int w = getWidth(), h = getHeight();
+        if (w < 16 || h < 16) return;
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(new Color(0xACDAF2)); g.fillRoundRect(0, 0, w, h, 20, 20);
+        g.setColor(new Color(0xFDF9EF)); g.fillRoundRect(3, 3, w - 6, h - 6, 17, 17);
+        g.setColor(new Color(0x8FBFDD)); g.setStroke(new BasicStroke(2f));
+        g.drawRoundRect(3, 3, w - 7, h - 7, 17, 17);
+        if (type == null) {
+            g.setColor(new Color(0x626C84));
+            g.setFont(UniversityPixelTheme.font(Math.max(11, Math.min(19, w / 6)), Font.PLAIN));
+            String empty = "없음";
+            g.drawString(empty, (w - g.getFontMetrics().stringWidth(empty)) / 2,
+                    (h + g.getFontMetrics().getAscent()) / 2 - 3);
+            return;
+        }
+        Piece piece = new Piece(type);
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (int i = 0; i < 4; i++) {
+            minX = Math.min(minX, piece.x(i)); maxX = Math.max(maxX, piece.x(i));
+            minY = Math.min(minY, piece.y(i)); maxY = Math.max(maxY, piece.y(i));
+        }
+        int cols = maxX - minX + 1, rows = maxY - minY + 1;
+        int cell = Math.max(7, Math.min(27, Math.min((w - 19) / cols, (h - 19) / rows)));
+        int left = (w - cols * cell) / 2, top = (h - rows * cell) / 2;
+        Color fill = battlePieceColor(type);
+        for (int i = 0; i < 4; i++) {
+            int x = left + (piece.x(i) - minX) * cell;
+            int y = top + (maxY - piece.y(i)) * cell;
+            g.setColor(new Color(0x182039)); g.fillRoundRect(x, y, cell, cell, 4, 4);
+            g.setColor(fill); g.fillRoundRect(x + 2, y + 2, cell - 4, cell - 4, 3, 3);
+            g.setColor(new Color(255, 255, 255, 190));
+            g.drawLine(x + 4, y + 3, x + cell - 5, y + 3);
+            if (item && i == oreCellIndex) {
+                g.setColor(new Color(0xFFDD67));
+                g.fillOval(x + cell / 2 - 4, y + cell / 2 - 4, 8, 8);
+            }
+        }
     }
 
     /** PvE-only: inset dark tile with recognizable high-saturation tetromino colors. */
