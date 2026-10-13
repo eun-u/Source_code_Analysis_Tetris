@@ -29,6 +29,8 @@ public class Board extends JPanel {
     private boolean perfectClear;
     private Piece effectPiece;
     private boolean automaticEffects = true;
+    // PvE 전투에서는 블록을 가리는 중앙 라인 삭제 알림을 사용하지 않는다.
+    private boolean lineClearCalloutEnabled = true;
     private final Timer effects = new Timer(33, event -> {
         long latest = Math.max(Math.max(placementAt, clearAt), Math.max(garbageAt, Math.max(attackAt, hitAt)));
         if (!isShowing() || System.currentTimeMillis() - latest > 1000)
@@ -85,6 +87,8 @@ public class Board extends JPanel {
         repaint();
     }
     public void setAutomaticEffects(boolean enabled) { automaticEffects = enabled; }
+    /** 라인 삭제 이펙트는 유지하고 중앙 텍스트 배너만 켜거나 끈다. */
+    public void setLineClearCalloutEnabled(boolean enabled) { lineClearCalloutEnabled = enabled; repaint(); }
     public GameState getGameState() { return state; }
     /** 채굴 이펙트의 출발점. 코어 보드는 아래에서 위로 y가 증가한다. */
     public Point cellCenter(int x, int y) {
@@ -238,16 +242,19 @@ public class Board extends JPanel {
                         : new Color(255, 209, 102, (int) (220 * (1 - progress))));
                 g.fillRect(x, y, Math.max(2, cell / 6), Math.max(2, cell / 6));
             }
-            g.setColor(new Color(11, 11, 46, 210));
-            g.fillRect(left + 4, top + height / 2 - 22, width - 8, 48);
-            g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
-            g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(11, Math.min(22, width / 12)), Font.BOLD));
-            String text = perfectClear ? "PERFECT CLEAR" : clearCount == 4 ? "TETRIS!" : clearCount + " LINE CLEAR";
-            g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, top + height / 2);
-            if (clearCombo > 0) {
-                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(10, Math.min(16, width / 15)), Font.BOLD));
-                String combo = "COMBO " + clearCombo;
-                g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, top + height / 2 + 20);
+            // 스토리 모드는 보드 중앙을 항상 노출하고 라인 삭제 빔/입자만 표시한다.
+            if (lineClearCalloutEnabled) {
+                g.setColor(new Color(11, 11, 46, 210));
+                g.fillRect(left + 4, top + height / 2 - 22, width - 8, 48);
+                g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
+                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(11, Math.min(22, width / 12)), Font.BOLD));
+                String text = perfectClear ? "PERFECT CLEAR" : clearCount == 4 ? "TETRIS!" : clearCount + " LINE CLEAR";
+                g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, top + height / 2);
+                if (clearCombo > 0) {
+                    g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(10, Math.min(16, width / 15)), Font.BOLD));
+                    String combo = "COMBO " + clearCombo;
+                    g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, top + height / 2 + 20);
+                }
             }
         }
         long garbage = now - garbageAt;

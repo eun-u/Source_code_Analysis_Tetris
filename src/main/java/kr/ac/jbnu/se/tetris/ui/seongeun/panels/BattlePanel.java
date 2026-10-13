@@ -58,6 +58,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
@@ -345,6 +346,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         setPreferredSize(new Dimension(850, 600));
         setBackground(BG);
         playerBoard.setAutomaticEffects(false); enemyBoard.setAutomaticEffects(false);
+        // 스토리 전투에서는 중앙 라인 클리어 배너를 숨기고 타격/채굴 연출만 유지한다.
+        playerBoard.setLineClearCalloutEnabled(false);
 
         // Compact pastel HUD; same labels, timer updates, and quit button callbacks.
         levelChip.setFont(UniversityPixelTheme.font(14, Font.BOLD));
@@ -390,11 +393,11 @@ public class BattlePanel extends JPanel implements Scrollable {
                     int w = getWidth(), h = getHeight();
                     if (w < 10 || h < 10) return;
                     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setColor(new Color(0x111919));
+                    g.setColor(new Color(0x302018));
                     g.fillRoundRect(0, 0, w, h, 20, 20);
-                    g.setColor(new Color(0x728473));
+                    g.setColor(new Color(0xF2D19D));
                     g.fillRoundRect(3, 3, w - 6, h - 6, 16, 16);
-                    g.setColor(new Color(0x2A3934));
+                    g.setColor(new Color(0xFFF8E9));
                     g.fillRoundRect(6, 6, w - 12, h - 12, 13, 13);
                     g.setColor(new Color(255, 255, 255, 72));
                     g.setStroke(new BasicStroke(1.4f));
@@ -412,7 +415,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveHoldPanel.setBorder(new EmptyBorder(7, 8, 8, 8));
         JLabel holdTitle = label("HOLD");
         holdTitle.setHorizontalAlignment(SwingConstants.CENTER);
-        holdTitle.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        holdTitle.setForeground(CampusArt.NAVY);
         holdTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         pveHoldPanel.add(holdTitle, BorderLayout.NORTH);
         pveHoldPreview.setBattleHudStyle(true);
@@ -422,7 +425,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveNextPanel.setOpaque(false);
         pveNextPanel.setBorder(new EmptyBorder(7, 7, 9, 7));
         JLabel nextTitle = label("NEXT");
-        nextTitle.setForeground(UniversityPixelTheme.TEXT_ON_DARK);
+        nextTitle.setForeground(CampusArt.NAVY);
         nextTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         nextTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         pveNextPanel.add(nextTitle);
@@ -852,6 +855,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setMode(boolean online) {
         if (this.online == online) return;
         this.online = online;
+        playerBoard.setLineClearCalloutEnabled(online);
         if (online) {
             ((PixelButton) backButton).danger();
             backButton.setText("대전 포기 [ESC]");
@@ -871,6 +875,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setAudio(AudioService service) { audio = service; }
     public void setEncounter(String chapter, int level, MonsterTier pattern, String art) {
         online = false;
+        playerBoard.setLineClearCalloutEnabled(false);
         this.chapter = chapter;
         ((PixelButton) backButton).primary();
         backButton.setText("전투 포기 [ESC]");
