@@ -1404,6 +1404,13 @@ public final class SeongeunApplication implements AutoCloseable {
         itemRequests.clear();
     }
 
+    // 실제 GUI를 표시하기 전에도 테스트 가능한 시작 화면 준비 단계.
+    void prepareFirstWindowScreen() {
+        ScreenRouter.requireEdt();
+        if (!skipTutorial) {
+            startTutorial(LOBBY);
+        }
+    }
     public void openWindow() {
         ScreenRouter.requireEdt();
         if (frame != null) throw new IllegalStateException("Window is already open");
@@ -1415,6 +1422,10 @@ public final class SeongeunApplication implements AutoCloseable {
         frame.setLocationRelativeTo(null);
         frame.add(screens);
         frame.setGlassPane(transition);
+        // 첫 화면이 실제로 나타나기 전에 튜토리얼 세션과 화면을 준비한다.
+        // 기존에는 로비를 먼저 보여 준 뒤 invokeLater로 전환하여 로비가 잠깐 보였다.
+        // 튜토리얼 건너뛰기 설정이 꺼져 있으면 튜토리얼부터 시작하며, ESC는 기존처럼 로비로 이동한다.
+        prepareFirstWindowScreen();
         frame.addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent event) { keepWindowAspect(); }
         });
@@ -1425,9 +1436,6 @@ public final class SeongeunApplication implements AutoCloseable {
         keepWindowAspect();
         audio.startBgm();
         if (lastMessage != null && !lastMessage.isEmpty()) message(lastMessage);
-        if (!skipTutorial) SwingUtilities.invokeLater(() -> {
-            if (!closed && LOBBY.equals(currentScreen) && !skipTutorial) startTutorial(LOBBY);
-        });
     }
 
     /** 화면 내용의 4:3 비율을 유지하면서 너비·높이 어느 쪽으로든 창을 조절한다. */
