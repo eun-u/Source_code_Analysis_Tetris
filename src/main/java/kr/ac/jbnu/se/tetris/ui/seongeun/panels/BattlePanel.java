@@ -5,6 +5,7 @@ import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
 import javax.imageio.ImageIO;
@@ -16,6 +17,7 @@ import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.BoardState;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.audio.AudioService;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BattleLog;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
@@ -73,6 +75,8 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JPanel leftColumn = column();
     private final JPanel rightColumn = column();
     private final JPanel enemyColumn = new JPanel(null);
+    /** PvE에서 보스의 공격·아이템 사용을 알려 주는 알림 큐. */
+    private final BattleLog battleLog = new BattleLog();
     private IntConsumer itemAction;
     private long feedbackUntil;
     private AudioService audio;
@@ -125,6 +129,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         add(oreFlights);
         // Swing은 인덱스 0을 맨 앞에 그린다. 채굴 광원이 보드와 슬롯 위를 지나야 한다.
         setComponentZOrder(oreFlights, 0);
+        // 알림은 무대 위에 보이되 광석 연출보다는 아래에 둔다.
+        add(battleLog);
+        setComponentZOrder(battleLog, 1);
     }
 
     private void buildLeftColumn() {
@@ -386,6 +393,8 @@ public class BattlePanel extends JPanel implements Scrollable {
             status.setBounds(side + 4, height - bottom + 3,
                     Math.max(0, width - side * 2 - 8), 17);
             enemyColumn.setVisible(true);
+            battleLog.setVisible(false);
+            battleLog.setBounds(0, 0, 0, 0);
             layoutOnline(width, side, top, Math.max(100, height - top - bottom));
             resultTestButton.setVisible(false);
             return;
@@ -419,6 +428,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         int meterX = arenaX + arenaWidth + 6;
         garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
         arena.setBounds(arenaX, areaTop, arenaWidth, areaHeight);
+        // 몬스터 체력바 바로 아래, 몬스터 그림 위쪽 빈 하늘 영역에 알림을 띄운다.
+        battleLog.setVisible(true);
+        battleLog.setBounds(arenaX + 10, areaTop + 56, Math.max(0, arenaWidth - 20), BattleLog.preferredHeight());
         resultTestButton.setVisible(false);
     }
 
@@ -532,6 +544,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
         playerBoard.resetEffects(); enemyBoard.resetEffects();
         oreFlights.reset();
+        battleLog.clear();
         arena.resetForEncounter();
         garbage.setPending(0, 0);
     }
@@ -555,11 +568,13 @@ public class BattlePanel extends JPanel implements Scrollable {
         timer.start();
     }
     public void applyEvents(List<BattleEvent> events, String localId) {
+        Turn mine = new Turn(), theirs = new Turn();
         for (BattleEvent event : events) {
             if (event.getEventId() <= lastEventId) continue;
             lastEventId = event.getEventId();
             boolean local = localId != null && localId.equals(event.getActorId());
             Board board = local ? playerBoard : enemyBoard;
+            collectForLog(local ? mine : theirs, event);
             if (event.getType() == BattleEvent.Type.DAMAGE) {
                 if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
                 else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
@@ -595,6 +610,78 @@ public class BattlePanel extends JPanel implements Scrollable {
                 } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
             }
         }
+        if (!online) {
+            logTurn(mine, BattleLog.Side.PLAYER, "나");
+            logTurn(theirs, BattleLog.Side.ENEMY, enemyLabel());
+        }
+    }
+
+    /** 한 번의 전투 결과 묶음에서 한 참가자가 한 일을 모아 알림 한 줄로 합치기 위한 누적값. */
+    private static final class Turn {
+        int lines, combo, damage, garbage;
+        boolean perfect;
+        final List<String> itemsUsed = new ArrayList<String>();
+        final List<String> removed = new ArrayList<String>();
+        final List<String> acquired = new ArrayList<String>();
+    }
+
+    private static void collectForLog(Turn turn, BattleEvent event) {
+        switch (event.getType()) {
+            case DAMAGE: turn.damage += event.getAmount(); break;
+            case GARBAGE_SENT: turn.garbage += event.getAmount(); break;
+            case ITEM_USED: turn.itemsUsed.add(event.getReason()); break;
+            case ITEM_REMOVED: turn.removed.add(event.getReason()); break;
+            case ITEM_ACQUIRED: turn.acquired.add(event.getReason()); break;
+            case CORE_EVENT:
+                GameEvent core = event.getCoreEvent();
+                if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
+                    turn.lines += core.getLineCount();
+                    turn.combo = Math.max(turn.combo, core.getCombo());
+                    turn.perfect |= core.isPerfectClear();
+                }
+                break;
+            default: break;
+        }
+    }
+
+    private String enemyLabel() {
+        String name = enemyName.getText();
+        return name == null || name.trim().isEmpty() || "MONSTER".equals(name) ? "상대" : name.trim();
+    }
+
+    /** 같은 공격의 줄 클리어·피해·가비지를 한 줄로 합치고, 아이템 사용은 따로 알린다. */
+    private void logTurn(Turn turn, BattleLog.Side side, String who) {
+        if (turn.lines > 0 || turn.damage > 0 || turn.garbage > 0) {
+            boolean bomb = turn.lines == 0 && turn.itemsUsed.remove("garbage_bomb");
+            StringBuilder text = new StringBuilder(who).append(" · ");
+            if (bomb) text.append(itemName("garbage_bomb"));
+            else if (turn.lines > 0) {
+                text.append(turn.lines).append("줄 클리어");
+                if (turn.perfect) text.append(" 퍼펙트!");
+                if (turn.combo > 0) text.append(" · ").append(turn.combo).append("콤보");
+            } else text.append("공격");
+            List<String> effects = new ArrayList<String>();
+            if (turn.damage > 0) effects.add("피해 " + turn.damage);
+            if (turn.garbage > 0) effects.add("가비지 " + turn.garbage + "줄");
+            if (!effects.isEmpty()) text.append(" → ").append(String.join(" + ", effects));
+            battleLog.push(side, text.toString());
+        }
+        for (String id : turn.itemsUsed) {
+            String name = itemName(id);
+            if ("nullify".equals(id)) {
+                // 무효화는 상대의 아이템을 지운다: 내가 쓰면 "상대 ○○", 상대가 쓰면 "내 ○○"가 제거된다.
+                String owner = side == BattleLog.Side.PLAYER ? "상대 " : "내 ";
+                battleLog.push(side, turn.removed.isEmpty() ? who + " · " + name + " 사용 (아이템 없음)"
+                        : who + " · " + name + " → " + owner + itemName(turn.removed.get(0)) + " 제거");
+            } else if ("damage_boost".equals(id) || "shield".equals(id)) {
+                battleLog.push(side, who + " · " + name + " 발동");
+            } else {
+                battleLog.push(side, who + " · " + name + " 사용");
+            }
+        }
+        // 상대가 무엇을 들고 있는지는 보드에 안 보이므로 상대의 획득만 알린다.
+        if (side == BattleLog.Side.ENEMY)
+            for (String id : turn.acquired) battleLog.push(side, who + " · 아이템 획득 · " + itemName(id));
     }
     private boolean showOreFlight(BattleEvent event) {
         int x = event.getItemSourceX(), y = event.getItemSourceY();
