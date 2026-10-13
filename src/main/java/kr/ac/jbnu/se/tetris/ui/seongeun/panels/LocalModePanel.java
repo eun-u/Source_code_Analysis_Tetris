@@ -5,13 +5,14 @@ import java.awt.event.ActionListener;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 public class LocalModePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final GameButton infiniteButton = new GameButton("시작하기");
     private final GameButton sprintButton = new GameButton("시작하기");
     private final GameButton tutorialButton = new GameButton("연습하기");
-    private final GameButton backButton = new GameButton("로비로");
+    private final CampusBackButton backButton = new CampusBackButton("돌아가기");
 
     public LocalModePanel() {
         infiniteButton.setName("infiniteModeStart");
@@ -22,7 +23,7 @@ public class LocalModePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
         setBorder(new EmptyBorder(18, UniversityPixelTheme.GUTTER, 18, UniversityPixelTheme.GUTTER));
 
         backButton.secondary();
-        backButton.setPreferredSize(new Dimension(96, 38));
+        backButton.setPreferredSize(new Dimension(190, 56));
         add(UniversityPixelTheme.screenHeader("SOLO PLAY", "로컬 모드", backButton), BorderLayout.NORTH);
 
         JPanel center = new JPanel(new GridBagLayout()); center.setOpaque(false);
