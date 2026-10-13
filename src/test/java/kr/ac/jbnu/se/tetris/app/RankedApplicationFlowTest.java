@@ -81,7 +81,7 @@ public final class RankedApplicationFlowTest {
                 check("LOGIN".equals(app[0].getCurrentScreen()), "Account login must open from settings");
                 onEdt(() -> button(child(app[0].getScreens(), LoginPanel.class), "설정으로").doClick());
                 check("SETTINGS".equals(app[0].getCurrentScreen()), "Account cancel must return to settings");
-                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
+                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "돌아가기").doClick());
                 onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
                 check("LOGIN".equals(app[0].getCurrentScreen()), "Online entry must request login directly");
                 onEdt(() -> app[0].getScreens().getActionMap().get("navigate-back")
@@ -112,7 +112,7 @@ public final class RankedApplicationFlowTest {
                 login(app[0], "Player_01", "password-a");
                 await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen()) && app[0].isOnlineConnected(),
                         "Login must resume online room entry");
-                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "로비로").doClick());
+                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "돌아가기").doClick());
                 check(socketClosed.await(5, TimeUnit.SECONDS), "Old account socket remained open");
                 await(() -> !app[0].isOnlineConnected() && "LOBBY".equals(app[0].getCurrentScreen()),
                         "Online room exit");
@@ -122,7 +122,7 @@ public final class RankedApplicationFlowTest {
                 });
                 await(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").isEnabled(),
                         "Settings account logout");
-                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로비로").doClick());
+                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "돌아가기").doClick());
                 onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick());
                 check("LOGIN".equals(app[0].getCurrentScreen()), "Ranking entry must request login directly");
                 login(app[0], "b@example.test", "password-b");
@@ -134,7 +134,7 @@ public final class RankedApplicationFlowTest {
                 }, "Login must resume ranking");
                 check("Bearer token-B".equals(rankBearer.get()), "Leaderboard used old account token");
                 onEdt(() -> {
-                    button(child(app[0].getScreens(), LeaderboardPanel.class), "로비로").doClick();
+                    button(child(app[0].getScreens(), LeaderboardPanel.class), "돌아가기").doClick();
                     button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
                 });
                 await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen())

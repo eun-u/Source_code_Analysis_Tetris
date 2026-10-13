@@ -27,12 +27,12 @@ public final class SeongeunApplicationTest {
                 assert LOCAL_GAME.equals(app.getCurrentScreen()) && app.isLocalGravityRunning();
                 button(app.getScreens(), "돌아가기 [ESC]").doClick();
                 assert "SETTINGS".equals(app.getCurrentScreen()) && !app.isLocalGravityRunning();
-                button(app.getScreens(), "로비로").doClick();
+                button(app.getScreens(), "돌아가기").doClick();
                 assert menuItem(app.getMenu(), "캐릭터 / 상점").isEnabled();
                 button(app.getScreens(), "캐릭터 / 상점").doClick();
                 assert "CHARACTER_SHOP".equals(app.getCurrentScreen());
                 assert app.getSaveData().getCoins() == 0;
-                button(app.getScreens(), "로비로").doClick();
+                button(app.getScreens(), "돌아가기").doClick();
 
                 button(app.getScreens(), "로컬 모드").doClick();
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
@@ -63,7 +63,7 @@ public final class SeongeunApplicationTest {
                 assert LOCAL_MODE.equals(app.getCurrentScreen());
                 assert app.getLocalState() == null && !app.isLocalGravityRunning();
 
-                button(app.getScreens(), "로비로").doClick();
+                button(app.getScreens(), "돌아가기").doClick();
                 buttonNamed(app.getScreens(), "lobbyStory").doClick();
                 assert STORY_STAGE.equals(app.getCurrentScreen());
                 button(app.getScreens(), "도전하기").doClick();
