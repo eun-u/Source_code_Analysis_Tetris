@@ -11,13 +11,15 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.character.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 획득한 재화로 전투 캐릭터를 구입하고 선택하는 로컬 화면. */
 public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
     private final CharacterCatalog catalog = CharacterCatalog.loadDefault();
-    private final JLabel wallet = new JLabel();
-    private final PixelButton back = new PixelButton("로비로");
+    private final MainLobbyPanel.CoinBadge wallet = new MainLobbyPanel.CoinBadge();
+    private final PixelButton back = new CampusBackButton("돌아가기");
     private final Map<String, JPanel> cards = new LinkedHashMap<String, JPanel>();
     private final Map<String, JLabel> badges = new LinkedHashMap<String, JLabel>();
     private final Map<String, JButton> actions = new LinkedHashMap<String, JButton>();
@@ -26,16 +28,15 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
     public CharacterShopPanel() {
         setLayout(new BorderLayout(0, 14));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(18, 22, 18, 22));
+        setBorder(new EmptyBorder(22, 35, 18, 35));
 
         back.secondary();
-        back.setPreferredSize(new Dimension(96, 38));
-        wallet.setOpaque(true);
-        UniversityPixelTheme.setChip(wallet, "0 COINS", UniversityPixelTheme.GOLD);
-        wallet.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        back.setPreferredSize(new Dimension(190, 56));
+        // Use the exact same capsule, coin artwork and currency typeface as the lobby.
+        wallet.setValue(0);
         add(UniversityPixelTheme.screenHeader("CHARACTER SHOP", "캐릭터 / 상점", wallet, back), BorderLayout.NORTH);
 
-        JPanel cards = new JPanel(new GridLayout(2, 2, 12, 12));
+        JPanel cards = new JPanel(new GridLayout(2, 2, 17, 17));
         cards.setOpaque(false);
         for (CharacterSpec spec : catalog.all()) cards.add(card(spec));
         // 카드가 화면 높이만큼 늘어나지 않도록 위쪽에 붙여 내용 크기만 쓰게 한다.
@@ -52,23 +53,19 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
     }
 
     private JPanel card(CharacterSpec spec) {
-        JPanel card = new JPanel(new BorderLayout(12, 6));
-        card.setBackground(UniversityPixelTheme.PANEL);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2),
-                new EmptyBorder(10, 12, 10, 12)));
+        CampusArt.Card card = CampusArt.card(new BorderLayout(14, 10), CampusArt.BROWN, 14);
         JLabel crest = new JLabel(new ImageIcon(portrait(spec.getId())), SwingConstants.CENTER);
-        crest.setOpaque(true); crest.setBackground(UniversityPixelTheme.PANEL_LIGHT);
-        crest.setPreferredSize(new Dimension(92, 92));
-        crest.setBorder(BorderFactory.createLineBorder(UniversityPixelTheme.GOLD, 3));
+        crest.setOpaque(false);
+        crest.setPreferredSize(new Dimension(137, 137));
+        crest.setBorder(null);
         JPanel crestSpace = new JPanel(new GridBagLayout()); crestSpace.setOpaque(false);
-        crestSpace.setPreferredSize(new Dimension(92, 100)); crestSpace.add(crest);
+        crestSpace.setPreferredSize(new Dimension(145, 145)); crestSpace.add(crest);
         card.add(crestSpace, BorderLayout.WEST);
 
         JPanel details = new JPanel(); details.setOpaque(false);
         details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
         JLabel name = new JLabel(spec.getName());
-        name.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        name.setFont(UniversityPixelTheme.font(23, Font.BOLD));
         name.setForeground(UniversityPixelTheme.TEXT);
         String extra = spec.getDamageBuff() > 0 ? "피해 +" + (int) (spec.getDamageBuff() * 100) + "%"
                 : spec.getMaxHp() > 100 ? "최대 HP +" + (spec.getMaxHp() - 100)
@@ -88,7 +85,7 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
         details.add(Box.createVerticalStrut(8)); details.add(stats);
         card.add(details, BorderLayout.CENTER);
         JButton action = new PixelButton("");
-        action.setPreferredSize(new Dimension(130, 40));
+        action.setPreferredSize(new Dimension(250, 55));
         action.addActionListener(event -> { if (selection != null) selection.accept(spec.getId()); });
         actions.put(spec.getId(), action);
         cards.put(spec.getId(), card);
@@ -103,12 +100,12 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
             if (stream == null) throw new IllegalStateException("Missing character portrait: " + path);
             BufferedImage original = ImageIO.read(stream);
             if (original == null) throw new IllegalStateException("Unreadable character portrait: " + path);
-            BufferedImage scaled = new BufferedImage(86, 86, BufferedImage.TYPE_INT_ARGB);
+            BufferedImage scaled = new BufferedImage(135, 135, BufferedImage.TYPE_INT_ARGB);
             Graphics2D graphics = scaled.createGraphics();
             try {
                 graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                        RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-                graphics.drawImage(original, 0, 0, 86, 86, null);
+                        RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                graphics.drawImage(original, 0, 0, 135, 135, null);
             } finally { graphics.dispose(); }
             return scaled;
         } catch (IOException failed) {
@@ -124,7 +121,7 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
     }
 
     public void setData(int coins, Set<String> owned, String selected, Map<String, Integer> prices) {
-        wallet.setText(coins + " COINS");
+        wallet.setValue(coins);
         for (Map.Entry<String, JButton> entry : actions.entrySet()) {
             String id = entry.getKey();
             JButton action = entry.getValue();
@@ -137,9 +134,8 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
                    action.setEnabled(coins >= cost); button.primary(); }
             UniversityPixelTheme.setChip(badges.get(id), equipped ? "장착 중" : mine ? "보유" : "미보유",
                     equipped ? UniversityPixelTheme.MINT : mine ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL_LIGHT);
-            cards.get(id).setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(equipped ? UniversityPixelTheme.MINT : UniversityPixelTheme.LINE,
-                            equipped ? 3 : 2), new EmptyBorder(equipped ? 9 : 10, 12, equipped ? 9 : 10, 12)));
+            // Rounded card border remains intact when an equipped character changes.
+            cards.get(id).repaint();
         }
     }
     public void setSelectionAction(Consumer<String> listener) { selection = listener; }

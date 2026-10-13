@@ -284,7 +284,7 @@ public class MainLobbyPanel extends JPanel {
     }
 
     /** 코인 PNG가 왼쪽 둥근 끝을 덮는 캡슐형 배지. */
-    private static final class CoinBadge extends JComponent {
+    public static final class CoinBadge extends JComponent {
         private static final int BADGE_HEIGHT = 52;
         private static final int ICON_SIZE = 50;
         private static final int BODY_HEIGHT = 44;
@@ -296,13 +296,13 @@ public class MainLobbyPanel extends JPanel {
 
         private int value;
 
-        CoinBadge() {
+        public CoinBadge() {
             setOpaque(false);
             setFont(UniversityPixelTheme.lobbyFont(24, Font.BOLD));
             setToolTipText("보유 코인");
         }
 
-        void setValue(int amount) {
+        public void setValue(int amount) {
             value = amount;
             revalidate();
             repaint();
