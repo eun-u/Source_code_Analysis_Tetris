@@ -90,6 +90,9 @@ public final class UniversityPixelTheme {
 
     // Load the official Regular/Bold font files from the application's classpath.
     // If they are missing, preserve the existing system-font fallback.
+    // Add the downloaded TTF as src/main/resources/ui/fonts/Jalnan.ttf.
+    // If not supplied, the previous NanumSquareRound font remains active.
+    private static final Font JALNAN = loadOptionalJalnan("/ui/fonts/Jalnan.ttf");
     private static final Font ROUND_REGULAR = loadRoundFont("/ui/fonts/NanumSquareRoundR.ttf");
     private static final Font ROUND_BOLD = loadRoundFont("/ui/fonts/NanumSquareRoundB.ttf");
     private static final String FONT_FAMILY = chooseFont();
@@ -100,12 +103,35 @@ public final class UniversityPixelTheme {
 
 
 
+    private static final Font LOBBY_FONT = loadRoundFont("/ui/fonts/Jalnan.otf");
+
+    public static Font lobbyFont(int size, int style) {
+        if (LOBBY_FONT != null) {
+            return LOBBY_FONT.deriveFont(style, (float) size);
+        }
+        return font(size, style);
+    }
+    
     public static Font font(int size, int style) {
+        // Jalnan ships as one heavy face; do not synthesize an extra bold on top.
+        if (JALNAN != null) return JALNAN.deriveFont(Font.PLAIN, (float) size);
         Font preferred = (style & Font.BOLD) != 0
                 ? (ROUND_BOLD != null ? ROUND_BOLD : ROUND_REGULAR)
                 : (ROUND_REGULAR != null ? ROUND_REGULAR : ROUND_BOLD);
         if (preferred != null) return preferred.deriveFont(style, (float) size);
         return new Font(FONT_FAMILY, style, size);
+    }
+
+    private static Font loadOptionalJalnan(String resourcePath) {
+        try (InputStream stream = UniversityPixelTheme.class.getResourceAsStream(resourcePath)) {
+            if (stream == null) return null;
+            Font font = Font.createFont(Font.TRUETYPE_FONT, stream);
+            GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
+            return font;
+        } catch (IOException | FontFormatException | SecurityException error) {
+            System.err.println("[GameFont] Cannot load Jalnan: " + error.getMessage());
+            return null;
+        }
     }
 
     private static Font loadRoundFont(String resourcePath) {
