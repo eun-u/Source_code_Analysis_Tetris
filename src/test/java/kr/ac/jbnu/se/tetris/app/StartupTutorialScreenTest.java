@@ -17,7 +17,7 @@ public final class StartupTutorialScreenTest {
     public static void main(String[] args) throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             testTutorialStartup();
-            testSkipTutorialStartup();
+            testSkipPreferenceDoesNotSkipStartup();
         });
     }
 
@@ -49,7 +49,7 @@ public final class StartupTutorialScreenTest {
         }
     }
 
-    private static void testSkipTutorialStartup() {
+    private static void testSkipPreferenceDoesNotSkipStartup() {
         SeongeunApplication app = new SeongeunApplication(new Random(32));
         try {
             JCheckBox skip = findCheckBox(app.getScreens(), "다시 보지 않기");
@@ -59,9 +59,10 @@ public final class StartupTutorialScreenTest {
 
             app.prepareFirstWindowScreen();
 
-            assert "LOBBY".equals(app.getCurrentScreen());
-            assert app.getLocalState() == null;
-            assert !app.isLocalGravityRunning();
+            // "?ㅼ떆 蹂댁? ?딄린" ?ㅼ젙怨?臾닿??섍쾶 寃뚯엫 理쒖큹 ?ㅽ뻾? ?쒗넗由ъ뼹遺???쒖옉?쒕떎.
+            assert "LOCAL_GAME".equals(app.getCurrentScreen());
+            assert app.getLocalState() != null;
+            assert app.isLocalGravityRunning();
         } finally {
             app.close();
         }

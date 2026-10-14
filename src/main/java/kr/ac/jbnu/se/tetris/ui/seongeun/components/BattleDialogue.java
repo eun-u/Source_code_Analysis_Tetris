@@ -11,6 +11,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.BiConsumer;
 import javax.swing.JComponent;
 import javax.swing.Timer;
 
@@ -41,6 +42,20 @@ public final class BattleDialogue extends JComponent {
     private long currentStartedAt;
     private long currentDuration;
     private final Timer timer = new Timer(50, event -> step());
+    // The queue owns dialogue order/timing; the arena owns where the bubble is drawn.
+    // Do not mount this legacy box as a visible Swing component.
+    private BiConsumer<Speaker, String> speechListener;
+
+    public void setSpeechListener(BiConsumer<Speaker, String> listener) {
+        speechListener = listener;
+        notifySpeaker();
+    }
+
+    private void notifySpeaker() {
+        if (speechListener != null)
+            speechListener.accept(current == null ? null : current.speaker,
+                    current == null ? null : current.text);
+    }
 
     public BattleDialogue() {
         setOpaque(false);
@@ -64,6 +79,7 @@ public final class BattleDialogue extends JComponent {
         pending.clear();
         current = null;
         timer.stop();
+        notifySpeaker();
         repaint();
     }
 
@@ -90,6 +106,7 @@ public final class BattleDialogue extends JComponent {
             currentStartedAt = now;
             currentDuration = durationFor(current.text);
         }
+        notifySpeaker();
     }
 
     private void step() {

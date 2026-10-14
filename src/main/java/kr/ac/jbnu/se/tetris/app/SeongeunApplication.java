@@ -41,6 +41,8 @@ import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
 import kr.ac.jbnu.se.tetris.app.session.SessionSnapshot;
 import kr.ac.jbnu.se.tetris.app.session.Subscription;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PlayerIntent;
@@ -557,11 +559,6 @@ public final class SeongeunApplication implements AutoCloseable {
         }
     }
 
-    /** 이미 클리어한 전투를 다시 이겼을 때는 첫 클리어 보상의 20%만 준다. */
-    private static int repeatReward(int firstClearReward) {
-        return firstClearReward / 5;
-    }
-
     private static int storyReward(MonsterTier tier) {
         switch (tier) {
             case NORMAL: return 30;
@@ -595,7 +592,8 @@ public final class SeongeunApplication implements AutoCloseable {
         show(BATTLE);
         ((LocalMatchSession) match).startClock();
         renderMatch();
-        showStoryCue(dialogues.onEncounterStart(run));
+        StoryDialogueCue encounter = dialogues.onEncounterStart(run);
+        if (encounter != null) battle.showStoryDialogue(encounter.getSpeaker(), encounter.getText());
     }
 
     private void startLocal(LocalGameSession.Mode mode) {
@@ -693,12 +691,12 @@ public final class SeongeunApplication implements AutoCloseable {
                 if (disposition == StoryProgressService.ResultDisposition.APPLIED_WIN) {
                     EncounterRun won = progress.getActiveRun();
                     boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
-                    int fullReward = storyReward(won.getMonster().getTier());
-                    int reward = firstClear ? fullReward : repeatReward(fullReward);
-                    PlayerSaveStore.Data next = firstClear
+                    int baseReward = storyReward(won.getMonster().getTier());
+                    int reward = firstClear ? baseReward : baseReward / 5;
+                    PlayerSaveStore.Data updated = firstClear
                             ? saveData.withFirstClear(won.getEncounterId(), reward)
-                            : saveData.withCoins(reward);
-                    if (commitSave(next)) earnedReward = reward;
+                            : saveData.withReplayReward(won.getEncounterId(), reward);
+                    if (commitSave(updated)) earnedReward = reward;
                 }
             }
             CommandOutcome outcome = update.getOutcome();
@@ -706,33 +704,42 @@ public final class SeongeunApplication implements AutoCloseable {
                 battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
             renderMatch();
             battle.applyEvents(update.getEvents(), update.getSnapshot().getLocalParticipantId());
-            if (storyBattle) showStoryDialogues(update.getSnapshot(), update.getEvents());
+            if (storyBattle) {
+                showStoryDialogues(update.getSnapshot(), update.getEvents());
+                showStoryHpDialogue(update.getSnapshot());
+            }
         });
     }
 
-    /** 전투 상태와 방금 일어난 이벤트로 몬스터·플레이어 대사(HP 감소, 위기, 강공격, 30초 대화)를 띄운다. */
-    private void showStoryDialogues(SessionSnapshot snapshot, List<kr.ac.jbnu.se.tetris.battle.BattleEvent> events) {
+    /** Queued story dialogue (strong attack and timed exchange) remains event-driven. */
+    private void showStoryDialogues(SessionSnapshot snapshot, List<BattleEvent> events) {
+        if (!storyBattle || snapshot == null || snapshot.getBattleState() == null) return;
+        EncounterRun run = progress.getActiveRun();
+        if (run == null || run.isFinished()) return;
+        if (events != null) {
+            for (BattleEvent event : events) {
+                if (event == null || event.getType() != BattleEvent.Type.CORE_EVENT
+                        || !snapshot.getLocalParticipantId().equals(event.getActorId())) continue;
+                GameEvent core = event.getCoreEvent();
+                if (core == null || core.getType() != GameEvent.Type.LINE_CLEAR) continue;
+                StoryDialogueCue cue = dialogues.onPlayerLineClear(run, core.getLineCount());
+                if (cue != null) battle.showStoryDialogue(cue.getSpeaker(), cue.getText());
+            }
+        }
+        for (StoryDialogueCue cue : dialogues.onElapsed(run, snapshot.getBattleState().getElapsedMillis()))
+            battle.showStoryDialogue(cue.getSpeaker(), cue.getText());
+    }
+
+    private void showStoryHpDialogue(SessionSnapshot snapshot) {
         EncounterRun run = progress.getActiveRun();
         BattleState state = snapshot.getBattleState();
         if (run == null || state == null || state.getParticipant(run.getMonsterParticipantId()) == null) return;
         kr.ac.jbnu.se.tetris.battle.ParticipantState monster =
                 state.getParticipant(run.getMonsterParticipantId());
-        showStoryCue(dialogues.onMonsterHp(run, monster.getHp(), monster.getMaxHp()));
-        showStoryCue(dialogues.onMonsterCrisis(run, monster.getHp(), monster.getMaxHp()));
-        // 강공격: 플레이어가 한 번에 4줄 이상 지웠을 때(대사집 기준).
-        for (kr.ac.jbnu.se.tetris.battle.BattleEvent event : events) {
-            kr.ac.jbnu.se.tetris.core.GameEvent core = event.getCoreEvent();
-            if (event.getType() == kr.ac.jbnu.se.tetris.battle.BattleEvent.Type.CORE_EVENT && core != null
-                    && core.getType() == kr.ac.jbnu.se.tetris.core.GameEvent.Type.LINE_CLEAR
-                    && run.getLocalParticipantId().equals(event.getActorId())) {
-                showStoryCue(dialogues.onPlayerLineClear(run, core.getLineCount()));
-            }
-        }
-        for (StoryDialogueCue cue : dialogues.onElapsed(run, state.getElapsedMillis())) showStoryCue(cue);
-    }
-
-    private void showStoryCue(StoryDialogueCue cue) {
-        if (cue != null) battle.showDialogue(cue.getSpeaker(), cue.getText());
+        StoryDialogueCue cue = dialogues.onMonsterHp(run, monster.getHp(), monster.getMaxHp());
+        if (cue != null) battle.showStoryDialogue(cue.getSpeaker(), cue.getText());
+        StoryDialogueCue crisis = dialogues.onMonsterCrisis(run, monster.getHp(), monster.getMaxHp());
+        if (crisis != null) battle.showStoryDialogue(crisis.getSpeaker(), crisis.getText());
     }
 
     private void renderMatch() {
@@ -1432,10 +1439,9 @@ public final class SeongeunApplication implements AutoCloseable {
     // 실제 GUI를 표시하기 전에도 테스트 가능한 시작 화면 준비 단계.
     void prepareFirstWindowScreen() {
         ScreenRouter.requireEdt();
-        if (!skipTutorial) {
-            startTutorial(LOBBY);
-        }
+        startTutorial(LOBBY);
     }
+
     public void openWindow() {
         ScreenRouter.requireEdt();
         if (frame != null) throw new IllegalStateException("Window is already open");
@@ -1449,7 +1455,7 @@ public final class SeongeunApplication implements AutoCloseable {
         frame.setGlassPane(transition);
         // 첫 화면이 실제로 나타나기 전에 튜토리얼 세션과 화면을 준비한다.
         // 기존에는 로비를 먼저 보여 준 뒤 invokeLater로 전환하여 로비가 잠깐 보였다.
-        // 튜토리얼 건너뛰기 설정이 꺼져 있으면 튜토리얼부터 시작하며, ESC는 기존처럼 로비로 이동한다.
+        // 실행 시 항상 튜토리얼부터 시작하도록 하며, ESC는 기존처럼 로비로 이동한다.
         prepareFirstWindowScreen();
         frame.addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent event) { keepWindowAspect(); }

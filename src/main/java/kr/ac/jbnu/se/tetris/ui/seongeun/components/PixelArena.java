@@ -14,10 +14,13 @@ import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.event.HierarchyEvent;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -100,6 +103,13 @@ public final class PixelArena extends JComponent {
     private boolean effectsEnabled = true;
     private boolean initialized;
     private int serial;
+    // Story-only speech is visual UI state; it never modifies HP, controls or battle rules.
+    public enum DialogueSpeaker { PLAYER, MONSTER }
+    private DialogueSpeaker dialogueSpeaker;
+    private String dialogueText;
+    private long dialogueUntil;
+    private final Timer dialogueTimer = new Timer(5000, event -> clearDialogue());
+
 
     public PixelArena() {
         setPreferredSize(new Dimension(380, 520));
@@ -109,6 +119,7 @@ public final class PixelArena extends JComponent {
             repaint();
         });
         animation.setCoalesce(true);
+        dialogueTimer.setRepeats(false);
         addHierarchyListener(event -> {
             if ((event.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0) {
                 if (effectsEnabled && isShowing()) animation.start();
@@ -125,6 +136,27 @@ public final class PixelArena extends JComponent {
     @Override public void removeNotify() {
         animation.stop();
         super.removeNotify();
+    }
+
+    /** Show a speech bubble beside the actor. Only story PvE callers should invoke this. */
+    public void showDialogue(DialogueSpeaker speaker, String text) {
+        if (speaker == null || text == null || text.trim().isEmpty()) {
+            clearDialogue();
+            return;
+        }
+        dialogueSpeaker = speaker;
+        dialogueText = text.trim();
+        dialogueUntil = System.currentTimeMillis() + 5000;
+        dialogueTimer.restart();
+        repaint();
+    }
+
+    public void clearDialogue() {
+        dialogueTimer.stop();
+        dialogueSpeaker = null;
+        dialogueText = null;
+        dialogueUntil = 0;
+        repaint();
     }
 
     /** 몬스터의 등급에 맞춰 무대 조명과 오라 색을 바꾼다. */
@@ -179,6 +211,7 @@ public final class PixelArena extends JComponent {
     /** 새 전투의 첫 스냅샷을 기준점으로 삼아 이전 상대의 피격 연출을 남기지 않는다. */
     public void resetForEncounter() {
         visuals.clear();
+        clearDialogue();
         initialized = false;
         playerName = "PLAYER";
         monsterName = "MONSTER";
@@ -346,10 +379,96 @@ public final class PixelArena extends JComponent {
             paintHitFlash(g, w, h, now);
             paintDanger(g, w, h, now);
             paintPlates(g, stage, now);
+            paintStoryDialogue(g, stage, now);
             paintIntro(g, stage, now);
             paintFinish(g, stage, now);
             if (!widePve || online) paintFrame(g, w, h, now);
         } finally { g.dispose(); }
+    }
+
+    /** Speech bubbles use vector drawing: no PNG or extra asset is necessary. */
+    private void paintStoryDialogue(Graphics2D g, Stage s, long now) {
+        if (online || !widePve || dialogueSpeaker == null || dialogueText == null
+                || now >= dialogueUntil) return;
+        boolean player = dialogueSpeaker == DialogueSpeaker.PLAYER;
+        int laneWidth = Math.max(160, Math.round(s.w * 0.35f));
+        // NEXT preview occupies part of the right lane; monster dialogue uses a narrower card.
+        int width = Math.max(140, Math.min(player ? 304 : 236, laneWidth - 18));
+        g.setFont(UniversityPixelTheme.font(16, Font.BOLD));
+        FontMetrics fm = g.getFontMetrics();
+        List<String> lines = speechLines(dialogueText, fm, width - 28, 3);
+        int bodyHeight = 40 + lines.size() * 23;
+        int actorX = player ? s.playerCenterX() : s.monsterX;
+        int actorTop = player ? s.portraitY : s.monsterFoot - s.monsterSize;
+        int zoneX = player ? 12 : s.w - width - 12;
+        // Keep bubbles above the HP bars and sprite silhouettes rather than covering them.
+        int y = Math.max(12, Math.min(s.h - bodyHeight - 25, actorTop - bodyHeight - 58));
+        int tailX = clampSpeech(actorX, zoneX + 26, zoneX + width - 26);
+        int tailY = Math.min(s.h - 5, y + bodyHeight + 21);
+        int baseX = clampSpeech(tailX, zoneX + 18, zoneX + width - 18);
+
+        Graphics2D bubble = (Graphics2D) g.create();
+        try {
+            bubble.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Path2D.Float tail = new Path2D.Float();
+            tail.moveTo(baseX - 13, y + bodyHeight - 4);
+            tail.lineTo(tailX, tailY);
+            tail.lineTo(baseX + 12, y + bodyHeight - 4);
+            tail.closePath();
+            bubble.setColor(new Color(85, 58, 41, 90));
+            bubble.fillRoundRect(zoneX + 2, y + 4, width, bodyHeight, 25, 25);
+            bubble.setColor(new Color(0xFFF9EC));
+            bubble.fill(tail);
+            bubble.fillRoundRect(zoneX, y, width, bodyHeight, 24, 24);
+            bubble.setColor(new Color(0x54351F));
+            bubble.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            bubble.draw(tail);
+            bubble.drawRoundRect(zoneX + 1, y + 1, width - 2, bodyHeight - 2, 24, 24);
+            // Hide the tail's joining line without obscuring the outline elsewhere.
+            bubble.setColor(new Color(0xFFF9EC));
+            bubble.fillRect(baseX - 11, y + bodyHeight - 5, 22, 5);
+            bubble.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+            bubble.setColor(player ? new Color(0x08795D) : new Color(0xA34235));
+            bubble.drawString(player ? "플레이어" : "몬스터", zoneX + 15, y + 22);
+            bubble.setColor(new Color(0x14264B));
+            bubble.setFont(UniversityPixelTheme.font(16, Font.BOLD));
+            int baseline = y + 43;
+            for (String line : lines) {
+                bubble.drawString(line, zoneX + 15, baseline);
+                baseline += 23;
+            }
+        } finally { bubble.dispose(); }
+    }
+
+    private static int clampSpeech(int value, int low, int high) {
+        return Math.max(low, Math.min(high, value));
+    }
+
+    /** Wrap Korean and Latin copy without depending on the source PNG or HTML rendering. */
+    private static List<String> speechLines(String text, FontMetrics metrics, int maxWidth, int maxLines) {
+        List<String> lines = new ArrayList<String>();
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\n' || (current.length() > 0
+                    && metrics.stringWidth(current.toString() + ch) > maxWidth)) {
+                if (current.length() > 0) lines.add(current.toString().trim());
+                current.setLength(0);
+                if (ch == '\n') continue;
+            }
+            current.append(ch);
+        }
+        if (current.length() > 0) lines.add(current.toString().trim());
+        if (lines.isEmpty()) lines.add("");
+        if (lines.size() > maxLines) {
+            List<String> clipped = new ArrayList<String>(lines.subList(0, maxLines));
+            String last = clipped.get(maxLines - 1);
+            while (!last.isEmpty() && metrics.stringWidth(last + "…") > maxWidth)
+                last = last.substring(0, last.length() - 1);
+            clipped.set(maxLines - 1, last + "…");
+            return clipped;
+        }
+        return lines;
     }
 
     /** 무대 안 주요 위치. 크기가 바뀌어도 비율로 계산한다. */
