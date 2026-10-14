@@ -7,6 +7,8 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.RoomRow;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
@@ -17,7 +19,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
  */
 public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
 
-    private final GameButton backButton = new GameButton("로비로");
+    private final CampusBackButton backButton = new CampusBackButton("돌아가기");
     private final GameButton createRoomButton = new GameButton("방 만들기");
     private final GameButton joinByIdButton = new GameButton("방 번호로 입장");
     private final GameButton retryButton = new GameButton("다시 연결");
@@ -29,29 +31,28 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
     public RoomListPanel() {
         setLayout(new BorderLayout(0, UniversityPixelTheme.HEADER_GAP));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(18, UniversityPixelTheme.GUTTER, 18, UniversityPixelTheme.GUTTER));
+        setBorder(new EmptyBorder(22, 42, 26, 42));
 
         backButton.secondary();
-        backButton.setPreferredSize(new Dimension(96, 38));
+        backButton.setPreferredSize(new Dimension(190, 56));
         add(UniversityPixelTheme.screenHeader("ONLINE BATTLE", "1:1 대전 로비", backButton), BorderLayout.NORTH);
 
         JPanel center = new JPanel(new BorderLayout(0, 14)); center.setOpaque(false);
-        JPanel status = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        status.setBackground(UniversityPixelTheme.PANEL);
-        status.setBorder(UniversityPixelTheme.cardBorder(UniversityPixelTheme.LINE, 2, 8));
+        JPanel status = CampusArt.card(new FlowLayout(FlowLayout.LEFT, 13, 0), CampusArt.BROWN, 9);
+        
         connectionDot.setFont(UniversityPixelTheme.font(14, Font.BOLD));
-        connectionDot.setForeground(UniversityPixelTheme.GOLD);
+        connectionDot.setForeground(CampusArt.GOLD);
         connectionLabel.setForeground(UniversityPixelTheme.TEXT);
-        connectionLabel.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+        connectionLabel.setFont(UniversityPixelTheme.font(17, Font.BOLD));
         retryButton.setPreferredSize(new Dimension(112, 34));
         status.add(connectionDot); status.add(connectionLabel); status.add(retryButton);
         center.add(status, BorderLayout.NORTH);
 
-        JPanel choices = new JPanel(new GridLayout(1, 2, 16, 0)); choices.setOpaque(false);
+        JPanel choices = new JPanel(new GridLayout(1, 2, 24, 0)); choices.setOpaque(false);
         choices.add(choice("HOST", "새 방 만들기", createRoomButton, UniversityPixelTheme.GOLD));
         choices.add(choice("JOIN", "번호로 입장", joinByIdButton, UniversityPixelTheme.MINT));
         JPanel choiceArea = new JPanel(new GridBagLayout()); choiceArea.setOpaque(false);
-        choices.setPreferredSize(new Dimension(640, 220));
+        choices.setPreferredSize(new Dimension(880, 440));
         choiceArea.add(choices);
         center.add(choiceArea, BorderLayout.CENTER);
 
@@ -70,22 +71,19 @@ public class RoomListPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.S
     }
 
     private static JPanel choice(String eyebrow, String title, GameButton action, Color accent) {
-        JPanel card = new JPanel(); card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBackground(UniversityPixelTheme.PANEL);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(accent, 3), new EmptyBorder(22, 18, 20, 18)));
-        JLabel tag = new JLabel(eyebrow, SwingConstants.CENTER);
-        tag.setForeground(accent); tag.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-        JLabel heading = new JLabel(title, SwingConstants.CENTER);
-        heading.setForeground(UniversityPixelTheme.TEXT); heading.setFont(UniversityPixelTheme.font(22, Font.BOLD));
-        action.setAccent(accent);
-        action.setFont(UniversityPixelTheme.font(14, Font.BOLD));
-        action.setMaximumSize(new Dimension(200, 44));
-        action.setPreferredSize(new Dimension(200, 44));
-        for (JComponent item : new JComponent[] { tag, heading, action })
-            item.setAlignmentX(Component.CENTER_ALIGNMENT);
-        card.add(tag); card.add(Box.createVerticalStrut(6)); card.add(heading);
-        card.add(Box.createVerticalGlue()); card.add(action);
+        CampusArt.Card card = CampusArt.card(new BorderLayout(0,12), CampusArt.BROWN, 20);
+        JPanel center = new JPanel();center.setOpaque(false);
+        center.setLayout(new BoxLayout(center,BoxLayout.Y_AXIS));
+        JLabel tag=CampusArt.text(eyebrow,17,accent);
+        JLabel heading=CampusArt.text(title,32,CampusArt.INK);
+        JLabel art=CampusArt.icon("HOST".equals(eyebrow)?"graduation_cap":"avatar_player",145,145);
+        for(JComponent child:new JComponent[]{tag,heading,art})child.setAlignmentX(Component.CENTER_ALIGNMENT);
+        center.add(tag);center.add(Box.createVerticalStrut(10));center.add(heading);
+        center.add(Box.createVerticalGlue());center.add(art);
+        center.add(Box.createVerticalGlue());card.add(center,BorderLayout.CENTER);
+        action.setAccent(accent);action.setFont(UniversityPixelTheme.font(23,Font.BOLD));
+        action.setPreferredSize(new Dimension(330,76));
+        card.add(action,BorderLayout.SOUTH);
         return card;
     }
 

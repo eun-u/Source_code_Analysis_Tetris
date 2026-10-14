@@ -1,24 +1,56 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.LayoutManager;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.IntConsumer;
+
 import javax.imageio.ImageIO;
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
-import kr.ac.jbnu.se.tetris.battle.*;
-import kr.ac.jbnu.se.tetris.core.GameState;
-import kr.ac.jbnu.se.tetris.core.GameEvent;
-import kr.ac.jbnu.se.tetris.core.BoardState;
-import kr.ac.jbnu.se.tetris.story.MonsterTier;
+
 import kr.ac.jbnu.se.tetris.audio.AudioService;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
+import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.battle.ParticipantState;
+import kr.ac.jbnu.se.tetris.core.BoardState;
+import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
+import kr.ac.jbnu.se.tetris.story.MonsterTier;
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CartoonBattleTopHud;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.GarbageMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.OreFlightLayer;
@@ -26,6 +58,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
@@ -45,6 +78,199 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final BufferedImage GRADUATION_BG = readBackdrop("/ui/campus-rpg/graduation-bg.png");
     private static final BufferedImage EMPLOYMENT_BG = readBackdrop("/ui/campus-rpg/employment-bg.png");
 
+    // UI 리소스는 최초 한 번만 로드하고 전투 갱신 시 재사용한다.
+    private static final Map<String, ImageIcon> ITEM_ICONS = loadItemIcons();
+
+    private static Map<String, ImageIcon> loadItemIcons() {
+        Map<String, ImageIcon> icons = new HashMap<>();
+        icons.put("damage_boost", loadItemIcon("item_damage.png"));
+        icons.put("garbage_bomb", loadItemIcon("item_bomb.png"));
+        icons.put("heal", loadItemIcon("item_heal.png"));
+        icons.put("shield", loadItemIcon("item_shield.png"));
+        icons.put("line_cleaner", loadItemIcon("item_line_cleaner.png"));
+        icons.put("fever_charge", loadItemIcon("item_fever.png"));
+        icons.put("time_warp", loadItemIcon("item_time.png"));
+        icons.put("nullify", loadItemIcon("item_nullify.png"));
+        return icons;
+    }
+
+    private static ImageIcon loadItemIcon(String filename) {
+        String path = "/ui/campus-rpg/icons/" + filename;
+        try (InputStream stream = BattlePanel.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                System.err.println("아이템 아이콘 파일을 찾지 못했습니다: " + path);
+                return null;
+            }
+            BufferedImage image = ImageIO.read(stream);
+            if (image == null) return null;
+            return new ImageIcon(image.getScaledInstance(48, 48, Image.SCALE_SMOOTH));
+        } catch (IOException e) {
+            System.err.println("아이템 아이콘 로딩 실패: " + path + " / " + e.getMessage());
+            return null;
+        }
+    }
+
+    // PvE 아이템 버튼: 중앙 아이콘, 우상단 실제 남은 횟수, 하단 1~4번 단축키
+    private static JButton createPveItemButton(String text) {
+        JButton button = new JButton() {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    int w = getWidth(), h = getHeight();
+                    if (w < 15 || h < 15) return;
+                    boolean active = isEnabled();
+                    boolean pressed = getModel().isPressed();
+                    boolean hover = getModel().isRollover();
+
+                    // 두꺼운 둥근 어두운 프레임 + 안쪽 패널
+                    g.setColor(new Color(0x101714));
+                    g.fillRoundRect(0, 0, w, h - 2, 18, 18);
+                    g.setColor(new Color(0x929E8B));
+                    g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
+                    g.setColor(pressed ? new Color(0x253529)
+                            : hover ? new Color(0x425B4C) : new Color(0x34443C));
+                    g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+                    g.setColor(new Color(0x233128));
+                    g.setStroke(new BasicStroke(2f));
+                    g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
+                    if (!active) {
+                        g.setColor(new Color(0, 0, 0, 48));
+                        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+                    }
+
+                    // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
+                    Icon icon = getIcon();
+                    if (icon != null) {
+                        int iconX = (w - icon.getIconWidth()) / 2;
+                        int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
+                        icon.paintIcon(this, g, iconX, iconY);
+                    }
+
+                    // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
+                    Object countValue = getClientProperty("hudCharges");
+                    int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
+                    if (icon != null && count > 0) {
+                        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
+                        g.setColor(new Color(0x1B100B));
+                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
+                        g.setColor(new Color(0xC69362));
+                        g.fillRoundRect(bx, by, bw, bh, 10, 10);
+                        g.setColor(new Color(0x765036));
+                        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
+                        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
+                    }
+
+                    // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
+                    Object hotkeyValue = getClientProperty("hudHotkey");
+                    if (hotkeyValue instanceof Number) {
+                        String hotkey = String.valueOf(((Number) hotkeyValue).intValue());
+                        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
+                        g.setColor(new Color(0x102923));
+                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+                        g.setColor(new Color(0x78DCC0));
+                        g.fillRoundRect(bx, by, bw, bh, 8, 8);
+                        g.setColor(new Color(0x43B99A));
+                        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
+                        drawBadgeNumber(g, hotkey, bx, by, bw, bh, 16);
+                    }
+                } finally {
+                    g.dispose();
+                }
+            }
+        };
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setBorder(BorderFactory.createEmptyBorder());
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        return button;
+    }
+
+    private static void drawBadgeNumber(Graphics2D g, String text,
+                                        int x, int y, int w, int h, int size) {
+        g.setFont(UniversityPixelTheme.font(size, Font.BOLD));
+        FontMetrics fm = g.getFontMetrics();
+        int tx = x + (w - fm.stringWidth(text)) / 2;
+        int ty = y + (h - fm.getHeight()) / 2 + fm.getAscent();
+        g.setColor(new Color(0x18231E));
+        g.drawString(text, tx + 1, ty + 2);
+        g.setColor(new Color(0xFFF8E9));
+        g.drawString(text, tx, ty);
+    }
+    // Compact, readable rounded message banner below the FEVER HUD.
+    private static JLabel createBattleStatusBanner() {
+        JLabel banner = new JLabel("") {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    int w = getWidth(), h = getHeight();
+                    if (w < 10 || h < 10) return;
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    // Translucent light gray: let the campus art show through without washing out text.
+                    g.setColor(new Color(34, 38, 41, 65));
+                    g.fillRoundRect(1, 3, w - 2, h - 3, 17, 17);
+                    g.setColor(new Color(238, 241, 244, 235));
+                    g.fillRoundRect(0, 0, w, h - 3, 17, 17);
+                    g.setColor(new Color(112, 119, 125, 200));
+                    g.setStroke(new BasicStroke(1.5f));
+                    g.drawRoundRect(1, 1, w - 3, h - 6, 15, 15);
+                    g.setColor(new Color(255, 255, 255, 110));
+                    g.drawRoundRect(3, 3, w - 7, h - 10, 13, 13);
+
+                    // Small warning badge, with dark ink on the pale surface.
+                    int cy = (h - 3) / 2;
+                    g.setColor(new Color(0xE6B656));
+                    g.fillOval(11, cy - 8, 16, 16);
+                    g.setColor(new Color(0x4A3D2D));
+                    g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g.drawLine(19, cy - 4, 19, cy + 1);
+                    g.fillOval(18, cy + 4, 2, 2);
+                } finally {
+                    g.dispose();
+                }
+                super.paintComponent(graphics);
+            }
+        };
+        banner.setOpaque(false);
+        banner.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        banner.setForeground(UniversityPixelTheme.TEXT);
+        banner.setBorder(new EmptyBorder(4, 37, 6, 12));
+        return banner;
+    }
+
+    // Theme.apply() normally maps unrecognized white JLabel text to the dark theme TEXT.
+    // Restore true white immediately before JLabel paints (including after theme re-application).
+    private static JLabel whiteFeverLabel(String text) {
+        JLabel label = new JLabel(text) {
+            @Override protected void paintComponent(Graphics graphics) {
+                if (!Color.WHITE.equals(getForeground())) setForeground(Color.WHITE);
+                super.paintComponent(graphics);
+            }
+        };
+        label.setForeground(Color.WHITE);
+        label.setFont(UniversityPixelTheme.font(16, Font.BOLD));
+        return label;
+    }
+
+    // Adjust the banner to its message length without covering all item slots.
+    private void layoutStatusBanner() {
+        int width = getWidth(), height = getHeight();
+        if (width <= 0 || height <= 0) return;
+        int margin = pveMargin(width, height);
+        int side = margin + 12, bottom = margin + 23;
+        String message = status.getText() == null ? "" : status.getText();
+        int available = Math.max(0, width - side * 2 - 8);
+        int desired = status.getFontMetrics(status.getFont()).stringWidth(message) + 53;
+        int bubbleWidth = Math.min(available, Math.max(160, desired));
+        Rectangle bounds = new Rectangle(side + 4, height - bottom + 7, bubbleWidth, 38);
+        if (!bounds.equals(status.getBounds())) status.setBounds(bounds);
+        status.setVisible(!message.trim().isEmpty());
+    }
+
     private final PixelArena arena = new PixelArena();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
     private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
@@ -57,9 +283,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JLabel gauge = label("FEVER 0%"), pending = label("가비지 0");
     private final JLabel warp = label(" ");
     private final JLabel stats = label("<html>LINES 0<br>COMBO 0</html>");
-    private final JLabel status = label("");
+    private final JLabel status = createBattleStatusBanner();
     private final JLabel clock = label("00:00");
-    private final JLabel levelChip = UniversityPixelTheme.chip("LV 1", UniversityPixelTheme.GOLD);
+    private final JLabel levelChip = CartoonBattleTopHud.levelChip("LV 1", UniversityPixelTheme.GOLD);
     private final JLabel title = label("MONSTER BATTLE");
     private final Board playerBoard = new Board(playerStatus, true);
     private final Board enemyBoard = new Board(enemyStatus, false);
@@ -67,11 +293,44 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JButton[] slots = new JButton[4];
     private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
-    private final JButton backButton = button("전투 포기 [ESC]");
+    private final JButton backButton = CartoonBattleTopHud.quitButton("전투 포기 [ESC]");
     private final PixelMeter feverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
-    private final JPanel topBar = new JPanel(new BorderLayout(10, 0));
+    private final JPanel topBar = new CartoonBattleTopHud(levelChip, title, clock, (PixelButton) backButton);
     private final JPanel leftColumn = column();
     private final JPanel rightColumn = column();
+    // PvE 전용 HUD: 온라인 대전의 기존 좌우 열은 그대로 보존한다.
+    private final JPanel pveHoldPanel = battlePreviewFrame(new BorderLayout(0, 3));
+    private final JPanel pveNextPanel = battlePreviewFrame(null);
+    private final JPanel pveFooter = new JPanel(null);
+    private final JPanel pveFeverPanel = new JPanel(null) {
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            try {
+                int w = getWidth(), h = getHeight();
+                if (w < 5 || h < 5) return;
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(new Color(0x273A35));
+                g.fillRoundRect(0, 0, w, h, 22, 22);
+                g.setStroke(new BasicStroke(2f));
+                g.setColor(new Color(0x13201D));
+                g.drawRoundRect(1, 1, w - 3, h - 3, 22, 22);
+                g.setStroke(new BasicStroke(1.2f));
+                g.setColor(new Color(0x9AAB9B));
+                g.drawRoundRect(4, 4, w - 9, h - 9, 17, 17);
+            } finally {
+                g.dispose();
+            }
+        }
+    };
+    private final MiniPiecePreview pveHoldPreview = new MiniPiecePreview("HOLD");
+    private final MiniPiecePreview[] pveNextPreviews = {
+        new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
+    };
+    private final JLabel pveFeverLabel = whiteFeverLabel("FEVER");
+    private final JLabel pveFeverPercent = whiteFeverLabel("0%");
+    private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
+    private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
     private IntConsumer itemAction;
     private long feedbackUntil;
@@ -87,24 +346,17 @@ public class BattlePanel extends JPanel implements Scrollable {
         setPreferredSize(new Dimension(850, 600));
         setBackground(BG);
         playerBoard.setAutomaticEffects(false); enemyBoard.setAutomaticEffects(false);
+        // 스토리 전투에서는 중앙 라인 클리어 배너를 숨기고 타격/채굴 연출만 유지한다.
+        playerBoard.setLineClearCalloutEnabled(false);
 
-        // 상단: 레벨·과정 이름과 시간, 포기 버튼.
-        topBar.setOpaque(false);
-        JPanel heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0)); heading.setOpaque(false);
+        // Compact pastel HUD; same labels, timer updates, and quit button callbacks.
         levelChip.setFont(UniversityPixelTheme.font(14, Font.BOLD));
-        title.setFont(UniversityPixelTheme.font(17, Font.BOLD));
-        heading.add(levelChip); heading.add(title);
-        topBar.add(heading, BorderLayout.CENTER);
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0)); actions.setOpaque(false);
-        clock.setFont(UniversityPixelTheme.font(18, Font.BOLD));
-        clock.setForeground(UniversityPixelTheme.GOLD);
-        actions.add(clock);
+        title.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+        title.setForeground(UniversityPixelTheme.TEXT);
+        clock.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        clock.setForeground(UniversityPixelTheme.TEXT);
         ((PixelButton) backButton).primary();
-        backButton.setPreferredSize(new Dimension(136, 34));
-        backButton.setFocusable(false);
         backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
-        actions.add(backButton);
-        topBar.add(actions, BorderLayout.EAST);
         add(topBar);
 
         buildLeftColumn();
@@ -116,15 +368,104 @@ public class BattlePanel extends JPanel implements Scrollable {
         add(playerName);
         buildRightColumn();
         add(rightColumn);
+        buildPveHud();
+        add(pveHoldPanel);
+        add(pveNextPanel);
+        add(pveFooter);
         add(arena);
         buildEnemyColumn();
         add(enemyColumn);
-        status.setFont(UniversityPixelTheme.font(12, Font.BOLD));
-        status.setForeground(UniversityPixelTheme.TEXT_SUB);
         add(status);
         add(oreFlights);
         // Swing은 인덱스 0을 맨 앞에 그린다. 채굴 광원이 보드와 슬롯 위를 지나야 한다.
         setComponentZOrder(oreFlights, 0);
+        // 넓은 투명 무대는 게임 보드와 HUD 뒤에 표시한다.
+        setComponentZOrder(arena, getComponentCount() - 1);
+        showPveHud(true);
+    }
+
+    /** PvE HOLD/NEXT outer shell. Existing PvP previews are not touched. */
+    private static JPanel battlePreviewFrame(LayoutManager layout) {
+        JPanel panel = new JPanel(layout) {
+            @Override protected void paintComponent(Graphics graphics) {
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    int w = getWidth(), h = getHeight();
+                    if (w < 10 || h < 10) return;
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setColor(new Color(0x302018));
+                    g.fillRoundRect(0, 0, w, h, 20, 20);
+                    g.setColor(new Color(0xF2D19D));
+                    g.fillRoundRect(3, 3, w - 6, h - 6, 16, 16);
+                    g.setColor(new Color(0xFFF8E9));
+                    g.fillRoundRect(6, 6, w - 12, h - 12, 13, 13);
+                    g.setColor(new Color(255, 255, 255, 72));
+                    g.setStroke(new BasicStroke(1.4f));
+                    g.drawRoundRect(5, 5, w - 11, h - 11, 14, 14);
+                } finally { g.dispose(); }
+            }
+        };
+        panel.setOpaque(false);
+        return panel;
+    }
+
+    private void buildPveHud() {
+        // PvE: the panel draws its own rounded outer frame; no beige Swing border.
+        pveHoldPanel.setOpaque(false);
+        pveHoldPanel.setBorder(new EmptyBorder(7, 8, 8, 8));
+        JLabel holdTitle = label("HOLD");
+        holdTitle.setHorizontalAlignment(SwingConstants.CENTER);
+        holdTitle.setForeground(CampusArt.NAVY);
+        holdTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        pveHoldPanel.add(holdTitle, BorderLayout.NORTH);
+        pveHoldPreview.setBattleHudStyle(true);
+        pveHoldPanel.add(pveHoldPreview, BorderLayout.CENTER);
+
+        pveNextPanel.setLayout(new BoxLayout(pveNextPanel, BoxLayout.Y_AXIS));
+        pveNextPanel.setOpaque(false);
+        pveNextPanel.setBorder(new EmptyBorder(7, 7, 9, 7));
+        JLabel nextTitle = label("NEXT");
+        nextTitle.setForeground(CampusArt.NAVY);
+        nextTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
+        nextTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        pveNextPanel.add(nextTitle);
+        pveNextPanel.add(Box.createVerticalStrut(4));
+        for (MiniPiecePreview preview : pveNextPreviews) {
+            preview.setBattleHudStyle(true);
+            preview.setAlignmentX(Component.CENTER_ALIGNMENT);
+            preview.setMaximumSize(new Dimension(Integer.MAX_VALUE, 77));
+            preview.setPreferredSize(new Dimension(92, 77));
+            pveNextPanel.add(preview);
+            pveNextPanel.add(Box.createVerticalStrut(4));
+        }
+
+        pveFooter.setOpaque(false);
+        pveFeverPanel.setOpaque(false);
+        pveFeverPanel.setBorder(null);
+        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setForeground(Color.WHITE);
+        pveFeverLabel.setFont(UniversityPixelTheme.font(16, Font.BOLD));
+        pveFeverPercent.setForeground(Color.WHITE);
+        pveFeverPercent.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        pveFeverPercent.setHorizontalAlignment(SwingConstants.RIGHT);
+        pveFeverPanel.add(pveFeverLabel);
+        pveFeverPanel.add(pveFeverBar);
+        pveFeverPanel.add(pveFeverPercent);
+        pveFooter.add(pveFeverPanel);
+        for (int i = 0; i < pveSlots.length; i++) {
+            final int index = i;
+            JButton slot = createPveItemButton("빈 슬롯");
+            slot.putClientProperty("hudHotkey", i + 1);
+            slot.setFont(UniversityPixelTheme.font(12, Font.BOLD));
+            slot.setFocusable(false);
+            slot.addActionListener(event -> {
+                if (automaticSlots[index]) setFeedback("자동 사용 아이템 · 조건이 맞으면 발동합니다.");
+                else if (itemAction != null) itemAction.accept(index);
+            });
+            slot.setEnabled(false);
+            pveSlots[i] = slot;
+            pveFooter.add(slot);
+        }
     }
 
     private void buildLeftColumn() {
@@ -240,24 +581,23 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private void paintPveShell(Graphics2D g) {
-        int margin = pveMargin(getWidth(), getHeight());
-        int side = margin + 12, top = margin + 54, bottom = margin + 23;
         BufferedImage backdrop = "graduation".equals(chapter) ? GRADUATION_BG
                 : "employment".equals(chapter) ? EMPLOYMENT_BG
                 : UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG;
-        paintCommonShell(g, margin, side, top, bottom, backdrop);
-        if (arena.getWidth() <= 0 || playerBoard.getWidth() <= 0) return;
-        int bodyBottom = getHeight() - bottom;
-        // 기둥은 보드와 무대를 가르는 여백을 채우고, 가비지 미터를 첫 기둥에 넣는다.
-        paintPillar(g, arena.getX() + arena.getWidth(), PVE_LEFT_PILLAR, top, bodyBottom);
-        paintPillar(g, playerBoard.getX() + playerBoard.getWidth(),
-                PVE_RIGHT_PILLAR, top, bodyBottom);
-        g.setColor(FACADE_EDGE);
-        g.drawRect(arena.getX() - 1, arena.getY() - 1, arena.getWidth() + 1, arena.getHeight() + 1);
-        paintBoardFacade(g, playerBoard.getBounds());
-        int divider = rightColumn.getX() - 5;
-        g.setColor(UniversityPixelTheme.LINE);
-        g.drawLine(divider, top + 14, divider, bodyBottom - 14);
+        if (backdrop != null) paintBackdropCover(g, backdrop, getWidth(), getHeight());
+        else {
+            g.setColor(new Color(0xA2D785));
+            g.fillRect(0, 0, getWidth(), getHeight());
+        }
+        Rectangle board = playerBoard.getBounds();
+        if (board.width > 0 && board.height > 0) {
+            g.setColor(new Color(0x27353B));
+            g.fillRoundRect(board.x - 8, board.y - 8,
+                    board.width + 16, board.height + 16, 14, 14);
+            g.setColor(new Color(0x88BEA0));
+            g.drawRoundRect(board.x - 8, board.y - 8,
+                    board.width + 15, board.height + 15, 14, 14);
+        }
     }
 
     private void paintOnlineShell(Graphics2D g) {
@@ -374,52 +714,72 @@ public class BattlePanel extends JPanel implements Scrollable {
             g.drawLine(joint, y + 3, joint, y + 6);
     }
 
-    /** PvE는 전투 무대·큰 보드·두 열 HUD, PvP는 기존의 양쪽 보드 배치를 쓴다. */
+    /** PvE는 중앙 보드와 양옆 캐릭터, 하단 아이템 HUD를 사용한다. PvP는 기존 방식 유지. */
     @Override public void doLayout() {
         int width = getWidth(), height = getHeight();
         if (width <= 0 || height <= 0) return;
         oreFlights.setBounds(0, 0, width, height);
         int margin = pveMargin(width, height);
-        int side = margin + 12, top = margin + 54, bottom = margin + 23;
+        int side = margin + 12, top = margin + 68, bottom = margin + 23;
+        topBar.setBounds(side + 4, margin + 6, Math.max(0, width - side * 2 - 8), 50);
+        layoutStatusBanner();
+        resultTestButton.setVisible(false);
         if (online) {
-            topBar.setBounds(side + 4, margin + 9, Math.max(0, width - side * 2 - 8), 36);
-            status.setBounds(side + 4, height - bottom + 3,
-                    Math.max(0, width - side * 2 - 8), 17);
+            showPveHud(false);
             enemyColumn.setVisible(true);
             layoutOnline(width, side, top, Math.max(100, height - top - bottom));
-            resultTestButton.setVisible(false);
             return;
         }
-        topBar.setBounds(side + 4, margin + 9, Math.max(0, width - side * 2 - 8), 36);
-        status.setBounds(side + 4, height - bottom + 3,
-                Math.max(0, width - side * 2 - 8), 17);
+
+        showPveHud(true);
         enemyColumn.setVisible(false);
         enemyColumn.setBounds(0, 0, 0, 0);
-        int areaTop = top, areaHeight = Math.max(100, height - top - bottom);
-        int hudWidth = clamp(Math.round(width * .25f), 192, 280);
-        int arenaMinimum = Math.max(220, Math.round(width * .30f));
-        int interiorWidth = Math.max(0, width - side * 2);
-        int boardSpace = interiorWidth - hudWidth - PVE_LEFT_PILLAR - PVE_RIGHT_PILLAR
-                - arenaMinimum;
-        int cell = Math.max(10, Math.min((areaHeight - 8) / 22, (boardSpace - 2) / 10));
-        int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
-        int boardY = areaTop + (areaHeight - boardHeight) / 2;
-        int arenaWidth = Math.max(160, interiorWidth - hudWidth - PVE_LEFT_PILLAR
-                - PVE_RIGHT_PILLAR - boardWidth);
-        int arenaX = side;
-        int boardX = arenaX + arenaWidth + PVE_LEFT_PILLAR;
-        int hudX = boardX + boardWidth + PVE_RIGHT_PILLAR;
-        int hudGap = 8, hudPadding = 8;
-        int subWidth = Math.max(72, (hudWidth - hudPadding * 2 - hudGap) / 2);
-        leftColumn.setBounds(hudX + hudPadding, areaTop + 13, subWidth, areaHeight - 25);
-        rightColumn.setBounds(hudX + hudPadding + subWidth + hudGap,
-                areaTop + 13, subWidth, areaHeight - 25);
-        playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
         playerName.setVisible(false);
-        int meterX = arenaX + arenaWidth + 6;
-        garbage.setBounds(meterX, boardY + 1, METER, boardHeight - 2);
-        arena.setBounds(arenaX, areaTop, arenaWidth, areaHeight);
-        resultTestButton.setVisible(false);
+        int interiorWidth = Math.max(0, width - side * 2);
+        int footerHeight = Math.max(88, Math.min(96, height / 9));
+        int footerTop = height - bottom - footerHeight;
+        int boardAreaHeight = Math.max(220, footerTop - top - 12);
+        int cell = Math.max(9, Math.min((boardAreaHeight - 8) / 22,
+                Math.max(9, (interiorWidth - 400) / 10)));
+        int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
+        int boardX = (width - boardWidth) / 2;
+        int boardY = top + Math.max(0, (boardAreaHeight - boardHeight) / 2);
+        playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
+        garbage.setBounds(boardX - METER - 4, boardY + 1,
+                METER, Math.max(0, boardHeight - 2));
+
+        // HOLD와 NEXT는 보드 상단 양옆에만 표시한다.
+        int hudWidth = clamp(Math.round(width * 0.097f), 96, 116);
+        pveHoldPanel.setBounds(boardX - hudWidth - 15, boardY + 18, hudWidth, 132);
+        pveNextPanel.setBounds(boardX + boardWidth + 15, boardY + 18, hudWidth, 282);
+
+        // 한 개의 투명 무대에서 캐릭터를 보드 좌우에 그리고, 보드는 그 위에 그린다.
+        arena.setBounds(side, top, interiorWidth, Math.max(1, footerTop - top));
+        // 네 개의 아이템을 레퍼런스처럼 정사각형으로 묶고 우측에 정렬한다.
+        int itemGap = 10;
+        int itemSize = Math.max(54, Math.min(84, (interiorWidth - 230 - itemGap * 3) / 4));
+        int itemGroupWidth = itemSize * 4 + itemGap * 3;
+        int itemStartX = interiorWidth - itemGroupWidth;
+        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .38f), 190, 390),
+                Math.max(130, itemStartX - 18));
+        pveFooter.setBounds(side, footerTop, interiorWidth, footerHeight);
+        pveFeverPanel.setBounds(0, 4, feverWidth, footerHeight - 7);
+        for (int i = 0; i < pveSlots.length; i++) {
+            pveSlots[i].setBounds(itemStartX + i * (itemSize + itemGap),
+                    footerHeight - itemSize - 2, itemSize, itemSize);
+        }
+        pveFeverLabel.setBounds(16, 7, feverWidth - 32, 23);
+        pveFeverBar.setBounds(14, 33, Math.max(20, feverWidth - 99), 27);
+        pveFeverPercent.setBounds(feverWidth - 78, 29, 62, 30);
+    }
+
+    private void showPveHud(boolean pve) {
+        leftColumn.setVisible(!pve);
+        rightColumn.setVisible(!pve);
+        pveHoldPanel.setVisible(pve);
+        pveNextPanel.setVisible(pve);
+        pveFooter.setVisible(pve);
+        arena.setWidePve(pve);
     }
 
     /** 온라인에서는 양쪽 보드가 같은 크기이고 무대가 공격 교차로가 된다. */
@@ -495,6 +855,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setMode(boolean online) {
         if (this.online == online) return;
         this.online = online;
+        playerBoard.setLineClearCalloutEnabled(online);
         if (online) {
             ((PixelButton) backButton).danger();
             backButton.setText("대전 포기 [ESC]");
@@ -514,6 +875,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     public void setAudio(AudioService service) { audio = service; }
     public void setEncounter(String chapter, int level, MonsterTier pattern, String art) {
         online = false;
+        playerBoard.setLineClearCalloutEnabled(false);
         this.chapter = chapter;
         ((PixelButton) backButton).primary();
         backButton.setText("전투 포기 [ESC]");
@@ -600,17 +962,19 @@ public class BattlePanel extends JPanel implements Scrollable {
         int x = event.getItemSourceX(), y = event.getItemSourceY();
         int index = event.getItemSlotIndex();
         if (x < 0 || x >= 10 || y < 0 || y >= 22 || index < 0 || index >= slots.length
-                || playerBoard.getWidth() <= 0 || slots[index].getWidth() <= 0) return false;
+                || playerBoard.getWidth() <= 0 || (online ? slots[index] : pveSlots[index]).getWidth() <= 0) return false;
         Point from = SwingUtilities.convertPoint(playerBoard, playerBoard.cellCenter(x, y), this);
-        Point to = SwingUtilities.convertPoint(slots[index],
-                new Point(slots[index].getWidth() / 2, slots[index].getHeight() / 2), this);
-        oreFlights.launch(from, to, slots[index].getWidth(), slots[index].getHeight());
+        JButton targetSlot = online ? slots[index] : pveSlots[index];
+        Point to = SwingUtilities.convertPoint(targetSlot,
+                new Point(targetSlot.getWidth() / 2, targetSlot.getHeight() / 2), this);
+        oreFlights.launch(from, to, targetSlot.getWidth(), targetSlot.getHeight());
         return true;
     }
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;
         status.setText("▶ " + text);
-        status.setForeground(UniversityPixelTheme.GOLD);
+        status.setForeground(UniversityPixelTheme.CORAL);
+        layoutStatusBanner();
     }
     public Board getPlayerBoard() { return playerBoard; }
     public Board getEnemyBoard() { return enemyBoard; }
@@ -647,13 +1011,22 @@ public class BattlePanel extends JPanel implements Scrollable {
         stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
         holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
                 game.getHoldOreCellIndex());
+        pveHoldPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
+                game.getHoldOreCellIndex());
         for (int index = 0; index < nextPreviews.length; index++)
             nextPreviews[index].setPiece(index < game.getNextPieces().size()
+                    ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
+        for (int index = 0; index < pveNextPreviews.length; index++)
+            pveNextPreviews[index].setPiece(index < game.getNextPieces().size()
                     ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
         gauge.setText(local.isFeverActive() ? String.format("FEVER %.1fs", local.getFeverRemainingMillis() / 1000.0)
                 : "FEVER " + local.getFever() + "%");
         feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
+        pveFeverLabel.setText("FEVER");
+        pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
+        pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
+        pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
         warp.setText(local.getTimeWarpRemainingMillis() > 0
                 ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
         int incoming = local.getPendingGarbageLines();
@@ -685,13 +1058,22 @@ public class BattlePanel extends JPanel implements Scrollable {
             slots[i].setEnabled(item != null
                     && !waitingForEarlierSlot
                     && state.getStatus() == BattleState.Status.RUNNING);
+            // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
+            ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
+            pveSlots[i].setIcon(icon);
+            pveSlots[i].setDisabledIcon(icon);
+            pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
+            pveSlots[i].setText("");
+            pveSlots[i].setToolTipText(slots[i].getToolTipText());
+            pveSlots[i].setEnabled(slots[i].isEnabled());
         }
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
                 state.getElapsedMillis() / 1000 % 60));
         if (System.currentTimeMillis() >= feedbackUntil) {
-            status.setForeground(UniversityPixelTheme.TEXT_SUB);
+            status.setForeground(UniversityPixelTheme.TEXT);
             status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
                     : "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기");
+            layoutStatusBanner();
         }
     }
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {

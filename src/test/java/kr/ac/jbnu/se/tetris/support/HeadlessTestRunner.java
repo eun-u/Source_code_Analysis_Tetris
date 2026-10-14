@@ -30,8 +30,8 @@ public final class HeadlessTestRunner {
                 + File.pathSeparator + dependencies;
         String java = Paths.get(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java").toString();
         for (String suite : suites) {
-            Process process = new ProcessBuilder(java, "-Xmx256m", "-Djava.awt.headless=true", "-ea", "-cp", cp, suite)
-                    .directory(root.toFile()).inheritIO().start();
+            Process process = new ProcessBuilder(java, "-Xmx2g", "-Djava.awt.headless=true", "-ea", "-cp", cp, suite)
+                .directory(root.toFile()).inheritIO().start();
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 process.destroyForcibly(); process.waitFor();
                 throw new AssertionError("Test timed out: " + suite);

@@ -10,6 +10,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.MiniPiecePreview;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 
@@ -35,16 +36,23 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
     private final JLabel comboValue = statValue("0");
     private final PixelMeter sprintBar = new PixelMeter(SPRINT_GOAL, UniversityPixelTheme.GOLD);
     private final Timer clock = new Timer(100, event -> refreshClock());
+    private final JPanel standardScreen = new JPanel(new BorderLayout(0, 10));
+    private final JPanel standardBoardArea = new JPanel(new GridBagLayout());
+    private JPanel standardQueue;
+    private TutorialScenePanel tutorialScreen;
+    private final CardLayout screens = new CardLayout();
     private String mode = "Infinite";
     private long elapsedMillis, runningSince;
 
     public LocalGamePanel() {
-        setLayout(new BorderLayout(0, 10));
+        setLayout(screens);
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(14, UniversityPixelTheme.GUTTER, 14, UniversityPixelTheme.GUTTER));
+        setBorder(null);
+        standardScreen.setOpaque(false);
+        standardScreen.setBorder(new EmptyBorder(18, 26, 20, 26));
 
         backButton.secondary();
-        backButton.setPreferredSize(new Dimension(136, 38));
+        backButton.setPreferredSize(new Dimension(172, 52));
         backButton.setFocusable(false);
         backButton.setToolTipText("게임을 끝내고 이전 화면으로 돌아갑니다.");
         JPanel topPanel = new JPanel(new BorderLayout());
@@ -52,47 +60,53 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
         JPanel heading = new JPanel(); heading.setOpaque(false);
         heading.setLayout(new BoxLayout(heading, BoxLayout.Y_AXIS));
         heading.add(modeEyebrow); heading.add(Box.createVerticalStrut(2)); heading.add(titleLabel);
+        topPanel.add(CampusArt.icon("graduation_cap",76,75), BorderLayout.WEST);
         topPanel.add(heading, BorderLayout.CENTER);
         topPanel.add(backButton, BorderLayout.EAST);
 
-        tutorialGuide.setBackground(UniversityPixelTheme.PANEL);
+        tutorialGuide.setBackground(new Color(0xFFF7DD));
         tutorialGuide.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.GOLD, 2),
-                new EmptyBorder(8, 12, 8, 12)));
+                BorderFactory.createLineBorder(CampusArt.BROWN, 3, true),
+                new EmptyBorder(10, 17, 10, 17)));
         tutorialStep.setForeground(UniversityPixelTheme.GOLD);
-        tutorialStep.setFont(UniversityPixelTheme.font(15, Font.BOLD));
+        tutorialStep.setFont(UniversityPixelTheme.font(20, Font.BOLD));
         tutorialInstruction.setForeground(UniversityPixelTheme.TEXT);
-        tutorialInstruction.setFont(UniversityPixelTheme.font(17, Font.BOLD));
+        tutorialInstruction.setFont(UniversityPixelTheme.font(19, Font.BOLD));
         tutorialGuide.add(tutorialStep, BorderLayout.WEST);
         tutorialGuide.add(tutorialInstruction, BorderLayout.CENTER);
         tutorialGuide.setVisible(false);
         JPanel header = new JPanel(new BorderLayout(0, 10)); header.setOpaque(false);
         header.add(topPanel, BorderLayout.NORTH);
         header.add(tutorialGuide, BorderLayout.CENTER);
-        add(header, BorderLayout.NORTH);
+        standardScreen.add(header, BorderLayout.NORTH);
 
         statusLabel = UniversityPixelTheme.label(" ", 12, Font.BOLD, UniversityPixelTheme.TEXT_SUB);
         playerBoard = new Board(statusLabel, true);
         playerBoard.setPreferredSize(new Dimension(280, 616));
         playerBoard.setMinimumSize(new Dimension(160, 352));
 
-        JPanel boardArea = new JPanel(new GridBagLayout());
-        boardArea.setOpaque(false);
+        standardBoardArea.setOpaque(false);
         GridBagConstraints c = new GridBagConstraints();
         c.gridx = 0; c.gridy = 0; c.weightx = 1; c.weighty = 1;
         c.fill = GridBagConstraints.BOTH; c.insets = new Insets(0, 0, 0, 18);
-        boardArea.add(playerBoard, c);
+        standardBoardArea.add(playerBoard, c);
         c.gridx = 1; c.weightx = 0; c.fill = GridBagConstraints.VERTICAL; c.insets = new Insets(0, 0, 0, 0);
-        boardArea.add(sidePanel(), c);
-        add(boardArea, BorderLayout.CENTER);
+        standardBoardArea.add(sidePanel(), c);
+        standardScreen.add(standardBoardArea, BorderLayout.CENTER);
+        tutorialScreen = new TutorialScenePanel(playerBoard, holdPreview, nextPreviews,
+                tutorialStep, tutorialInstruction, timeValue, linesValue, comboValue,
+                () -> backButton.doClick());
+        add(standardScreen, "standard");
+        add(tutorialScreen, "tutorial");
     }
 
     private JPanel sidePanel() {
         JPanel side = new JPanel();
         side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
-        side.setBackground(UniversityPixelTheme.PANEL);
-        side.setBorder(UniversityPixelTheme.cardBorder(UniversityPixelTheme.LINE, 2, 14));
-        side.setPreferredSize(new Dimension(250, 10));
+        side.setBackground(new Color(0xFFF8EB));
+        side.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(CampusArt.BROWN, 3, true), new EmptyBorder(16,16,16,16)));
+        side.setPreferredSize(new Dimension(290, 10));
 
         JPanel stats = new JPanel(new GridLayout(3, 2, 6, 6));
         stats.setOpaque(false);
@@ -112,13 +126,15 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
 
         side.add(UniversityPixelTheme.label("HOLD  ·  NEXT", 12, Font.BOLD, UniversityPixelTheme.GOLD));
         side.add(Box.createVerticalStrut(6));
-        JPanel queue = new JPanel(new GridLayout(2, 2, 6, 6));
-        queue.setOpaque(false);
-        queue.setAlignmentX(Component.LEFT_ALIGNMENT);
-        queue.setMaximumSize(new Dimension(150, 152));
-        queue.add(holdPreview);
-        for (MiniPiecePreview preview : nextPreviews) queue.add(preview);
-        side.add(queue);
+        standardQueue = new JPanel(new GridLayout(2, 2, 6, 6));
+        standardQueue.setOpaque(false);
+        standardQueue.setAlignmentX(Component.LEFT_ALIGNMENT);
+        standardQueue.setMaximumSize(new Dimension(150, 152));
+        standardQueue.setPreferredSize(new Dimension(150, 152));
+        standardQueue.setMinimumSize(new Dimension(150, 152));
+        standardQueue.add(holdPreview);
+        for (MiniPiecePreview preview : nextPreviews) standardQueue.add(preview);
+        side.add(standardQueue);
         side.add(Box.createVerticalGlue());
 
         side.add(UniversityPixelTheme.label("조작", 12, Font.BOLD, UniversityPixelTheme.GOLD));
@@ -155,12 +171,18 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
     public void startMode(String modeName) {
         mode = modeName;
         boolean sprint = "Sprint".equals(modeName), tutorial = "Tutorial".equals(modeName);
-        modeEyebrow.setText(tutorial ? "TUTORIAL" : "LOCAL MODE");
+        modeEyebrow.setText(tutorial ? "CAMPUS GUIDE · TUTORIAL" : "LOCAL MODE");
         titleLabel.setText(sprint ? "40줄 스프린트" : tutorial ? "튜토리얼" : "무한 모드");
         linesCaption.setText(sprint ? "LINES / 40" : "LINES");
         sprintBar.setVisible(sprint);
         sprintBar.setValue(0);
-        tutorialGuide.setVisible(tutorial);
+        tutorialGuide.setVisible(false);
+        // All three local modes now use one consistent illustrated play scene.
+        // The existing Board, HUD and input bindings are shared, not recreated.
+        tutorialScreen.setDisplayMode(modeName);
+        tutorialScreen.mountBoardAndPreviews();
+        screens.show(this, "tutorial");
+        revalidate(); repaint();
         statusLabel.setForeground(UniversityPixelTheme.TEXT_SUB);
         elapsedMillis = 0; runningSince = 0;
         refreshClock();
@@ -205,6 +227,7 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
     private void refreshClock() {
         long total = elapsedMillis + (runningSince == 0 ? 0 : System.currentTimeMillis() - runningSince);
         timeValue.setText(String.format("%02d:%02d.%d", total / 60000, total / 1000 % 60, total / 100 % 10));
+        if (tutorialScreen != null) tutorialScreen.repaint();
         if (!isShowing()) clock.stop();
     }
 
@@ -215,6 +238,7 @@ public class LocalGamePanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.
         tutorialStep.setText(String.format("STEP %02d / 05", Math.min(5, step + 1)));
         // 세션 안내문 앞의 "1/5 ·" 표기는 왼쪽 STEP 표시와 겹치므로 뺀다.
         tutorialInstruction.setText(instruction == null ? "" : instruction.replaceFirst("^\\d+/\\d+\\s*·\\s*", ""));
+        tutorialScreen.repaint();
     }
     public void setCompleted(boolean completed) {
         playerBoard.setOverlayText(completed ? "SPRINT CLEAR" : null);
