@@ -229,6 +229,7 @@ public final class SeongeunApplication implements AutoCloseable {
         localGravity = new Timer(400, event -> advanceGravity());
         localGravity.setCoalesce(true);
         addScreens();
+        applyBackgroundSkin();
         bindActions();
         setAccountStatus(accountStatus);
         buildMenu();
@@ -305,6 +306,7 @@ public final class SeongeunApplication implements AutoCloseable {
         leaderboard.setReloadAction(event -> loadLeaderboard());
         characterShop.setBackAction(event -> show(LOBBY));
         characterShop.setSelectionAction(this::selectCharacter);
+        characterShop.setSkinSelectionAction(this::selectBackgroundSkin);
         storySelect.setBackAction(event -> show(LOBBY));
         for (int index = 0; index < stages.getStages().size(); index++) {
             final int stageIndex = index;
@@ -520,6 +522,8 @@ public final class SeongeunApplication implements AutoCloseable {
         if (!LOBBY.equals(currentScreen) && !CHARACTER_SHOP.equals(currentScreen)) return;
         characterShop.setData(saveData.getCoins(), saveData.getOwned(),
                 saveData.getSelected(), characterPrices);
+        characterShop.setSkinData(saveData.getCoins(), saveData.getOwnedBackgroundSkins(),
+                saveData.getEquippedBackgroundSkin());
         show(CHARACTER_SHOP);
     }
 
@@ -533,6 +537,34 @@ public final class SeongeunApplication implements AutoCloseable {
                 message("선택한 캐릭터: " + selectedCharacter().getName());
             }
         } catch (IllegalArgumentException invalid) { message("캐릭터 구매 조건을 확인하세요."); }
+    }
+
+    private void applyBackgroundSkin() {
+        BackgroundSkin selected = BackgroundSkin.fromId(saveData.getEquippedBackgroundSkin());
+        lobby.setBackgroundSkin(selected);
+        battle.setBackgroundSkin(selected);
+        storySelect.setBackgroundSkin(selected);
+    }
+
+    private void selectBackgroundSkin(BackgroundSkin skin) {
+        if (skin == null) return;
+        try {
+            if (skin == BackgroundSkin.WINTER &&
+                    !kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets.isWinterPackReady()) {
+                message("겨울 배경 이미지 4개가 모두 설치되어 있는지 확인하세요.");
+                return;
+            }
+            PlayerSaveStore.Data next = saveData.getOwnedBackgroundSkins().contains(skin.getId())
+                    ? saveData.withEquippedBackgroundSkin(skin.getId())
+                    : saveData.withPurchasedBackgroundSkin(skin.getId());
+            if (commitSave(next)) {
+                applyBackgroundSkin();
+                showCharacters();
+                message(skin.getDisplayName() + " 장착 완료");
+            }
+        } catch (IllegalArgumentException invalid) {
+            message("배경 스킨 구매 조건을 확인하세요.");
+        }
     }
 
     private CharacterSpec selectedCharacter() {

@@ -38,7 +38,10 @@ public final class PlayerSaveStore {
             Set<String> owned = parse(required(properties, "owned"));
             Set<String> cleared = parse(properties.getProperty("cleared", ""));
             if ("1".equals(version)) cleared = migrateLegacyClears(cleared);
-            Data data = new Data(coins, selected, owned, cleared);
+            // Version 2 save compatibility: old profiles have no skin keys.
+            Set<String> backgroundOwned = parse(properties.getProperty("background.owned", "default"));
+            String backgroundEquipped = properties.getProperty("background.equipped", "default").trim();
+            Data data = new Data(coins, selected, owned, cleared, backgroundOwned, backgroundEquipped);
             if (!data.owned.contains(selected)) throw new IllegalArgumentException("Selected character is not owned");
             loadedVersionOne = "1".equals(version);
             return data;
@@ -64,6 +67,8 @@ public final class PlayerSaveStore {
             properties.setProperty("selected", data.selected);
             properties.setProperty("owned", join(data.owned));
             properties.setProperty("cleared", join(data.cleared));
+            properties.setProperty("background.owned", join(data.ownedBackgroundSkins));
+            properties.setProperty("background.equipped", data.equippedBackgroundSkin);
             try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
                 properties.store(writer, "Tetris Monster local progress");
             }
@@ -112,15 +117,29 @@ public final class PlayerSaveStore {
         private final int coins;
         private final String selected;
         private final Set<String> owned, cleared;
+        private final Set<String> ownedBackgroundSkins;
+        private final String equippedBackgroundSkin;
+
+        /** Kept for compatibility with existing tests and game code. */
         public Data(int coins, String selected, Set<String> owned, Set<String> cleared) {
+            this(coins, selected, owned, cleared, Collections.singleton("default"), "default");
+        }
+
+        public Data(int coins, String selected, Set<String> owned, Set<String> cleared,
+                    Set<String> backgroundOwned, String backgroundEquipped) {
             if (coins < 0 || selected == null || owned == null || cleared == null
+                    || backgroundOwned == null || backgroundEquipped == null
                     || !CHARACTERS.contains(selected) || !owned.contains("student")
-                    || !CHARACTERS.containsAll(owned) || !owned.contains(selected))
+                    || !CHARACTERS.containsAll(owned) || !owned.contains(selected)
+                    || !backgroundOwned.contains("default") || !backgroundOwned.contains(backgroundEquipped))
                 throw new IllegalArgumentException("Invalid local profile");
+            for (String skinId : backgroundOwned) BackgroundSkin.fromId(skinId);
             this.coins = coins;
             this.selected = selected;
             this.owned = Collections.unmodifiableSet(new LinkedHashSet<String>(owned));
             this.cleared = Collections.unmodifiableSet(new LinkedHashSet<String>(cleared));
+            this.ownedBackgroundSkins = Collections.unmodifiableSet(new LinkedHashSet<String>(backgroundOwned));
+            this.equippedBackgroundSkin = backgroundEquipped;
         }
         public static Data initial() {
             return new Data(0, "student", Collections.singleton("student"),
@@ -130,16 +149,40 @@ public final class PlayerSaveStore {
         public String getSelected() { return selected; }
         public Set<String> getOwned() { return owned; }
         public Set<String> getCleared() { return cleared; }
+        public Set<String> getOwnedBackgroundSkins() { return ownedBackgroundSkins; }
+        public String getEquippedBackgroundSkin() { return equippedBackgroundSkin; }
+
+        private Data copy(int nextCoins, String nextSelected, Set<String> nextOwned, Set<String> nextCleared) {
+            return new Data(nextCoins, nextSelected, nextOwned, nextCleared,
+                    ownedBackgroundSkins, equippedBackgroundSkin);
+        }
+
+        /** A first purchase charges coins once and equips the theme immediately. */
+        public Data withPurchasedBackgroundSkin(String skinId) {
+            BackgroundSkin skin = BackgroundSkin.fromId(skinId);
+            if (ownedBackgroundSkins.contains(skinId)) return withEquippedBackgroundSkin(skinId);
+            if (coins < skin.getPrice()) throw new IllegalArgumentException("Not enough coins");
+            Set<String> next = new LinkedHashSet<String>(ownedBackgroundSkins);
+            next.add(skinId);
+            return new Data(coins - skin.getPrice(), selected, owned, cleared, next, skinId);
+        }
+
+        public Data withEquippedBackgroundSkin(String skinId) {
+            BackgroundSkin.fromId(skinId);
+            if (!ownedBackgroundSkins.contains(skinId))
+                throw new IllegalArgumentException("Background skin is not owned");
+            return new Data(coins, selected, owned, cleared, ownedBackgroundSkins, skinId);
+        }
         public Data withCharacter(String id, int cost) {
             if (!CHARACTERS.contains(id) || cost < 0 || coins < cost)
                 throw new IllegalArgumentException("Cannot buy this character");
             Set<String> next = new LinkedHashSet<String>(owned);
             next.add(id);
-            return new Data(coins - cost, id, next, cleared);
+            return copy(coins - cost, id, next, cleared);
         }
         public Data withSelected(String id) {
             if (!owned.contains(id)) throw new IllegalArgumentException("Character is locked");
-            return new Data(coins, id, owned, cleared);
+            return copy(coins, id, owned, cleared);
         }
         /** 클리어 기록은 건드리지 않고 코인만 더한다(재클리어 보상용). */
         public Data withCoins(int amount) {
@@ -152,7 +195,7 @@ public final class PlayerSaveStore {
             if (cleared.contains(encounterId)) return this;
             Set<String> next = new LinkedHashSet<String>(cleared);
             next.add(encounterId);
-            return new Data(Math.addExact(coins, reward), selected, owned, next);
+            return copy(Math.addExact(coins, reward), selected, owned, next);
         }
 
         /** 이미 클리어한 전투의 재도전 보상. 해금 기록은 변경하지 않는다. */
@@ -160,7 +203,7 @@ public final class PlayerSaveStore {
             if (encounterId == null || encounterId.trim().isEmpty() || reward < 0
                     || !cleared.contains(encounterId))
                 throw new IllegalArgumentException("Replay reward requires a cleared encounter");
-            return new Data(Math.addExact(coins, reward), selected, owned, cleared);
+            return copy(Math.addExact(coins, reward), selected, owned, cleared);
         }
     }
 }

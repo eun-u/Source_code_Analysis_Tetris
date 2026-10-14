@@ -212,6 +212,8 @@ public final class TutorialScenePanel extends JPanel {
         centeredLabel(g, "NEXT", NEXT_FRAME_X + 88, QUEUE_TOP + 43, 24, INK);
 
         // Three slim information rows instead of a dominant statistics box.
+        // Unified tutorial stats outer card
+        panel(g, 1147, 236, 268, 218, 20, new Color(0x51321D), new Color(0xFFF8EC), 3f);
         statRow(g, 1155, 246, "icon_time.png", "시간", timeValue.getText());
         statRow(g, 1155, 314, "icon_lines.png", "지운 줄",
                 "Sprint".equals(displayMode) ? linesValue.getText() + "/40" : linesValue.getText());
