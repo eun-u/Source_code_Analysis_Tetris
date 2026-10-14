@@ -19,6 +19,7 @@ import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,8 @@ import kr.ac.jbnu.se.tetris.battle.ParticipantState;
 import kr.ac.jbnu.se.tetris.core.BoardState;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.core.GameState;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BattleDialogue;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BattleLog;
 import kr.ac.jbnu.se.tetris.core.PieceType;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import kr.ac.jbnu.se.tetris.story.MonsterTier;
@@ -332,6 +335,10 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
+    /** PvE에서 보스의 공격·아이템 사용을 알려 주는 알림 큐. */
+    private final BattleLog battleLog = new BattleLog();
+    /** PvE에서 몬스터·플레이어의 대사를 한 줄씩 순서대로 보여 주는 말풍선. */
+    private final BattleDialogue dialogue = new BattleDialogue();
     private IntConsumer itemAction;
     private long feedbackUntil;
     private AudioService audio;
@@ -381,6 +388,11 @@ public class BattlePanel extends JPanel implements Scrollable {
         setComponentZOrder(oreFlights, 0);
         // 넓은 투명 무대는 게임 보드와 HUD 뒤에 표시한다.
         setComponentZOrder(arena, getComponentCount() - 1);
+        // Preserve the existing PvE HUD while placing notifications above the arena.
+        add(battleLog);
+        setComponentZOrder(battleLog, 1);
+        add(dialogue);
+        setComponentZOrder(dialogue, 2);
         showPveHud(true);
     }
 
@@ -727,6 +739,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (online) {
             showPveHud(false);
             enemyColumn.setVisible(true);
+            battleLog.setVisible(false);
+            battleLog.setBounds(0, 0, 0, 0);
+            dialogue.setVisible(false);
+            dialogue.setBounds(0, 0, 0, 0);
             layoutOnline(width, side, top, Math.max(100, height - top - bottom));
             return;
         }
@@ -771,6 +787,16 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFeverLabel.setBounds(16, 7, feverWidth - 32, 23);
         pveFeverBar.setBounds(14, 33, Math.max(20, feverWidth - 99), 27);
         pveFeverPercent.setBounds(feverWidth - 78, 29, 62, 30);
+
+        // Keep PvE notifications to the left of the centered player board.
+        int notificationX = side + 8;
+        int notificationWidth = Math.max(0, boardX - notificationX - 20);
+        battleLog.setVisible(true);
+        battleLog.setBounds(notificationX, top + 56, notificationWidth, BattleLog.preferredHeight());
+        dialogue.setVisible(true);
+        int dialogueY = Math.max(top + 56 + BattleLog.preferredHeight() + 8,
+                footerTop - DIALOGUE_BOTTOM_RESERVE - BattleDialogue.HEIGHT);
+        dialogue.setBounds(notificationX, dialogueY, notificationWidth, BattleDialogue.HEIGHT);
     }
 
     private void showPveHud(boolean pve) {
@@ -890,10 +916,12 @@ public class BattlePanel extends JPanel implements Scrollable {
         repaint();
     }
     public void resetFeedback() {
+        dialogue.clear();
         feedbackGeneration++;
         previousLocal = previousEnemy = null; lastEventId = 0; feedbackUntil = 0;
         playerBoard.resetEffects(); enemyBoard.resetEffects();
         oreFlights.reset();
+        battleLog.clear();
         arena.resetForEncounter();
         garbage.setPending(0, 0);
     }
@@ -917,11 +945,13 @@ public class BattlePanel extends JPanel implements Scrollable {
         timer.start();
     }
     public void applyEvents(List<BattleEvent> events, String localId) {
+        Turn mine = new Turn(), theirs = new Turn();
         for (BattleEvent event : events) {
             if (event.getEventId() <= lastEventId) continue;
             lastEventId = event.getEventId();
             boolean local = localId != null && localId.equals(event.getActorId());
             Board board = local ? playerBoard : enemyBoard;
+            collectForLog(local ? mine : theirs, event);
             if (event.getType() == BattleEvent.Type.DAMAGE) {
                 if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
                 else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
@@ -957,6 +987,78 @@ public class BattlePanel extends JPanel implements Scrollable {
                 } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
             }
         }
+        if (!online) {
+            logTurn(mine, BattleLog.Side.PLAYER, "나");
+            logTurn(theirs, BattleLog.Side.ENEMY, enemyLabel());
+        }
+    }
+
+    /** 한 번의 전투 결과 묶음에서 한 참가자가 한 일을 모아 알림 한 줄로 합치기 위한 누적값. */
+    private static final class Turn {
+        int lines, combo, damage, garbage;
+        boolean perfect;
+        final List<String> itemsUsed = new ArrayList<String>();
+        final List<String> removed = new ArrayList<String>();
+        final List<String> acquired = new ArrayList<String>();
+    }
+
+    private static void collectForLog(Turn turn, BattleEvent event) {
+        switch (event.getType()) {
+            case DAMAGE: turn.damage += event.getAmount(); break;
+            case GARBAGE_SENT: turn.garbage += event.getAmount(); break;
+            case ITEM_USED: turn.itemsUsed.add(event.getReason()); break;
+            case ITEM_REMOVED: turn.removed.add(event.getReason()); break;
+            case ITEM_ACQUIRED: turn.acquired.add(event.getReason()); break;
+            case CORE_EVENT:
+                GameEvent core = event.getCoreEvent();
+                if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
+                    turn.lines += core.getLineCount();
+                    turn.combo = Math.max(turn.combo, core.getCombo());
+                    turn.perfect |= core.isPerfectClear();
+                }
+                break;
+            default: break;
+        }
+    }
+
+    private String enemyLabel() {
+        String name = enemyName.getText();
+        return name == null || name.trim().isEmpty() || "MONSTER".equals(name) ? "상대" : name.trim();
+    }
+
+    /** 같은 공격의 줄 클리어·피해·가비지를 한 줄로 합치고, 아이템 사용은 따로 알린다. */
+    private void logTurn(Turn turn, BattleLog.Side side, String who) {
+        if (turn.lines > 0 || turn.damage > 0 || turn.garbage > 0) {
+            boolean bomb = turn.lines == 0 && turn.itemsUsed.remove("garbage_bomb");
+            StringBuilder text = new StringBuilder(who).append(" · ");
+            if (bomb) text.append(itemName("garbage_bomb"));
+            else if (turn.lines > 0) {
+                text.append(turn.lines).append("줄 클리어");
+                if (turn.perfect) text.append(" 퍼펙트!");
+                if (turn.combo > 0) text.append(" · ").append(turn.combo).append("콤보");
+            } else text.append("공격");
+            List<String> effects = new ArrayList<String>();
+            if (turn.damage > 0) effects.add("피해 " + turn.damage);
+            if (turn.garbage > 0) effects.add("가비지 " + turn.garbage + "줄");
+            if (!effects.isEmpty()) text.append(" → ").append(String.join(" + ", effects));
+            battleLog.push(side, text.toString());
+        }
+        for (String id : turn.itemsUsed) {
+            String name = itemName(id);
+            if ("nullify".equals(id)) {
+                // 무효화는 상대의 아이템을 지운다: 내가 쓰면 "상대 ○○", 상대가 쓰면 "내 ○○"가 제거된다.
+                String owner = side == BattleLog.Side.PLAYER ? "상대 " : "내 ";
+                battleLog.push(side, turn.removed.isEmpty() ? who + " · " + name + " 사용 (아이템 없음)"
+                        : who + " · " + name + " → " + owner + itemName(turn.removed.get(0)) + " 제거");
+            } else if ("damage_boost".equals(id) || "shield".equals(id)) {
+                battleLog.push(side, who + " · " + name + " 발동");
+            } else {
+                battleLog.push(side, who + " · " + name + " 사용");
+            }
+        }
+        // 상대가 무엇을 들고 있는지는 보드에 안 보이므로 상대의 획득만 알린다.
+        if (side == BattleLog.Side.ENEMY)
+            for (String id : turn.acquired) battleLog.push(side, who + " · 아이템 획득 · " + itemName(id));
     }
     private boolean showOreFlight(BattleEvent event) {
         int x = event.getItemSourceX(), y = event.getItemSourceY();
@@ -970,6 +1072,20 @@ public class BattlePanel extends JPanel implements Scrollable {
         oreFlights.launch(from, to, targetSlot.getWidth(), targetSlot.getHeight());
         return true;
     }
+    /** 대사 상수: 플레이어 체력바(무대 맨 아래)가 차지하는 높이. */
+    private static final int DIALOGUE_BOTTOM_RESERVE = 58;
+
+    /**
+     * 몬스터·플레이어의 대사를 말풍선 대기열에 넣는다(PvE 전용, 온라인에서는 무시).
+     * speaker가 "몬스터"/"플레이어"면 해당 색으로, 그 밖에는 내레이션으로 표시한다.
+     */
+    public void showDialogue(String speaker, String text) {
+        if (online) return;
+        BattleDialogue.Speaker who = "몬스터".equals(speaker) ? BattleDialogue.Speaker.MONSTER
+                : "플레이어".equals(speaker) ? BattleDialogue.Speaker.PLAYER : BattleDialogue.Speaker.NARRATION;
+        dialogue.enqueue(who, text);
+    }
+
     public void setFeedback(String text) {
         feedbackUntil = System.currentTimeMillis() + 2500;
         status.setText("▶ " + text);

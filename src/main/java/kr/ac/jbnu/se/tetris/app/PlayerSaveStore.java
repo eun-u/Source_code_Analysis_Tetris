@@ -141,6 +141,11 @@ public final class PlayerSaveStore {
             if (!owned.contains(id)) throw new IllegalArgumentException("Character is locked");
             return new Data(coins, id, owned, cleared);
         }
+        /** 클리어 기록은 건드리지 않고 코인만 더한다(재클리어 보상용). */
+        public Data withCoins(int amount) {
+            if (amount < 0) throw new IllegalArgumentException("Invalid reward");
+            return amount == 0 ? this : new Data(Math.addExact(coins, amount), selected, owned, cleared);
+        }
         public Data withFirstClear(String encounterId, int reward) {
             if (encounterId == null || encounterId.trim().isEmpty() || reward < 0)
                 throw new IllegalArgumentException("Invalid reward");

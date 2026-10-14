@@ -84,11 +84,29 @@ public final class RenderGameServerTest {
             if (probes[0].awaitOutcome(forgedId).getRequestOutcome().isAccepted()) {
                 throw new AssertionError("Cross-account token refresh accepted");
             }
+            java.util.Set<String> roomCodes = new java.util.HashSet<String>();
             for (int pair = 0; pair < 3; pair++) {
                 Probe first = probes[pair * 2], second = probes[pair * 2 + 1];
                 first.client.send(RoomCommand.createRoom(2));
                 NetworkUpdate created = first.await(NetworkUpdate.Type.ROOM_STATE);
-                second.client.send(RoomCommand.joinRoom(created.getRoomId()));
+                // 방 코드는 헷갈리는 문자(0/O/1/I/L)를 뺀 6자리 영숫자이고 방마다 달라야 한다.
+                if (!created.getRoomId().matches("[A-HJ-NP-Z2-9]{6}")) {
+                    throw new AssertionError("Room code must be 6 chars: " + created.getRoomId());
+                }
+                if (!roomCodes.add(created.getRoomId())) {
+                    throw new AssertionError("Duplicate room code: " + created.getRoomId());
+                }
+                // 존재하지 않는 코드로 입장하면 ROOM_NOT_FOUND여야 한다(이미 방에 있는 사람 말고 다른 참가자가 시도).
+                if (pair == 0) {
+                    long missing = probes[5].client.send(RoomCommand.joinRoom("ZZZZZZ"));
+                    NetworkUpdate rejected = probes[5].awaitOutcome(missing);
+                    if (rejected.getRequestOutcome().isAccepted()
+                            || !"ROOM_NOT_FOUND".equals(rejected.getRequestOutcome().getReasonCode())) {
+                        throw new AssertionError("Unknown room code must be ROOM_NOT_FOUND");
+                    }
+                }
+                // 소문자로 입력해도 같은 방에 입장해야 한다.
+                second.client.send(RoomCommand.joinRoom(created.getRoomId().toLowerCase()));
                 second.await(NetworkUpdate.Type.ROOM_STATE);
                 first.client.send(RoomCommand.setReady(true));
                 second.client.send(RoomCommand.setReady(true));
@@ -126,6 +144,10 @@ public final class RenderGameServerTest {
         configuredSocketLimitRejectsExcess(verifier);
         unauthenticatedTimeoutReleasesCapacity();
         invalidatedMatchIsTerminal(verifier);
+        pvpGravityFollowsRealTime(verifier);
+        timeWarpSlowsOnlyItsUserOnServer(verifier);
+        pvpSpeedsUpAfterOneMinuteOnServer(verifier);
+        roomCodesAreShortAndAvoidExistingRooms(verifier);
         lostFinishResponseKeepsOrder(verifier);
         orphanPendingVisibleInDrainStatus(verifier);
         slowAuthRefreshMustNotBlockRanking();
@@ -564,6 +586,254 @@ public final class RenderGameServerTest {
             if (a != null) a.client.close();
             if (b != null) b.client.close();
             if (c != null) c.client.close();
+            server.close();
+        }
+    }
+
+    /**
+     * 서버가 400ms 고정 틱이 아니라 실제 경과 시간으로 PvP 낙하를 처리하는지 클라이언트가 받는 스냅샷으로 확인한다.
+     * PvP 시작 낙하 간격은 500ms이므로 4초 동안 참가자 2명이 합쳐 약 16칸 내려가야 한다(400ms 고정이면 약 20칸).
+     */
+    private static void pvpGravityFollowsRealTime(TokenVerifier verifier) throws Exception {
+        TestStore store = new TestStore();
+        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
+        server.start();
+        Probe a = null, b = null;
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            a = connectProbe(USERS[0], server.getPort());
+            b = connectProbe(USERS[1], server.getPort());
+            a.client.send(RoomCommand.createRoom(2));
+            String roomId = a.await(NetworkUpdate.Type.ROOM_STATE).getRoomId();
+            b.client.send(RoomCommand.joinRoom(roomId));
+            b.await(NetworkUpdate.Type.ROOM_STATE);
+            a.client.send(RoomCommand.setReady(true));
+            b.client.send(RoomCommand.setReady(true));
+            a.await(NetworkUpdate.Type.MATCH_STARTED);
+            b.await(NetworkUpdate.Type.MATCH_STARTED);
+
+            // 시작 직후 첫 스냅샷을 기준점으로 삼는다.
+            NetworkUpdate first = a.await(NetworkUpdate.Type.SNAPSHOT);
+            long wallStart = System.nanoTime();
+            long tickStart = totalTicks(first);
+            long elapsedStart = first.getBattleState().getElapsedMillis();
+            long lastVersion = first.getBattleState().getVersion();
+            int snapshots = 0;
+            NetworkUpdate last = first;
+            long lastWall = wallStart; // 마지막 스냅샷을 받은 시각: 게임 시계는 이 시각과 비교해야 한다.
+            long until = wallStart + TimeUnit.SECONDS.toNanos(4);
+            while (System.nanoTime() < until) {
+                NetworkUpdate update = a.updates.poll(50, TimeUnit.MILLISECONDS);
+                if (update == null || update.getType() != NetworkUpdate.Type.SNAPSHOT) continue;
+                snapshots++;
+                if (update.getBattleState().getVersion() < lastVersion)
+                    throw new AssertionError("Snapshot version went backwards");
+                lastVersion = update.getBattleState().getVersion();
+                last = update;
+                lastWall = System.nanoTime();
+            }
+            long wallMillis = (lastWall - wallStart) / 1_000_000L;
+            long steps = totalTicks(last) - tickStart;
+            long gameMillis = last.getBattleState().getElapsedMillis() - elapsedStart;
+
+            // 1) 게임 시계는 실제 시간과 같이 흘러야 한다(빨리 감기거나 느려지지 않는다).
+            if (Math.abs(gameMillis - wallMillis) > 250)
+                throw new AssertionError("Game clock drifted: game=" + gameMillis + "ms wall=" + wallMillis + "ms");
+            // 2) PvP 시작 간격 500ms: 두 참가자 합쳐 (게임 시간/500)*2칸. 400ms 고정이면 이보다 25% 많다.
+            long expected = gameMillis * 2 / 500;
+            if (steps < expected - 2 || steps > expected + 2)
+                throw new AssertionError("PvP gravity steps=" + steps + " expected~" + expected
+                        + " (500ms interval) over " + gameMillis + "ms");
+            // 3) 스냅샷이 끊기지 않으면서(하트비트 400ms 이하) 과하게 쏟아지지도 않는다.
+            if (snapshots < wallMillis / 500 || snapshots > wallMillis / 50)
+                throw new AssertionError("Snapshot cadence off: " + snapshots + " in " + wallMillis + "ms");
+            System.out.println("pvpGravityFollowsRealTime: wall=" + wallMillis + "ms game=" + gameMillis
+                    + "ms steps=" + steps + " (expected~" + expected + ") snapshots=" + snapshots);
+        } finally {
+            if (a != null) a.client.close();
+            if (b != null) b.client.close();
+            server.close();
+        }
+    }
+
+    /**
+     * 서버 전체 경로로 시간 왜곡을 검증한다: 아이템을 쓴 참가자의 낙하만 +100ms(500→600ms) 느려져야 한다.
+     * 아이템 획득은 별도 규칙이라 서버 방의 참가자 슬롯에 직접 넣고, 사용은 실제 클라이언트 메시지로 보낸다.
+     */
+    @SuppressWarnings("unchecked")
+    private static void timeWarpSlowsOnlyItsUserOnServer(TokenVerifier verifier) throws Exception {
+        TestStore store = new TestStore();
+        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
+        server.start();
+        Probe a = null, b = null;
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            a = connectProbe(USERS[0], server.getPort());
+            b = connectProbe(USERS[1], server.getPort());
+            a.client.send(RoomCommand.createRoom(2));
+            String roomId = a.await(NetworkUpdate.Type.ROOM_STATE).getRoomId();
+            b.client.send(RoomCommand.joinRoom(roomId));
+            b.await(NetworkUpdate.Type.ROOM_STATE);
+            a.client.send(RoomCommand.setReady(true));
+            b.client.send(RoomCommand.setReady(true));
+            a.await(NetworkUpdate.Type.MATCH_STARTED);
+            b.await(NetworkUpdate.Type.MATCH_STARTED);
+            a.await(NetworkUpdate.Type.SNAPSHOT);
+
+            // 참가자 A의 슬롯에 시간 왜곡 1개를 넣는다(테스트 전용 접근).
+            java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
+            roomsField.setAccessible(true);
+            Object room = ((Map<?, ?>) roomsField.get(server)).get(roomId);
+            java.lang.reflect.Field battleField = room.getClass().getDeclaredField("battle");
+            battleField.setAccessible(true);
+            kr.ac.jbnu.se.tetris.battle.BattleManager battle =
+                    (kr.ac.jbnu.se.tetris.battle.BattleManager) battleField.get(room);
+            java.lang.reflect.Field partsField = kr.ac.jbnu.se.tetris.battle.BattleManager.class
+                    .getDeclaredField("participants");
+            partsField.setAccessible(true);
+            Object participant = ((Map<?, ?>) partsField.get(battle)).get(USERS[0]);
+            java.lang.reflect.Field itemsField = participant.getClass().getDeclaredField("items");
+            java.lang.reflect.Field chargesField = participant.getClass().getDeclaredField("itemCharges");
+            itemsField.setAccessible(true);
+            chargesField.setAccessible(true);
+            synchronized (battle) {
+                ((java.util.List<String>) itemsField.get(participant)).add("time_warp");
+                ((java.util.List<Integer>) chargesField.get(participant)).add(1);
+            }
+
+            long requestId = a.client.send(new kr.ac.jbnu.se.tetris.core.PlayerIntent(
+                    kr.ac.jbnu.se.tetris.core.GameAction.Type.USE_ITEM,
+                    new kr.ac.jbnu.se.tetris.core.GameAction.ItemUse("time_warp", USERS[0])));
+            NetworkUpdate outcome = a.awaitOutcome(requestId);
+            if (!outcome.getRequestOutcome().isAccepted())
+                throw new AssertionError("Time warp rejected: " + outcome.getRequestOutcome().getReasonCode());
+
+            NetworkUpdate first = a.await(NetworkUpdate.Type.SNAPSHOT);
+            long tickA0 = first.getBattleState().getParticipant(USERS[0]).getGameState().getTick();
+            long tickB0 = first.getBattleState().getParticipant(USERS[1]).getGameState().getTick();
+            long elapsed0 = first.getBattleState().getElapsedMillis();
+            NetworkUpdate last = first;
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+            while (System.nanoTime() < until) {
+                NetworkUpdate update = a.updates.poll(50, TimeUnit.MILLISECONDS);
+                if (update != null && update.getType() == NetworkUpdate.Type.SNAPSHOT) last = update;
+            }
+            long stepsA = last.getBattleState().getParticipant(USERS[0]).getGameState().getTick() - tickA0;
+            long stepsB = last.getBattleState().getParticipant(USERS[1]).getGameState().getTick() - tickB0;
+            long gameMillis = last.getBattleState().getElapsedMillis() - elapsed0;
+            // 워프 중 A는 600ms 간격, B는 500ms 간격이어야 한다(기대값 gameMillis/600, gameMillis/500).
+            long expectA = gameMillis / 600, expectB = gameMillis / 500;
+            if (Math.abs(stepsA - expectA) > 1 || Math.abs(stepsB - expectB) > 1 || stepsA >= stepsB)
+                throw new AssertionError("Time warp not applied per participant: A=" + stepsA + " (expected~" + expectA
+                        + ") B=" + stepsB + " (expected~" + expectB + ") over " + gameMillis + "ms");
+            System.out.println("timeWarpSlowsOnlyItsUserOnServer: A(warp)=" + stepsA + " B=" + stepsB
+                    + " over " + gameMillis + "ms");
+        } finally {
+            if (a != null) a.client.close();
+            if (b != null) b.client.close();
+            server.close();
+        }
+    }
+
+    /**
+     * 60초 이후 낙하 간격이 줄어드는지 서버 전체 경로로 검증한다. 실제로 몇 분을 기다릴 수 없으므로
+     * 경기 경과 시간만 150초로 앞당긴 뒤(테스트 전용 접근) 낙하 속도를 잰다: 150초 시점의 간격은 300ms이다.
+     */
+    private static void pvpSpeedsUpAfterOneMinuteOnServer(TokenVerifier verifier) throws Exception {
+        TestStore store = new TestStore();
+        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
+        server.start();
+        Probe a = null, b = null;
+        try {
+            assertEquals(200, request("http://127.0.0.1:" + server.getPort() + "/admin/open",
+                    "POST", "Bearer " + ADMIN));
+            a = connectProbe(USERS[0], server.getPort());
+            b = connectProbe(USERS[1], server.getPort());
+            a.client.send(RoomCommand.createRoom(2));
+            String roomId = a.await(NetworkUpdate.Type.ROOM_STATE).getRoomId();
+            b.client.send(RoomCommand.joinRoom(roomId));
+            b.await(NetworkUpdate.Type.ROOM_STATE);
+            a.client.send(RoomCommand.setReady(true));
+            b.client.send(RoomCommand.setReady(true));
+            a.await(NetworkUpdate.Type.MATCH_STARTED);
+            b.await(NetworkUpdate.Type.MATCH_STARTED);
+            a.await(NetworkUpdate.Type.SNAPSHOT);
+
+            java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
+            roomsField.setAccessible(true);
+            Object room = ((Map<?, ?>) roomsField.get(server)).get(roomId);
+            java.lang.reflect.Field battleField = room.getClass().getDeclaredField("battle");
+            battleField.setAccessible(true);
+            kr.ac.jbnu.se.tetris.battle.BattleManager battle =
+                    (kr.ac.jbnu.se.tetris.battle.BattleManager) battleField.get(room);
+            java.lang.reflect.Field elapsedField = kr.ac.jbnu.se.tetris.battle.BattleManager.class
+                    .getDeclaredField("elapsedMillis");
+            elapsedField.setAccessible(true);
+            synchronized (battle) { elapsedField.setLong(battle, 150000L); }
+
+            NetworkUpdate first = a.await(NetworkUpdate.Type.SNAPSHOT);
+            long tick0 = totalTicks(first);
+            long elapsed0 = first.getBattleState().getElapsedMillis();
+            NetworkUpdate last = first;
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (System.nanoTime() < until) {
+                NetworkUpdate update = a.updates.poll(50, TimeUnit.MILLISECONDS);
+                if (update != null && update.getType() == NetworkUpdate.Type.SNAPSHOT) last = update;
+            }
+            long steps = totalTicks(last) - tick0;
+            long gameMillis = last.getBattleState().getElapsedMillis() - elapsed0;
+            // 150초 시점 간격은 300ms: 두 참가자 합쳐 gameMillis/300*2칸. 500ms면 이보다 40% 적고, 400ms 고정이면 25% 적다.
+            long expected = gameMillis / 300 * 2;
+            if (Math.abs(steps - expected) > 2)
+                throw new AssertionError("PvP speed-up not applied: steps=" + steps + " expected~" + expected
+                        + " (300ms interval) over " + gameMillis + "ms");
+            System.out.println("pvpSpeedsUpAfterOneMinuteOnServer: steps=" + steps + " expected~" + expected
+                    + " over " + gameMillis + "ms");
+        } finally {
+            if (a != null) a.client.close();
+            if (b != null) b.client.close();
+            server.close();
+        }
+    }
+
+    private static long totalTicks(NetworkUpdate update) {
+        long total = 0;
+        for (kr.ac.jbnu.se.tetris.battle.ParticipantState p : update.getBattleState().getParticipants().values())
+            total += p.getGameState().getTick();
+        return total;
+    }
+
+    /**
+     * 방 코드 생성기 검증: 항상 6자리이고, 헷갈리는 문자(0/O/1/I/L)를 쓰지 않으며, 31개 문자를 고르게 쓰고,
+     * 이미 열려 있는 방의 코드와는 절대 겹치지 않는다(2만 개 방을 채워 놓고 계속 뽑아 확인).
+     */
+    @SuppressWarnings("unchecked")
+    private static void roomCodesAreShortAndAvoidExistingRooms(TokenVerifier verifier) throws Exception {
+        RenderGameServer server = new RenderGameServer(verifier, new TestStore(), ADMIN, 0);
+        try {
+            java.lang.reflect.Method generator = RenderGameServer.class.getDeclaredMethod("newRoomCode");
+            generator.setAccessible(true);
+            java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
+            roomsField.setAccessible(true);
+            Map<String, Object> rooms = (Map<String, Object>) roomsField.get(server);
+            Class<?> roomClass = Class.forName(RenderGameServer.class.getName() + "$Room");
+            java.lang.reflect.Constructor<?> roomConstructor = roomClass.getDeclaredConstructor(String.class);
+            roomConstructor.setAccessible(true);
+            java.util.Set<Character> usedChars = new java.util.HashSet<Character>();
+            for (int i = 0; i < 20000; i++) {
+                String code = (String) generator.invoke(server);
+                if (code == null || !code.matches("[A-HJ-NP-Z2-9]{6}"))
+                    throw new AssertionError("Bad room code: " + code);
+                if (rooms.containsKey(code)) throw new AssertionError("Room code collided with open room: " + code);
+                for (char c : code.toCharArray()) usedChars.add(c);
+                rooms.put(code, roomConstructor.newInstance(code));
+            }
+            if (usedChars.size() != 31)
+                throw new AssertionError("Room code alphabet not fully used: " + usedChars.size());
+            System.out.println("roomCodesAreShortAndAvoidExistingRooms: 20000 unique codes, 31 characters used");
+        } finally {
             server.close();
         }
     }
