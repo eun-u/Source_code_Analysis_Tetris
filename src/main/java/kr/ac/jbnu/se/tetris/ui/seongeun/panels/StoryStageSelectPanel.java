@@ -1,4 +1,6 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
+import kr.ac.jbnu.se.tetris.app.BackgroundSkin;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets;
 
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -44,6 +46,7 @@ public class StoryStageSelectPanel extends JPanel {
     private final List<String> stageIds = new ArrayList<String>();
     private final Map<String, List<ActionListener>> listeners = new LinkedHashMap<String, List<ActionListener>>();
     private final JLabel completion = UniversityPixelTheme.chip("0 / 9 CLEAR", UniversityPixelTheme.GOLD);
+    private BackgroundSkin backgroundSkin = BackgroundSkin.DEFAULT;
     private final MapView map = new MapView();
     private final PixelButton start = new PixelButton("도전하기");
     private final JLabel detailArt = new JLabel();
@@ -171,6 +174,11 @@ public class StoryStageSelectPanel extends JPanel {
         select(current);
     }
 
+    public void setBackgroundSkin(BackgroundSkin skin) {
+        backgroundSkin = skin == null ? BackgroundSkin.DEFAULT : skin;
+        map.repaint();
+    }
+
     public void setBackAction(ActionListener listener) { back.addActionListener(listener); }
     public void setStageAction(int stageIndex, String encounterId, ActionListener listener) {
         List<ActionListener> registered = listeners.get(encounterId);
@@ -277,7 +285,13 @@ public class StoryStageSelectPanel extends JPanel {
                 int x0 = region * w / 3, x1 = (region + 1) * w / 3;
                 g.setPaint(new GradientPaint(0, 0, skies[region][0], 0, h, skies[region][1]));
                 g.fillRect(x0, 0, x1 - x0, h);
-                BufferedImage scene = REGIONS[region];
+                // Story map winter chapter backgrounds: same scene assets as story battle.
+                BufferedImage scene = null;
+                if (backgroundSkin == BackgroundSkin.WINTER) {
+                    String sceneId = region == 0 ? "university" : region == 1 ? "graduation" : "employment";
+                    scene = BackgroundSkinAssets.image(BackgroundSkin.WINTER, sceneId);
+                }
+                if (scene == null) scene = REGIONS[region];
                 if (scene != null) {
                     int sourceWidth = Math.max(1, scene.getWidth() / 3);
                     int sourceX = Math.min(scene.getWidth() - sourceWidth,

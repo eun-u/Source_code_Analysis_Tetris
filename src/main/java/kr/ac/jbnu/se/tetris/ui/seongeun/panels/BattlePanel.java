@@ -347,6 +347,14 @@ public class BattlePanel extends JPanel implements Scrollable {
     private ParticipantState previousLocal, previousEnemy;
     private boolean online;
     private String chapter = "university";
+    private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
+            kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT;
+
+    public void setBackgroundSkin(kr.ac.jbnu.se.tetris.app.BackgroundSkin skin) {
+        backgroundSkin = skin == null ? kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT : skin;
+        arena.setBackgroundSkin(backgroundSkin);
+        repaint();
+    }
     private int feedbackGeneration;
 
     public BattlePanel() {
@@ -604,7 +612,10 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private void paintPveShell(Graphics2D g) {
-        BufferedImage backdrop = "graduation".equals(chapter) ? GRADUATION_BG
+        BufferedImage winterBackdrop = kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets
+                .image(backgroundSkin, chapter);
+        BufferedImage backdrop = winterBackdrop != null ? winterBackdrop
+                : "graduation".equals(chapter) ? GRADUATION_BG
                 : "employment".equals(chapter) ? EMPLOYMENT_BG
                 : UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG;
         if (backdrop != null) paintBackdropCover(g, backdrop, getWidth(), getHeight());

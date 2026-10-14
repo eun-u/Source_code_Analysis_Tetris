@@ -41,6 +41,14 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
  * 오른쪽 아래에 다음 스토리 전투 카드를 둔다. ↑↓·Enter로도 고를 수 있다.
  */
 public class MainLobbyPanel extends JPanel {
+    private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
+            kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT;
+
+    public void setBackgroundSkin(kr.ac.jbnu.se.tetris.app.BackgroundSkin skin) {
+        backgroundSkin = skin == null ? kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT : skin;
+        nextCard.setBackgroundSkin(backgroundSkin);
+        repaint();
+    }
     private static final BufferedImage CAMPUS = loadCampus();
     private static final BufferedImage LOBBY_LOGO = loadLobbyLogo();
     private static final BufferedImage COIN_IMAGE = loadCoinImage();
@@ -55,6 +63,7 @@ public class MainLobbyPanel extends JPanel {
     private static final Rectangle PROFILE_BOUNDS = visibleBounds(PROFILE_IMAGE);
     // Optional: a wooden/parchment board without baked-in text or character artwork.
     private static final BufferedImage NEXT_STAGE_FRAME = loadOptionalImage("/ui/campus-rpg/cards/lobby_enemyBoard.png");
+    private static final BufferedImage WINTER_NEXT_STAGE_FRAME = loadOptionalImage("/ui/campus-rpg/skins/winter/board_winter.png");
     // Stage preview art is loaded only once. Each uses its native 1672x941 aspect ratio.
     private static final BufferedImage UNIVERSITY_STAGE_IMAGE = loadOptionalImage("/ui/campus-rpg/university-battle-bg.png");
     private static final BufferedImage GRADUATION_STAGE_IMAGE = loadOptionalImage("/ui/campus-rpg/graduation-bg.png");
@@ -483,13 +492,18 @@ public class MainLobbyPanel extends JPanel {
             int w = getWidth(), h = getHeight();
             g.setPaint(new GradientPaint(0, 0, new Color(0xD9DBD2), 0, h, UniversityPixelTheme.BG));
             g.fillRect(0, 0, w, h);
-            if (CAMPUS != null) {
-                int artWidth = Math.max(w, CAMPUS.getWidth() * h / CAMPUS.getHeight());
-                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-                g.drawImage(CAMPUS, (w - artWidth) / 2, 0, artWidth, h, null);
+            BufferedImage selectedBackground = kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets
+                    .image(backgroundSkin, "lobby");
+            BufferedImage lobbyArt = selectedBackground != null ? selectedBackground : CAMPUS;
+            if (lobbyArt != null) {
+                int artWidth = Math.max(w, lobbyArt.getWidth() * h / lobbyArt.getHeight());
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(lobbyArt, (w - artWidth) / 2, 0, artWidth, h, null);
             }
             // 배경은 공간감을 주되 메뉴와 제목 뒤에서는 연한 콘크리트색으로 물러난다.
-            g.setPaint(new GradientPaint(0, 0, new Color(228, 229, 220, 205),
+            g.setPaint(new GradientPaint(0, 0,
+                    backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER
+                            ? new Color(238, 242, 251, 115) : new Color(228, 229, 220, 205),
                     Math.round(w * 0.67f), 0, new Color(228, 229, 220, 18)));
             g.fillRect(0, 0, w, h);
             g.setPaint(new GradientPaint(0, h - 110, new Color(220, 222, 212, 0),
@@ -566,6 +580,13 @@ public class MainLobbyPanel extends JPanel {
         private BufferedImage cachedSprite;
         private Rectangle cachedSpriteBounds;
         private String cachedKey;
+        private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
+                kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT;
+
+        void setBackgroundSkin(kr.ac.jbnu.se.tetris.app.BackgroundSkin skin) {
+            backgroundSkin = skin == null ? kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT : skin;
+            repaint();
+        }
 
         NextBattleCard() {
             setOpaque(false);
@@ -584,8 +605,10 @@ public class MainLobbyPanel extends JPanel {
                 g.translate((getWidth() - side) / 2, (getHeight() - side) / 2);
                 g.scale(side / 400.0, side / 400.0);
 
-                if (NEXT_STAGE_FRAME != null) {
-                    g.drawImage(NEXT_STAGE_FRAME, 0, 0, 400, 400, null);
+                BufferedImage boardFrame = backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER
+                        && WINTER_NEXT_STAGE_FRAME != null ? WINTER_NEXT_STAGE_FRAME : NEXT_STAGE_FRAME;
+                if (boardFrame != null) {
+                    g.drawImage(boardFrame, 0, 0, 400, 400, null);
                 } else {
                     g.setColor(new Color(0x725032));
                     g.fillRoundRect(23, 36, 354, 350, 25, 25);
@@ -643,7 +666,8 @@ public class MainLobbyPanel extends JPanel {
                 }
                 if (cachedSprite != null && cachedSpriteBounds != null) {
                     Rectangle crop = cachedSpriteBounds;
-                    final int boxX = 203, boxY = 218, boxW = 134, boxH = 104;
+                    final int boxX = 203, boxY = 218, boxW = 134;
+                    final int boxH = backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER ? 93 : 104;
                     double scale = Math.min(boxW / (double) crop.width,
                             boxH / (double) crop.height);
                     int dw = Math.max(1, (int) Math.round(crop.width * scale));
@@ -658,8 +682,10 @@ public class MainLobbyPanel extends JPanel {
                 // Move progression UP to separate it from the wooden frame below.
                 g.setColor(new Color(0x413025));
                 g.setFont(UniversityPixelTheme.lobbyFont(12, Font.BOLD));
-                g.drawString("진행도 " + cleared + " / " + total, innerX, 318);
-                final int barY = 331, barH = 8;
+                int progressY = backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER ? 307 : 318;
+                g.drawString("진행도 " + cleared + " / " + total, innerX, progressY);
+                final int barY = backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER ? 318 : 331;
+                final int barH = 8;
                 g.setColor(new Color(0xD4C0A2));
                 g.fillRoundRect(innerX, barY, innerWidth, barH, 8, 8);
                 int amount = (int) Math.round(innerWidth * Math.max(0.0,
@@ -675,7 +701,14 @@ public class MainLobbyPanel extends JPanel {
         }
 
         /** Resolve the story chapter using actual stage labels, never the lobby wallpaper. */
-        private static BufferedImage stagePreviewFor(String chapter) {
+        private BufferedImage stagePreviewFor(String chapter) {
+            if (backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER) {
+                String scene = chapter != null && chapter.contains("졸업") ? "graduation"
+                        : chapter != null && chapter.contains("취업") ? "employment" : "university";
+                BufferedImage winter = kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets
+                        .image(backgroundSkin, scene);
+                if (winter != null) return winter;
+            }
             if (chapter != null) {
                 if (chapter.contains("졸업")) return GRADUATION_STAGE_IMAGE;
                 if (chapter.contains("취업")) return EMPLOYMENT_STAGE_IMAGE;

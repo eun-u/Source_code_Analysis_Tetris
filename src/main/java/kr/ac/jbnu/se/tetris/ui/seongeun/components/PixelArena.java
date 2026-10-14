@@ -89,6 +89,13 @@ public final class PixelArena extends JComponent {
     private String playerName = "PLAYER", monsterName = "MONSTER";
     private String monsterArtPath;
     private String chapter = "university";
+    private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
+            kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT;
+
+    public void setBackgroundSkin(kr.ac.jbnu.se.tetris.app.BackgroundSkin skin) {
+        backgroundSkin = skin == null ? kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT : skin;
+        repaint();
+    }
     private boolean online;
     private boolean widePve;
     private MonsterTier pattern = MonsterTier.NORMAL;
@@ -532,7 +539,9 @@ public final class PixelArena extends JComponent {
         if ("graduation".equals(chapter)) { skyTop = new Color(0x646C6B); skyBottom = new Color(0xA09B8D); }
         else if ("employment".equals(chapter)) { skyTop = new Color(0x657875); skyBottom = new Color(0xA8A897); }
         else { skyTop = new Color(0x76847D); skyBottom = new Color(0xB2AA98); }
-        BufferedImage backdrop = "graduation".equals(chapter) ? GRADUATION_BG
+        BufferedImage winterBackdrop = online ? null : BackgroundSkinAssets.image(backgroundSkin, chapter);
+        BufferedImage backdrop = winterBackdrop != null ? winterBackdrop
+                : "graduation".equals(chapter) ? GRADUATION_BG
                 : "employment".equals(chapter) ? EMPLOYMENT_BG : UNIVERSITY_BG;
         if (backdrop == null) {
             g.setPaint(new GradientPaint(0, 0, skyTop, 0, s.horizon, skyBottom));

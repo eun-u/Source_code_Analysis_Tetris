@@ -10,6 +10,8 @@ import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.character.*;
+import kr.ac.jbnu.se.tetris.app.BackgroundSkin;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
@@ -24,6 +26,9 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
     private final Map<String, JLabel> badges = new LinkedHashMap<String, JLabel>();
     private final Map<String, JButton> actions = new LinkedHashMap<String, JButton>();
     private Consumer<String> selection;
+    private Consumer<BackgroundSkin> skinSelection;
+    private final Map<BackgroundSkin, PixelButton> skinActions = new LinkedHashMap<BackgroundSkin, PixelButton>();
+    private final Map<BackgroundSkin, JLabel> skinBadges = new LinkedHashMap<BackgroundSkin, JLabel>();
 
     public CharacterShopPanel() {
         setLayout(new BorderLayout(0, 14));
@@ -41,7 +46,21 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
         for (CharacterSpec spec : catalog.all()) cards.add(card(spec));
         // 카드가 화면 높이만큼 늘어나지 않도록 위쪽에 붙여 내용 크기만 쓰게 한다.
         JPanel holder = new JPanel(new BorderLayout()); holder.setOpaque(false);
-        holder.add(cards, BorderLayout.NORTH);
+        JPanel sections = new JPanel(); sections.setOpaque(false);
+        sections.setLayout(new BoxLayout(sections, BoxLayout.Y_AXIS));
+        cards.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sections.add(cards);
+        sections.add(Box.createVerticalStrut(24));
+        JLabel skinsTitle = UniversityPixelTheme.label("배경 스킨 · 로비 / 스토리 전투", 23, Font.BOLD, UniversityPixelTheme.TEXT);
+        skinsTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sections.add(skinsTitle);
+        sections.add(Box.createVerticalStrut(12));
+        JPanel skins = new JPanel(new GridLayout(1, 2, 17, 17)); skins.setOpaque(false);
+        skins.add(backgroundCard(BackgroundSkin.DEFAULT));
+        skins.add(backgroundCard(BackgroundSkin.WINTER));
+        skins.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sections.add(skins);
+        holder.add(sections, BorderLayout.NORTH);
         JScrollPane scroll = new JScrollPane(holder);
         scroll.setBorder(null); scroll.setOpaque(false); scroll.getViewport().setOpaque(false);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -92,6 +111,72 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
         card.add(action, BorderLayout.SOUTH);
         return card;
     }
+
+    private JPanel backgroundCard(BackgroundSkin skin) {
+        CampusArt.Card card = CampusArt.card(new BorderLayout(12, 9), CampusArt.BROWN, 14);
+        card.setPreferredSize(new Dimension(380, 200));
+        BufferedImage image = skin == BackgroundSkin.WINTER
+                ? BackgroundSkinAssets.image(skin, "lobby")
+                : CampusArt.image("/ui/campus-rpg/university-bg.png");
+        JLabel preview = new JLabel("", SwingConstants.CENTER);
+        if (image != null) {
+            BufferedImage thumbnail = new BufferedImage(200, 115, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = thumbnail.createGraphics();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                double scale = Math.max(200.0 / image.getWidth(), 115.0 / image.getHeight());
+                int w = (int) Math.ceil(image.getWidth() * scale);
+                int h = (int) Math.ceil(image.getHeight() * scale);
+                g.drawImage(image, (200 - w) / 2, (115 - h) / 2, w, h, null);
+            } finally { g.dispose(); }
+            preview.setIcon(new ImageIcon(thumbnail));
+        }
+        preview.setPreferredSize(new Dimension(205, 117));
+        card.add(preview, BorderLayout.WEST);
+        JPanel info = new JPanel(); info.setOpaque(false);
+        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+        JLabel title = UniversityPixelTheme.label(skin.getDisplayName(), 20, Font.BOLD, UniversityPixelTheme.TEXT);
+        JLabel desc = UniversityPixelTheme.label(skin == BackgroundSkin.WINTER
+                ? "겨울 로비 + 스토리 3개 과정" : "게임의 기존 기본 배경", 12, Font.PLAIN, UniversityPixelTheme.TEXT_SUB);
+        JLabel badge = UniversityPixelTheme.chip("", UniversityPixelTheme.PANEL_LIGHT);
+        info.add(title); info.add(Box.createVerticalStrut(6)); info.add(desc);
+        info.add(Box.createVerticalStrut(9)); info.add(badge);
+        card.add(info, BorderLayout.CENTER);
+        PixelButton action = new PixelButton("");
+        action.setPreferredSize(new Dimension(240, 47));
+        action.addActionListener(event -> {
+            if (skinSelection != null) skinSelection.accept(skin);
+        });
+        card.add(action, BorderLayout.SOUTH);
+        skinActions.put(skin, action);
+        skinBadges.put(skin, badge);
+        return card;
+    }
+
+    public void setSkinData(int coins, Set<String> owned, String equipped) {
+        wallet.setValue(coins);
+        boolean ready = BackgroundSkinAssets.isWinterPackReady();
+        for (Map.Entry<BackgroundSkin, PixelButton> entry : skinActions.entrySet()) {
+            BackgroundSkin skin = entry.getKey();
+            PixelButton button = entry.getValue();
+            boolean mine = owned.contains(skin.getId());
+            boolean worn = skin.getId().equals(equipped);
+            if (worn) {
+                button.setText("장착 중"); button.setEnabled(false); button.positive();
+            } else if (mine) {
+                button.setText("장착하기"); button.setEnabled(true); button.positive();
+            } else if (skin == BackgroundSkin.WINTER && !ready) {
+                button.setText("겨울 배경 PNG 확인 필요"); button.setEnabled(false); button.secondary();
+            } else {
+                button.setText("구매하기 · " + skin.getPrice() + " COINS");
+                button.setEnabled(coins >= skin.getPrice()); button.primary();
+            }
+            UniversityPixelTheme.setChip(skinBadges.get(skin), worn ? "장착 중" : mine ? "보유" : "미보유",
+                    worn ? UniversityPixelTheme.MINT : mine ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL_LIGHT);
+        }
+    }
+
+    public void setSkinSelectionAction(Consumer<BackgroundSkin> listener) { skinSelection = listener; }
 
     /** 픽셀 경계를 유지해 캐릭터 원화를 상점 카드 크기로 표시한다. */
     private static BufferedImage portrait(String id) {
