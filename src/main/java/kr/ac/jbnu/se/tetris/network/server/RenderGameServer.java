@@ -87,7 +87,13 @@ public final class RenderGameServer implements AutoCloseable {
     private static final int MAX_PENDING_REQUESTS = 32;
     private static final int MAX_PENDING_WRITES = 128;
     private static final int AUTH_TIMEOUT_SECONDS = 18;
-    private static final long TICK_MILLIS = 400;
+    /** 서버가 방 시계를 깨우는 주기. 낙하 속도와 무관하며 BattleManager.advance(실제 경과 ms)로 처리한다. */
+    private static final long TICK_MILLIS = 100;
+    /** 중력 이동이나 이벤트가 없어도 이 간격마다는 스냅샷을 보낸다(남은 시간 표시 등 동기화용). */
+    private static final long HEARTBEAT_NANOS = TimeUnit.MILLISECONDS.toNanos(400);
+    /** 한 번에 처리할 최대 경과 시간. 서버가 잠시 멈췄다 깨어나도 게임이 한꺼번에 빨리 감기지 않게 한다. */
+    private static final long MAX_ADVANCE_MILLIS = 1000;
+    private static final long PING_EVERY_TICKS = 30000 / TICK_MILLIS;
     private static final long LEASE_REFRESH_SECONDS = 5;
     private static final String RULES_VERSION = "pvp-v1";
 
@@ -551,11 +557,29 @@ public final class RenderGameServer implements AutoCloseable {
 
     private void tickRooms() {
         if (leaseOwned) {
+            long nowNanos = System.nanoTime();
             for (Room room : new ArrayList<Room>(rooms.values())) {
-                if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) continue;
+                if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) {
+                    room.lastTickNanos = 0; // 일시정지·종료 후 재개할 때 쌓인 시간이 한꺼번에 흐르지 않게 한다.
+                    continue;
+                }
+                if (room.lastTickNanos == 0) { room.lastTickNanos = nowNanos; continue; }
+                long rawMillis = (nowNanos - room.lastTickNanos) / 1_000_000L;
+                if (rawMillis <= 0) continue;
+                long deltaMillis = Math.min(MAX_ADVANCE_MILLIS, rawMillis);
+                // 정상일 때는 1ms 미만 나머지를 남겨 둬서 게임 시계가 실제 시간보다 느려지지 않게 한다.
+                // 너무 오래 멈췄다 깨어난 경우에만 남은 시간을 버린다.
+                room.lastTickNanos = rawMillis > MAX_ADVANCE_MILLIS
+                        ? nowNanos : room.lastTickNanos + deltaMillis * 1_000_000L;
                 try {
-                    BattleResult tick = room.battle.tick();
-                    broadcastSnapshot(room);
+                    long stepsBefore = room.battle.getGravityStepCount();
+                    BattleResult tick = room.battle.advance(deltaMillis);
+                    boolean moved = room.battle.getGravityStepCount() != stepsBefore
+                            || !tick.getEvents().isEmpty();
+                    if (moved || nowNanos - room.lastBroadcastNanos >= HEARTBEAT_NANOS) {
+                        room.lastBroadcastNanos = nowNanos;
+                        broadcastSnapshot(room);
+                    }
                     broadcastPickups(room, tick);
                     finishIfNeeded(room);
                 } catch (RuntimeException failure) {
@@ -563,7 +587,7 @@ public final class RenderGameServer implements AutoCloseable {
                 }
             }
         }
-        if (++tickCounter % 75 == 0) {
+        if (++tickCounter % PING_EVERY_TICKS == 0) {
             long now = System.nanoTime();
             for (Peer peer : users.values()) {
                 if (now - peer.lastPongNanos > TimeUnit.SECONDS.toNanos(90)) peer.disconnect();
@@ -644,13 +668,31 @@ public final class RenderGameServer implements AutoCloseable {
         }
     }
 
+    /** 헷갈리는 문자(0/O, 1/I/L)를 뺀 31자. 6자리면 약 8.9억 가지라 방 수가 적은 서버에서는 충돌이 사실상 없다. */
+    private static final String ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final int ROOM_CODE_LENGTH = 6;
+    private final java.security.SecureRandom roomCodeRandom = new java.security.SecureRandom();
+
+    /** 현재 열려 있는 방과 겹치지 않는 짧은 방 코드를 만든다. 20번 시도해도 겹치면 null. */
+    private String newRoomCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            StringBuilder code = new StringBuilder(ROOM_CODE_LENGTH);
+            for (int i = 0; i < ROOM_CODE_LENGTH; i++)
+                code.append(ROOM_CODE_ALPHABET.charAt(roomCodeRandom.nextInt(ROOM_CODE_ALPHABET.length())));
+            if (!rooms.containsKey(code.toString())) return code.toString();
+        }
+        return null;
+    }
+
     private void createRoom(Peer peer, long requestId, RoomCommand command) {
         if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
         if (command.getMaxParticipants() == null || command.getMaxParticipants().intValue() != 2) {
             outcome(peer, requestId, false, "ROOM_SIZE_NOT_SUPPORTED"); return;
         }
-        Room room = new Room();
+        String code = newRoomCode();
+        if (code == null) { outcome(peer, requestId, false, "ROOM_CODE_EXHAUSTED"); return; }
+        Room room = new Room(code);
         rooms.put(room.id, room);
         room.members.put(peer.id, peer);
         room.ready.put(peer.id, Boolean.FALSE);
@@ -663,7 +705,7 @@ public final class RenderGameServer implements AutoCloseable {
     private void joinRoom(Peer peer, long requestId, String roomId) {
         if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
-        Room room = rooms.get(roomId);
+        Room room = rooms.get(roomId == null ? null : roomId.trim().toUpperCase(java.util.Locale.ROOT));
         if (room == null) { outcome(peer, requestId, false, "ROOM_NOT_FOUND"); return; }
         if (room.members.size() >= 2) { outcome(peer, requestId, false, "ROOM_FULL"); return; }
         if (room.starting || room.saveState == SaveState.PENDING || room.saveState == SaveState.FAILED
@@ -817,7 +859,7 @@ public final class RenderGameServer implements AutoCloseable {
                         safeName(pair.get(0).identity.getDisplayName(), "Player 1"), 100),
                 new ParticipantSpec(pair.get(1).id,
                         safeName(pair.get(1).identity.getDisplayName(), "Player 2"), 100));
-        BattleManager battle = new BattleManager(specs, System.nanoTime());
+        BattleManager battle = BattleManager.pvp(specs, System.nanoTime());
         BattleResult start = battle.start();
         if (!start.isAccepted()) {
             room.starting = false;
@@ -826,6 +868,8 @@ public final class RenderGameServer implements AutoCloseable {
             return;
         }
         room.battle = battle;
+        room.lastTickNanos = System.nanoTime();
+        room.lastBroadcastNanos = room.lastTickNanos;
         MatchAttempt registered = unresolvedMatches.get(matchId);
         if (registered != null) registered.battle = battle;
         room.starting = false;
@@ -1171,7 +1215,7 @@ public final class RenderGameServer implements AutoCloseable {
     private enum SaveState { NONE, PENDING, SAVED, FAILED, VOID }
 
     private static final class Room {
-        private final String id = UUID.randomUUID().toString();
+        private final String id;
         private final Map<String, Peer> members = new LinkedHashMap<String, Peer>();
         private final Map<String, Boolean> ready = new LinkedHashMap<String, Boolean>();
         private long version;
@@ -1181,7 +1225,10 @@ public final class RenderGameServer implements AutoCloseable {
         private String finalWinner;
         private String finalReason;
         private BattleManager battle;
+        private long lastTickNanos;
+        private long lastBroadcastNanos;
         private SaveState saveState = SaveState.NONE;
+        private Room(String id) { this.id = id; }
     }
 
     private static final class MatchAttempt {

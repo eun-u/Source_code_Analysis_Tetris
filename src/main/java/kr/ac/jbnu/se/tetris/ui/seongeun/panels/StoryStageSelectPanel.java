@@ -38,7 +38,7 @@ public class StoryStageSelectPanel extends JPanel {
         readRegion("employment-bg.png")
     };
 
-    private final PixelButton back = new PixelButton("로비로");
+    private final PixelButton back = new CampusBackButton("돌아가기");
     private final StageCatalog catalog = StageCatalog.loadDefault();
     private final List<MonsterSpec> monsters = new ArrayList<MonsterSpec>();
     private final List<String> stageIds = new ArrayList<String>();
@@ -59,11 +59,11 @@ public class StoryStageSelectPanel extends JPanel {
     public StoryStageSelectPanel() {
         setLayout(new BorderLayout(0, 10));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(14, UniversityPixelTheme.GUTTER, 14, UniversityPixelTheme.GUTTER));
+        setBorder(new EmptyBorder(14, 22, 14, 22));
         for (Stage stage : catalog.getStages())
             for (MonsterSpec monster : stage.getEncounters()) { monsters.add(monster); stageIds.add(stage.getId()); }
         back.secondary();
-        back.setPreferredSize(new Dimension(96, 36));
+        back.setPreferredSize(new Dimension(190, 56));
         completion.setFont(UniversityPixelTheme.font(13, Font.BOLD));
         add(UniversityPixelTheme.screenHeader("STORY MODE", "스토리 전투", completion, back), BorderLayout.NORTH);
         add(map, BorderLayout.CENTER);
@@ -77,11 +77,8 @@ public class StoryStageSelectPanel extends JPanel {
     }
 
     private JPanel detailPanel() {
-        JPanel panel = new JPanel(new BorderLayout(16, 0));
-        panel.setBackground(UniversityPixelTheme.PANEL);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.GOLD, 3), new EmptyBorder(10, 14, 10, 14)));
-        panel.setPreferredSize(new Dimension(10, 142));
+        CampusArt.Card panel = CampusArt.card(new BorderLayout(16, 0), CampusArt.BROWN, 12);
+        panel.setPreferredSize(new Dimension(10, 172));
         detailArt.setPreferredSize(new Dimension(104, 104));
         panel.add(detailArt, BorderLayout.WEST);
         JPanel text = new JPanel(); text.setOpaque(false);
@@ -100,8 +97,8 @@ public class StoryStageSelectPanel extends JPanel {
         JPanel action = new JPanel(); action.setOpaque(false);
         action.setLayout(new BoxLayout(action, BoxLayout.Y_AXIS));
         start.setFont(UniversityPixelTheme.font(18, Font.BOLD));
-        start.setPreferredSize(new Dimension(190, 56));
-        start.setMaximumSize(new Dimension(190, 56));
+        start.setPreferredSize(new Dimension(225, 67));
+        start.setMaximumSize(new Dimension(225, 67));
         start.setAlignmentX(Component.CENTER_ALIGNMENT);
         action.add(Box.createVerticalGlue()); action.add(start); action.add(Box.createVerticalGlue());
         panel.add(action, BorderLayout.EAST);
@@ -264,10 +261,9 @@ public class StoryStageSelectPanel extends JPanel {
                 paintRoad(g);
                 for (int i = 0; i < monsters.size(); i++) paintNode(g, i, now);
                 paintToken(g, now);
-                g.setColor(UniversityPixelTheme.BLACK);
-                g.drawRect(0, 0, w - 1, h - 1);
-                g.setColor(UniversityPixelTheme.LINE);
-                g.drawRect(1, 1, w - 3, h - 3);
+                g.setColor(new Color(255,255,255,190));
+                g.setStroke(new BasicStroke(3f));
+                g.drawRoundRect(1, 1, w - 3, h - 3, 22, 22);
             } finally { g.dispose(); }
         }
 
@@ -289,19 +285,22 @@ public class StoryStageSelectPanel extends JPanel {
                     g.drawImage(scene, x0, 0, x1, h, sourceX, 0,
                             sourceX + sourceWidth, scene.getHeight(), null);
                 }
-                g.setColor(new Color(225, 226, 217, 100));
+                g.setColor(new Color(255, 255, 255, 12));
                 g.fillRect(x0, 0, x1 - x0, h);
                 if (region > 0) {
-                    g.setColor(new Color(95, 112, 113, 96));
-                    g.fillRect(x0 - 1, 0, 2, h);
+                    g.setColor(new Color(255, 255, 255, 195));
+                    g.fillRect(x0 - 2, 0, 4, h);
                 }
                 g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
                 String label = "CH." + (region + 1) + "  " + CHAPTERS[region];
                 FontMetrics m = g.getFontMetrics();
-                g.setColor(new Color(241, 239, 230, 226));
-                g.fillRect(x0 + 10, 10, m.stringWidth(label) + 14, 22);
-                g.setColor(UniversityPixelTheme.TEXT);
-                g.drawString(label, x0 + 17, 26);
+                g.setColor(new Color(255, 244, 220, 248));
+                g.fillRoundRect(x0 + 10, 9, m.stringWidth(label) + 24, 33, 18, 18);
+                g.setColor(CampusArt.BROWN);
+                g.setStroke(new BasicStroke(2f));
+                g.drawRoundRect(x0 + 10, 9, m.stringWidth(label) + 24, 33, 18, 18);
+                g.setColor(CampusArt.NAVY);
+                g.drawString(label, x0 + 22, 31);
             }
         }
 
@@ -312,12 +311,12 @@ public class StoryStageSelectPanel extends JPanel {
                     Point a = node(i), b = node(i + 1);
                     if (pass == 0) {
                         g.setStroke(new BasicStroke(12f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                        g.setColor(new Color(57, 73, 78, 98));
+                        g.setColor(new Color(255, 253, 240, 215));
                     } else {
                         boolean done = cleared[i];
                         g.setStroke(new BasicStroke(5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND,
                                 1f, new float[] { 10f, 7f }, 0f));
-                        g.setColor(done ? UniversityPixelTheme.GOLD : UniversityPixelTheme.LINE);
+                        g.setColor(done ? CampusArt.BROWN : new Color(0x8D9199));
                     }
                     g.drawLine(a.x, a.y, b.x, b.y);
                 }
@@ -353,18 +352,18 @@ public class StoryStageSelectPanel extends JPanel {
             int lift = isSelected ? (int) Math.round(Math.abs(Math.sin(now / 260.0)) * 4) : 0;
             int x = p.x - r, y = p.y - r - lift, size = r * 2;
             g.setColor(new Color(57, 73, 78, 83));
-            g.fillRect(x + 4, y + 5 + lift, size, size);
+            g.fillOval(x + 4, y + 5 + lift, size, size);
             Color frame = isSelected ? UniversityPixelTheme.GOLD : cleared[index] ? UniversityPixelTheme.MINT
                     : boss ? UniversityPixelTheme.CORAL : UniversityPixelTheme.LINE;
             g.setColor(frame);
-            g.fillRect(x - 3, y - 3, size + 6, size + 6);
+            g.fillOval(x - 3, y - 3, size + 6, size + 6);
             g.setColor(isHover ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL);
-            g.fillRect(x, y, size, size);
+            g.fillOval(x, y, size, size);
             Image art = icon(index + 1, size - 6);
             if (art != null) g.drawImage(art, x + 3, y + 3, null);
             if (!unlocked[index]) {
                 g.setColor(new Color(225, 226, 217, 181));
-                g.fillRect(x, y, size, size);
+                g.fillOval(x, y, size, size);
                 // 자물쇠.
                 int lx = p.x - 8, ly = p.y - 2 - lift;
                 g.setColor(UniversityPixelTheme.TEXT_SUB);
@@ -390,9 +389,9 @@ public class StoryStageSelectPanel extends JPanel {
             FontMetrics m = g.getFontMetrics();
             int lw = m.stringWidth(label) + 10;
             g.setColor(new Color(241, 239, 230, 240));
-            g.fillRect(p.x - lw / 2, y + size + 6, lw, 17);
+            g.fillRoundRect(p.x - lw / 2, y + size + 6, lw, 23, 12, 12);
             g.setColor(boss ? UniversityPixelTheme.CORAL : isSelected ? UniversityPixelTheme.GOLD : UniversityPixelTheme.TEXT);
-            g.drawString(label, p.x - lw / 2 + 5, y + size + 19);
+            g.drawString(label, p.x - lw / 2 + 5, y + size + 22);
             if (isSelected) {
                 int ay = y - 18 - (int) Math.round(Math.sin(now / 180.0) * 4);
                 g.setColor(UniversityPixelTheme.BLACK);

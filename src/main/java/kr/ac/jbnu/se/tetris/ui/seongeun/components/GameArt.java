@@ -29,7 +29,8 @@ public final class GameArt {
             if (index < 0 || index > 2) return null;
             String individual = "university:0".equals(key) ? "alcohol" : "university:1".equals(key)
                     ? "course" : "university:2".equals(key) ? "professor" : "graduation:0".equals(key)
-                    ? "retake" : "graduation:1".equals(key) ? "gpt" : "graduation:2".equals(key) ? "capstone" : null;
+                    ? "retake" : "graduation:1".equals(key) ? "gpt" : "graduation:2".equals(key) ? "capstone" : "employment:0".equals(key) ? "codingtest"
+                    : "employment:1".equals(key) ? "interviewer" : "employment:2".equals(key) ? "company" : null;
             if (individual != null) {
                 java.net.URL clean = GameArt.class.getResource("/ui/puzzle-rpg/" + individual + ".png");
                 if (clean != null) {

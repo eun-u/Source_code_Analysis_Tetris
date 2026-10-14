@@ -45,6 +45,8 @@ public final class StoryFlowTest {
             });
 
             int encounter = 0;
+            // 기대 코인: 첫 클리어는 등급별 전액(일반 30/정예 50/보스 80), 재클리어는 전액의 20%.
+            final int[] coins = { onEdt(() -> app.getSaveData().getCoins()) };
             for (Stage stage : StageCatalog.loadDefault().getStages()) {
                 for (MonsterSpec monster : stage.getEncounters()) {
                     final int index = encounter;
@@ -53,6 +55,9 @@ public final class StoryFlowTest {
                     await(() -> "RESULT".equals(app.getCurrentScreen()), "레벨 " + (index + 1) + " 승리 결과");
                     check(onEdt(() -> app.getCampaignProgress().isEncounterCleared(monster.getId())),
                             "레벨 " + (index + 1) + " 진행 상태 저장");
+                    coins[0] += firstClearReward(monster);
+                    check(onEdt(() -> app.getSaveData().getCoins()) == coins[0],
+                            "레벨 " + (index + 1) + " 첫 클리어 보상 " + firstClearReward(monster) + "코인");
                     if (encounter == 0) {
                         edt(() -> {
                             button(app.getScreens(), "다시 도전").doClick();
@@ -60,6 +65,9 @@ public final class StoryFlowTest {
                             winUsingRealEngine(app);
                         });
                         await(() -> "RESULT".equals(app.getCurrentScreen()), "승리 재도전 결과");
+                        coins[0] += firstClearReward(monster) / 5;
+                        check(onEdt(() -> app.getSaveData().getCoins()) == coins[0],
+                                "재클리어 보상은 첫 클리어의 20% (" + firstClearReward(monster) / 5 + "코인)");
                     }
                     if (encounter < 8) {
                         edt(() -> {
@@ -164,6 +172,14 @@ public final class StoryFlowTest {
         while (!onEdt(() -> condition.getAsBoolean()) && System.nanoTime() < deadline) Thread.sleep(10);
         check(onEdt(() -> condition.getAsBoolean()), label);
     }
+    private static int firstClearReward(MonsterSpec monster) {
+        switch (monster.getTier()) {
+            case NORMAL: return 30;
+            case ELITE: return 50;
+            default: return 80;
+        }
+    }
+
     private static void check(boolean value, String label) {
         if (!value) throw new AssertionError(label);
     }

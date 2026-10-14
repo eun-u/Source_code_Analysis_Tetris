@@ -17,11 +17,13 @@ import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 게임 중에는 숨기는 오디오·온라인 계정·조작 학습 설정 화면. */
 public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
-    private final PixelButton back = new PixelButton("로비로");
+    private final PixelButton back = new CampusBackButton("돌아가기");
     private final PixelButton tutorial = new PixelButton("튜토리얼 시작");
     private final PixelButton onlineAccount = new PixelButton("로그인 / 가입");
     private final JLabel onlineAccountStatus = text("로컬 플레이 · 로그인 필요", 13, UniversityPixelTheme.TEXT_SUB);
@@ -36,18 +38,18 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
     public SettingsPanel() {
         setLayout(new BorderLayout(0, 16));
         setBackground(UniversityPixelTheme.BG);
-        setBorder(new EmptyBorder(18, UniversityPixelTheme.GUTTER, 18, UniversityPixelTheme.GUTTER));
+        setBorder(new EmptyBorder(20, 42, 26, 42));
         back.secondary();
-        back.setPreferredSize(new Dimension(96, 38));
+        back.setPreferredSize(new Dimension(190, 56));
         add(UniversityPixelTheme.screenHeader("CAMPUS GUIDE", "설정", back), BorderLayout.NORTH);
 
-        JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0)); columns.setOpaque(false);
+        JPanel columns = new JPanel(new GridLayout(1, 2, 24, 0)); columns.setOpaque(false);
         JPanel audio = section("소리");
         row(audio, "BGM", bgmMute, bgmVolume);
-        audio.add(Box.createVerticalStrut(22));
+        audio.add(Box.createVerticalStrut(35));
         row(audio, "효과음", sfxMute, sfxVolume);
-        audio.add(Box.createVerticalStrut(18));
-        JLabel accountHeading = text("온라인 계정", 17, UniversityPixelTheme.GOLD);
+        audio.add(Box.createVerticalStrut(25));
+        JLabel accountHeading = text("🌐 온라인 계정", 20, CampusArt.BROWN);
         accountHeading.setAlignmentX(Component.LEFT_ALIGNMENT);
         audio.add(accountHeading);
         audio.add(Box.createVerticalStrut(6));
@@ -56,7 +58,7 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         audio.add(Box.createVerticalStrut(10));
         onlineAccount.secondary();
         onlineAccount.setAlignmentX(Component.LEFT_ALIGNMENT);
-        onlineAccount.setMaximumSize(new Dimension(180, 38));
+        onlineAccount.setMaximumSize(new Dimension(210, 52));
         audio.add(onlineAccount);
         audio.add(Box.createVerticalGlue());
         columns.add(audio);
@@ -65,19 +67,19 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         tutorial.primary();
         tutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         tutorial.setAlignmentX(Component.LEFT_ALIGNMENT);
-        tutorial.setMaximumSize(new Dimension(440, 46)); guide.add(tutorial);
+        tutorial.setMaximumSize(new Dimension(440, 68)); guide.add(tutorial);
         guide.add(Box.createVerticalStrut(10));
         skipTutorial.setOpaque(false); skipTutorial.setForeground(UniversityPixelTheme.TEXT);
         skipTutorial.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         skipTutorial.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(skipTutorial);
-        guide.add(Box.createVerticalStrut(16));
-        guide.add(text("화면", 17, UniversityPixelTheme.GOLD));
+        guide.add(Box.createVerticalStrut(37));
+        guide.add(text("▣ 화면", 24, CampusArt.BROWN));
         reduceTransitions.setOpaque(false); reduceTransitions.setForeground(UniversityPixelTheme.TEXT_SUB);
         reduceTransitions.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         reduceTransitions.setAlignmentX(Component.LEFT_ALIGNMENT); guide.add(reduceTransitions);
         guide.add(Box.createVerticalGlue());
         columns.add(guide);
-        columns.setPreferredSize(new Dimension(760, 390));
+        columns.setPreferredSize(new Dimension(1100, 590));
         JPanel center = new JPanel(new java.awt.GridBagLayout()); center.setOpaque(false);
         center.add(columns);
         add(center, BorderLayout.CENTER);
@@ -87,8 +89,8 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
     private static JSlider slider() {
         JSlider slider = new JSlider(0, 100, 65);
         slider.setOpaque(false);
-        slider.setForeground(UniversityPixelTheme.GOLD);
-        slider.setMaximumSize(new Dimension(420, 45));
+        slider.setForeground(CampusArt.GREEN);
+        slider.setMaximumSize(new Dimension(420, 58));
         slider.setAlignmentX(Component.LEFT_ALIGNMENT);
         slider.setMajorTickSpacing(25); slider.setPaintTicks(true);
         return slider;
@@ -100,12 +102,9 @@ public final class SettingsPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.compon
         return label;
     }
     private static JPanel section(String heading) {
-        JPanel panel = new JPanel(); panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(UniversityPixelTheme.PANEL);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UniversityPixelTheme.LINE, 2),
-                new EmptyBorder(16, 18, 16, 18)));
-        JLabel title = text(heading, 21, UniversityPixelTheme.GOLD);
+        CampusArt.Card panel = CampusArt.card(null, CampusArt.BROWN, 24);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        JLabel title = text(heading, 28, CampusArt.BROWN);
         title.setAlignmentX(Component.LEFT_ALIGNMENT); panel.add(title);
         panel.add(Box.createVerticalStrut(22));
         return panel;

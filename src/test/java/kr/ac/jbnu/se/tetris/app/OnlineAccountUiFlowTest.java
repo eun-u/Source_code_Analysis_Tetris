@@ -70,7 +70,7 @@ public final class OnlineAccountUiFlowTest {
             check("Bearer fresh".equals(rankingBearer.get()), "leaderboard used fresh token");
 
             onEdt(() -> {
-                button(panel(app[0], LeaderboardPanel.class), "로비로").doClick();
+                button(panel(app[0], LeaderboardPanel.class), "돌아가기").doClick();
                 button(panel(app[0], MainLobbyPanel.class), "설정").doClick();
                 button(panel(app[0], SettingsPanel.class), "로그아웃").doClick();
                 check(!app[0].isSignedIn(), "logout clears identity immediately");
