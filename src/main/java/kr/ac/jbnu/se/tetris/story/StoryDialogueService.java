@@ -9,14 +9,76 @@ import java.util.Set;
 /** 전투 상태와 확정 진행 결과를 화면용 대사 이벤트로 바꾼다. */
 public final class StoryDialogueService {
     private static final int MONSTER_HP_PERCENT = 50;
+    private static final int MONSTER_CRISIS_PERCENT = 20;
+    /** 전투 시작 뒤 이 시간이 지나면 플레이어와 몬스터가 한 번 대화한다. */
+    public static final long INTERACTION_AFTER_MILLIS = 30000L;
+    /** 한 번에 이만큼 이상 줄을 지우면 강공격(테트리스)으로 본다. */
+    public static final int STRONG_ATTACK_LINES = 4;
 
     private final StageCatalog catalog;
+    private final StoryDialogueLines lines;
     private final Set<String> hpTriggeredRuns = new HashSet<String>();
     private final Set<String> resultTriggeredRuns = new HashSet<String>();
+    private final Set<String> startTriggeredRuns = new HashSet<String>();
+    private final Set<String> interactionTriggeredRuns = new HashSet<String>();
+    private final Set<String> strongTriggeredRuns = new HashSet<String>();
+    private final Set<String> crisisTriggeredRuns = new HashSet<String>();
 
     public StoryDialogueService(StageCatalog catalog) {
+        this(catalog, StoryDialogueLines.loadDefault());
+    }
+
+    StoryDialogueService(StageCatalog catalog, StoryDialogueLines lines) {
         if (catalog == null) throw new IllegalArgumentException("Stage catalog is required");
+        if (lines == null) throw new IllegalArgumentException("Dialogue lines are required");
         this.catalog = catalog;
+        this.lines = lines;
+    }
+
+    /** 전투가 시작될 때 몬스터의 조우 대사를 한 번만 발화한다. */
+    public synchronized StoryDialogueCue onEncounterStart(EncounterRun run) {
+        requireRun(run);
+        if (run.isFinished() || !startTriggeredRuns.add(run.getRunId())) return null;
+        String line = lines.get(run.getEncounterId(), "encounter");
+        return line == null ? null : cue(StoryDialogueCue.Trigger.ENCOUNTER_START, run, MONSTER, line);
+    }
+
+    /** 전투 시간이 30초에 도달하면 플레이어의 말과 몬스터의 대답을 순서대로 한 번만 발화한다. */
+    public synchronized List<StoryDialogueCue> onElapsed(EncounterRun run, long elapsedMillis) {
+        requireRun(run);
+        if (elapsedMillis < 0) throw new IllegalArgumentException("Invalid elapsed time");
+        if (run.isFinished() || elapsedMillis < INTERACTION_AFTER_MILLIS
+                || !interactionTriggeredRuns.add(run.getRunId())) return Collections.emptyList();
+        List<StoryDialogueCue> cues = new ArrayList<StoryDialogueCue>();
+        addLine(cues, StoryDialogueCue.Trigger.INTERACTION, run, PLAYER, run.getEncounterId(), "interaction.player");
+        addLine(cues, StoryDialogueCue.Trigger.INTERACTION, run, MONSTER, run.getEncounterId(), "interaction.monster");
+        return Collections.unmodifiableList(cues);
+    }
+
+    /** 플레이어가 한 번에 4줄 이상 지웠을 때 몬스터의 강공격 대사를 전투당 한 번만 발화한다. */
+    public synchronized StoryDialogueCue onPlayerLineClear(EncounterRun run, int linesCleared) {
+        requireRun(run);
+        if (linesCleared < 0) throw new IllegalArgumentException("Invalid cleared line count");
+        if (run.isFinished() || linesCleared < STRONG_ATTACK_LINES
+                || !strongTriggeredRuns.add(run.getRunId())) return null;
+        String line = lines.get(run.getEncounterId(), "strong");
+        return line == null ? null : cue(StoryDialogueCue.Trigger.STRONG_ATTACK, run, MONSTER, line);
+    }
+
+    /** 몬스터 HP가 20% 이하로 처음 내려간 순간 위기 대사를 한 번만 발화한다. */
+    public synchronized StoryDialogueCue onMonsterCrisis(EncounterRun run, int hp, int maxHp) {
+        requireRun(run);
+        if (maxHp <= 0 || hp < 0 || hp > maxHp) throw new IllegalArgumentException("Invalid monster HP");
+        if (run.isFinished() || hp == 0 || (long) hp * 100 > (long) maxHp * MONSTER_CRISIS_PERCENT
+                || !crisisTriggeredRuns.add(run.getRunId())) return null;
+        String line = lines.get(run.getEncounterId(), "crisis");
+        return line == null ? null : cue(StoryDialogueCue.Trigger.MONSTER_CRISIS, run, MONSTER, line);
+    }
+
+    private void addLine(List<StoryDialogueCue> cues, StoryDialogueCue.Trigger trigger, EncounterRun run,
+            String speaker, String encounterId, String situation) {
+        String line = lines.get(encounterId, situation);
+        if (line != null) cues.add(cue(trigger, run, speaker, line));
     }
 
     /** 진행 중인 몬스터 HP가 기준 이하로 처음 내려간 순간 한 번만 발화한다. */
@@ -25,8 +87,10 @@ public final class StoryDialogueService {
         if (maxHp <= 0 || hp < 0 || hp > maxHp) throw new IllegalArgumentException("Invalid monster HP");
         if (run.isFinished() || hp == 0 || (long) hp * 100 > (long) maxHp * MONSTER_HP_PERCENT
                 || !hpTriggeredRuns.add(run.getRunId())) return null;
-        return cue(StoryDialogueCue.Trigger.MONSTER_HP_THRESHOLD, run,
-                hpSpeaker(run), hpLine(run));
+        String scripted = lines.get(run.getEncounterId(), "hp");
+        return scripted != null
+                ? cue(StoryDialogueCue.Trigger.MONSTER_HP_THRESHOLD, run, MONSTER, scripted)
+                : cue(StoryDialogueCue.Trigger.MONSTER_HP_THRESHOLD, run, hpSpeaker(run), hpLine(run));
     }
 
     /** recordBattleResult 직전/직후의 진행 스냅샷으로 최초 해금 이벤트를 구별한다. */
@@ -49,13 +113,21 @@ public final class StoryDialogueService {
 
         List<StoryDialogueCue> cues = new ArrayList<StoryDialogueCue>();
         if (disposition == StoryProgressService.ResultDisposition.APPLIED_LOSS) {
-            cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run,
-                    lossSpeaker(run), lossLine(run)));
+            // 플레이어가 진 결과: 몬스터(승리)와 플레이어(패배) 대사
+            addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, MONSTER, run.getEncounterId(), "playerLoss.monster");
+            addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, PLAYER, run.getEncounterId(), "playerLoss.player");
+            if (cues.isEmpty()) {
+                cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, lossSpeaker(run), lossLine(run)));
+            }
             return Collections.unmodifiableList(cues);
         }
 
-        cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_WIN, run,
-                winSpeaker(run), winLine(run)));
+        // 플레이어가 이긴 결과: 몬스터(패배)와 플레이어(승리) 대사
+        addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_WIN, run, MONSTER, run.getEncounterId(), "playerWin.monster");
+        addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_WIN, run, PLAYER, run.getEncounterId(), "playerWin.player");
+        if (cues.isEmpty()) {
+            cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_WIN, run, winSpeaker(run), winLine(run)));
+        }
         boolean firstClear = !before.isEncounterCleared(run.getEncounterId())
                 && after.isEncounterCleared(run.getEncounterId());
         if (firstClear) {
@@ -76,6 +148,9 @@ public final class StoryDialogueService {
         }
         return Collections.unmodifiableList(cues);
     }
+
+    /** 대사 파일의 키 목록(철자 검증용). */
+    java.util.Set<String> lineKeys() { return lines.keys(); }
 
     private void requireRun(EncounterRun run) {
         if (run == null || catalog.getStage(run.getStageId()) == null) {
@@ -100,6 +175,9 @@ public final class StoryDialogueService {
             EncounterRun run, String speaker, String line) {
         return new StoryDialogueCue(trigger, run, speaker, line);
     }
+
+    private static final String MONSTER = "몬스터";
+    private static final String PLAYER = "플레이어";
 
     // 기획·프론트엔드 담당자는 트리거 횟수, HP 기준과 타이밍, 대사 문구·화자,
     // 화면 배치·디자인을 모두 자유롭게 바꾸어도 된다. 아래 문구는 연결용 예시다.

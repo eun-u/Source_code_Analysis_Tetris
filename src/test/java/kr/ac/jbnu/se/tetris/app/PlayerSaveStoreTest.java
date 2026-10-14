@@ -22,6 +22,11 @@ public final class PlayerSaveStoreTest {
             String second = catalog.getStages().get(0).getEncounters().get(1).getId();
             PlayerSaveStore.Data afterFirst = initial.withFirstClear(first, 30);
             assert afterFirst.withFirstClear(first, 30) == afterFirst;
+            // 재클리어 보상: 클리어 기록은 그대로 두고 코인만 더한다.
+            PlayerSaveStore.Data replayed = afterFirst.withCoins(6);
+            assert replayed.getCoins() == afterFirst.getCoins() + 6
+                    && replayed.getCleared().equals(afterFirst.getCleared());
+            assert afterFirst.withCoins(0) == afterFirst;
             PlayerSaveStore.Data afterSecond = afterFirst.withFirstClear(second, 50);
             store.save(afterSecond);
             PlayerSaveStore.Data reloaded = store.load();

@@ -27,6 +27,8 @@ public final class BattleManager {
     private final HPManager hpManager = new HPManager();
     private final Random itemRandom;
     private final boolean pvp;
+    /** advance()/tick()에서 실제로 적용된 중력 칸 수. 서버가 스냅샷 전송 여부를 판단하는 데 쓴다. */
+    private long gravityStepCount;
     private BattleState.Status status = BattleState.Status.READY;
     private long version;
     private long lastEventId;
@@ -219,6 +221,9 @@ public final class BattleManager {
         return result(true, null, events);
     }
 
+    /** 지금까지 적용된 중력 칸 수(참가자 합계). 값이 변했으면 보드가 움직인 것이다. */
+    public synchronized long getGravityStepCount() { return gravityStepCount; }
+
     public synchronized BattleResult advance(long deltaMillis) {
         if (status != BattleState.Status.RUNNING) return reject("TICK requires RUNNING", null);
         if (deltaMillis < 0 || deltaMillis > 600000) return reject("INVALID_ELAPSED_MILLIS", null);
@@ -234,6 +239,7 @@ public final class BattleManager {
                 int interval = gravityMillis(p);
                 while (p.gravityAccumulated >= interval && !p.eliminated) {
                     p.gravityAccumulated -= interval;
+                    gravityStepCount++;
                     ActionResult action = p.controller.submit(GameAction.Type.GRAVITY_TICK);
                     processCore(p, action, events);
                     if (isInternalFailure()) return result(false, reason, events);
@@ -257,6 +263,7 @@ public final class BattleManager {
         List<BattleEvent> events = new ArrayList<BattleEvent>();
         for (Participant p : participants.values()) {
             if (p.eliminated) continue;
+            gravityStepCount++;
             ActionResult action = p.controller.submit(GameAction.Type.GRAVITY_TICK);
             processCore(p, action, events);
             if (isInternalFailure()) return result(false, reason, events);
