@@ -154,5 +154,13 @@ public final class PlayerSaveStore {
             next.add(encounterId);
             return new Data(Math.addExact(coins, reward), selected, owned, next);
         }
+
+        /** 이미 클리어한 전투의 재도전 보상. 해금 기록은 변경하지 않는다. */
+        public Data withReplayReward(String encounterId, int reward) {
+            if (encounterId == null || encounterId.trim().isEmpty() || reward < 0
+                    || !cleared.contains(encounterId))
+                throw new IllegalArgumentException("Replay reward requires a cleared encounter");
+            return new Data(Math.addExact(coins, reward), selected, owned, cleared);
+        }
     }
 }
