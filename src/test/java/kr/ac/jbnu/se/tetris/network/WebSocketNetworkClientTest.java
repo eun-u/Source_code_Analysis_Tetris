@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -14,6 +15,7 @@ import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import kr.ac.jbnu.se.tetris.network.protocol.WireCodec;
 import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 
@@ -50,6 +52,83 @@ public final class WebSocketNetworkClientTest {
             peer.join(1000);
             if (failure.get() != null) throw new AssertionError("WebSocket peer failure", failure.get());
         }
+        coldStart503RetriesBeforeFirstGameCommand();
+        closingDuringBackoffCancelsRetry();
+    }
+
+    private static void coldStart503RetriesBeforeFirstGameCommand() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 2, java.net.InetAddress.getByName("127.0.0.1"))) {
+            AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+            Thread peer = new Thread(() -> {
+                try (Socket first = server.accept()) { respond503(first); }
+                catch (Throwable error) { failure.set(error); return; }
+                try (Socket second = server.accept()) { serve(second); }
+                catch (Throwable error) { failure.set(error); }
+            }, "ranked-ws-cold-start-fixture");
+            peer.setDaemon(true); peer.start();
+            CountDownLatch connected = new CountDownLatch(1);
+            CountDownLatch room = new CountDownLatch(1);
+            AtomicReference<String> failureReason = new AtomicReference<String>();
+            WebSocketNetworkClient client = new WebSocketNetworkClient(true, 5000);
+            try {
+                client.subscribe(update -> {
+                    if (update.getType() == NetworkUpdate.Type.CONNECTED) connected.countDown();
+                    if (update.getType() == NetworkUpdate.Type.ROOM_STATE) room.countDown();
+                    if (update.getType() == NetworkUpdate.Type.CONNECTION_FAILED)
+                        failureReason.set(update.getReasonCode());
+                });
+                client.connect(new ConnectionOptions(URI.create("ws://127.0.0.1:"
+                        + server.getLocalPort() + "/ws"), "public-test-token"));
+                check(connected.await(5, TimeUnit.SECONDS), "503 should retry during initial connection");
+                check(failureReason.get() == null, "Transient 503 surfaced as terminal failure");
+                client.send(RoomCommand.createRoom(2));
+                check(room.await(5, TimeUnit.SECONDS), "Game command works after retry");
+            } finally { client.close(); }
+            peer.join(1000);
+            if (failure.get() != null) throw new AssertionError("Cold start fixture failed", failure.get());
+        }
+    }
+
+    private static void closingDuringBackoffCancelsRetry() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 2, java.net.InetAddress.getByName("127.0.0.1"))) {
+            AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+            AtomicBoolean secondConnection = new AtomicBoolean();
+            CountDownLatch firstRejected = new CountDownLatch(1);
+            Thread peer = new Thread(() -> {
+                try (Socket first = server.accept()) { respond503(first); firstRejected.countDown(); }
+                catch (Throwable error) { failure.set(error); return; }
+                try {
+                    server.setSoTimeout(1500);
+                    try (Socket ignored = server.accept()) { secondConnection.set(true); }
+                } catch (SocketTimeoutException expected) { /* no further connection */ }
+                catch (Throwable error) { failure.set(error); }
+            }, "ranked-ws-cancel-retry-fixture");
+            peer.setDaemon(true); peer.start();
+            WebSocketNetworkClient client = new WebSocketNetworkClient(true, 5000);
+            client.connect(new ConnectionOptions(URI.create("ws://127.0.0.1:"
+                    + server.getLocalPort() + "/ws"), "public-test-token"));
+            check(firstRejected.await(3, TimeUnit.SECONDS), "First 503 was not sent");
+            client.close();
+            peer.join(2500);
+            check(!secondConnection.get(), "Closed client retried a connection");
+            if (failure.get() != null) throw new AssertionError("Cancellation fixture failed", failure.get());
+        }
+    }
+
+    private static void respond503(Socket socket) throws IOException {
+        socket.setSoTimeout(3000);
+        InputStream input = socket.getInputStream();
+        StringBuilder request = new StringBuilder();
+        while (request.length() < 8192 && !request.toString().endsWith("\r\n\r\n")) {
+            int value = input.read();
+            if (value < 0) throw new IOException("No WebSocket request");
+            request.append((char) value);
+        }
+        if (!request.toString().contains("Authorization: Bearer public-test-token\r\n"))
+            throw new IOException("Missing authentication header");
+        socket.getOutputStream().write(("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n"
+                + "Connection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+        socket.getOutputStream().flush();
     }
 
     private static void serve(Socket socket) throws Exception {

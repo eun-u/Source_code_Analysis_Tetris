@@ -40,12 +40,14 @@ public final class OnlineAccountUiFlowTest {
         api.createContext("/", exchange -> handle(exchange, firstEntered, releaseFirst, lateEntered,
                 releaseLate, logins, refreshes, signups, rankingBearer));
         api.start();
-        String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey"};
+        String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey",
+                "tetris.online.provider"};
         String[] previous = new String[keys.length];
         for (int i = 0; i < keys.length; i++) previous[i] = System.getProperty(keys[i]);
         System.setProperty(keys[0], "ws://127.0.0.1:12345/ws");
         System.setProperty(keys[1], "http://127.0.0.1:" + api.getAddress().getPort());
         System.setProperty(keys[2], "sb_publishable_fixture");
+        System.setProperty(keys[3], "supabase");
         SeongeunApplication[] app = new SeongeunApplication[1];
         try {
             onEdt(() -> {

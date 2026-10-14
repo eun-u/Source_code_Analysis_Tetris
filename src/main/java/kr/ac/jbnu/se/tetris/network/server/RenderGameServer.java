@@ -1,5 +1,7 @@
 package kr.ac.jbnu.se.tetris.network.server;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -48,10 +50,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import kr.ac.jbnu.se.tetris.auth.AuthIdentity;
 import kr.ac.jbnu.se.tetris.auth.AuthException;
 import kr.ac.jbnu.se.tetris.auth.TokenVerifier;
 import kr.ac.jbnu.se.tetris.auth.SupabaseTokenVerifier;
+import kr.ac.jbnu.se.tetris.firebase.server.FirebaseServerContext;
+import kr.ac.jbnu.se.tetris.firebase.server.FirebaseTokenVerifier;
+import kr.ac.jbnu.se.tetris.firebase.server.FirestoreRankedMatchStore;
 import kr.ac.jbnu.se.tetris.battle.BattleManager;
 import kr.ac.jbnu.se.tetris.battle.BattleResult;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
@@ -65,6 +72,7 @@ import kr.ac.jbnu.se.tetris.network.RoomState;
 import kr.ac.jbnu.se.tetris.network.protocol.WireCodec;
 import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 import kr.ac.jbnu.se.tetris.ranking.MatchRecord;
+import kr.ac.jbnu.se.tetris.ranking.LeaderboardEntry;
 import kr.ac.jbnu.se.tetris.ranking.RankedMatchStore;
 import kr.ac.jbnu.se.tetris.ranking.RunLease;
 import kr.ac.jbnu.se.tetris.ranking.SupabaseRankedMatchStore;
@@ -72,6 +80,7 @@ import kr.ac.jbnu.se.tetris.supabase.SupabaseConfig;
 
 /** One-instance Render HTTP/WebSocket game server. All BattleManager calls run on the room queue. */
 public final class RenderGameServer implements AutoCloseable {
+    private static final Logger LOG = Logger.getLogger(RenderGameServer.class.getName());
     private static final int DEFAULT_MAX_WS_CONNECTIONS = 128;
     private static final int DEFAULT_MAX_PENDING_AUTH = 16;
     private static final int CONTROL_SOCKET_RESERVE = 8;
@@ -257,8 +266,16 @@ public final class RenderGameServer implements AutoCloseable {
 
         private void handleHttp(ChannelHandlerContext ctx, FullHttpRequest request) {
             String path = request.uri();
-            if ("GET".equals(request.method().name()) && "/healthz".equals(path)) {
+            if ("GET".equals(request.method().name())
+                    && ("/health".equals(path) || "/healthz".equals(path))) {
                 respond(ctx, HttpResponseStatus.OK, "ok"); return;
+            }
+            if ("GET".equals(request.method().name())
+                    && ("/ready".equals(path) || "/readyz".equals(path))) {
+                respond(ctx, admissionOpen && leaseOwned && !draining && !closed.get()
+                        ? HttpResponseStatus.OK : HttpResponseStatus.SERVICE_UNAVAILABLE,
+                        admissionOpen && leaseOwned && !draining && !closed.get() ? "ready" : "not ready");
+                return;
             }
             if ("GET".equals(request.method().name()) && "/".equals(path)) {
                 respond(ctx, HttpResponseStatus.OK, "Tetris Ranked PvP server\n"
@@ -267,6 +284,9 @@ public final class RenderGameServer implements AutoCloseable {
                 return;
             }
             if (path.startsWith("/admin/")) { handleAdmin(ctx, request); return; }
+            if ("GET".equals(request.method().name()) && "/api/leaderboard".equals(path)) {
+                handleLeaderboard(ctx, request); return;
+            }
             if (!"GET".equals(request.method().name()) || !"/ws".equals(path) || upgrading
                     || !request.decoderResult().isSuccess()) {
                 respond(ctx, HttpResponseStatus.NOT_FOUND, "not found"); return;
@@ -340,6 +360,70 @@ public final class RenderGameServer implements AutoCloseable {
                 });
             } catch (RejectedExecutionException full) {
                 request.release();
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
+            }
+        }
+
+        private void handleLeaderboard(ChannelHandlerContext ctx, FullHttpRequest request) {
+            if (!(store instanceof FirestoreRankedMatchStore)) {
+                respond(ctx, HttpResponseStatus.NOT_FOUND, "not found"); return;
+            }
+            if (!admissionOpen || !leaseOwned || draining) {
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "admission closed"); return;
+            }
+            String authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION);
+            if (authorization == null || !authorization.startsWith("Bearer ")
+                    || authorization.length() > 8200 || authorization.length() < 15) {
+                respond(ctx, HttpResponseStatus.UNAUTHORIZED, "authentication required"); return;
+            }
+            final String token = authorization.substring(7);
+            try {
+                authExecutor.execute(() -> {
+                    HttpResponseStatus failure = null;
+                    try {
+                        AuthIdentity identity = verifier.verify(token);
+                        if (identity == null || identity.getExpiresAtEpochSecond()
+                                <= System.currentTimeMillis() / 1000L) failure = HttpResponseStatus.UNAUTHORIZED;
+                    } catch (AuthException invalid) { failure = HttpResponseStatus.UNAUTHORIZED; }
+                    catch (Exception unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
+                    if (failure != null) {
+                        final HttpResponseStatus status = failure;
+                        respondOnEventLoop(ctx, status, status == HttpResponseStatus.UNAUTHORIZED
+                                ? "authentication failed" : "authentication unavailable");
+                        return;
+                    }
+                    try {
+                        persistenceExecutor.execute(() -> {
+                            try {
+                                if (!admissionOpen || !leaseOwned || draining) {
+                                    respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
+                                            "admission closed"); return;
+                                }
+                                JsonArray array = new JsonArray();
+                                for (LeaderboardEntry entry : ((FirestoreRankedMatchStore) store).top100()) {
+                                    JsonObject row = new JsonObject();
+                                    row.addProperty("rank", entry.getRank());
+                                    row.addProperty("user_id", entry.getUserId());
+                                    row.addProperty("display_name", entry.getDisplayName());
+                                    row.addProperty("rating", entry.getRating());
+                                    row.addProperty("wins", entry.getWins());
+                                    row.addProperty("losses", entry.getLosses());
+                                    row.addProperty("games", entry.getGames());
+                                    array.add(row);
+                                }
+                                respondOnEventLoop(ctx, HttpResponseStatus.OK, array.toString(),
+                                        "application/json; charset=utf-8");
+                            } catch (Exception unavailable) {
+                                LOG.log(Level.WARNING, "Leaderboard query failed", unavailable);
+                                respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
+                                        "leaderboard unavailable");
+                            }
+                        });
+                    } catch (RejectedExecutionException full) {
+                        respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
+                    }
+                });
+            } catch (RejectedExecutionException full) {
                 respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
             }
         }
@@ -447,11 +531,26 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private static void respond(ChannelHandlerContext ctx, HttpResponseStatus status, String body) {
+        respond(ctx, status, body, "text/plain; charset=utf-8");
+    }
+
+    private static void respondOnEventLoop(ChannelHandlerContext ctx, HttpResponseStatus status, String body) {
+        respondOnEventLoop(ctx, status, body, "text/plain; charset=utf-8");
+    }
+
+    private static void respondOnEventLoop(ChannelHandlerContext ctx, HttpResponseStatus status, String body,
+                                           String contentType) {
+        try { ctx.executor().execute(() -> respond(ctx, status, body, contentType)); }
+        catch (RejectedExecutionException stopped) { ctx.channel().close(); }
+    }
+
+    private static void respond(ChannelHandlerContext ctx, HttpResponseStatus status, String body,
+                                String contentType) {
         if (!ctx.channel().isActive()) return;
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status,
                 Unpooled.wrappedBuffer(bytes));
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=utf-8");
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
         response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, bytes.length);
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
@@ -1161,12 +1260,14 @@ public final class RenderGameServer implements AutoCloseable {
 
     @Override public synchronized void close() {
         if (!closed.compareAndSet(false, true)) return;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
         admissionOpen = false;
         draining = true;
         leaseExecutor.shutdownNow();
         Channel serverChannel = listener;
         if (serverChannel != null) serverChannel.close();
         for (Channel channel : sockets.keySet()) channel.close();
+        List<String> pendingIds = new ArrayList<String>();
         try {
             java.util.concurrent.Future<List<CloseSettlement>> pending = roomsExecutor.submit(() -> {
                 List<CloseSettlement> settlements = new ArrayList<CloseSettlement>();
@@ -1177,6 +1278,7 @@ public final class RenderGameServer implements AutoCloseable {
                 return settlements;
             });
             for (CloseSettlement settlement : pending.get(1, TimeUnit.SECONDS)) {
+                pendingIds.add(settlement.matchId);
                 try { persistenceExecutor.execute(() -> {
                     try {
                         if (settlement.winnerId == null) {
@@ -1184,18 +1286,33 @@ public final class RenderGameServer implements AutoCloseable {
                         } else {
                             store.finishMatch(settlement.matchId, runId, settlement.winnerId, settlement.reason);
                         }
-                    } catch (Exception ignored) { /* unresolved rows require operator reconciliation */ }
+                    } catch (Exception failure) {
+                        // The next lease owner reconciles persistent RUNNING rows.
+                        LOG.log(Level.WARNING, "Shutdown settlement pending for match "
+                                + settlement.matchId, failure);
+                    }
                 }); }
-                catch (RejectedExecutionException ignored) { }
+                catch (RejectedExecutionException full) {
+                    LOG.warning("Shutdown settlement queue full for match " + settlement.matchId);
+                }
             }
-        } catch (Exception ignored) { }
+        } catch (Exception unavailable) {
+            LOG.log(Level.WARNING, "Could not enumerate shutdown settlements; lease takeover must reconcile", unavailable);
+        }
         roomsExecutor.shutdown();
         authExecutor.shutdown();
         persistenceExecutor.shutdown();
-        try { persistenceExecutor.awaitTermination(10, TimeUnit.SECONDS); }
+        try {
+            long remaining = Math.max(0L, deadline - System.nanoTime());
+            if (!persistenceExecutor.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
+                LOG.warning("Shutdown deadline reached with pending persistence; next lease owner must reconcile"
+                        + " matchIds=" + pendingIds);
+                persistenceExecutor.shutdownNow();
+            }
+        }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
-        if (boss != null) boss.shutdownGracefully();
-        if (workers != null) workers.shutdownGracefully();
+        if (boss != null) boss.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+        if (workers != null) workers.shutdownGracefully(0, 1, TimeUnit.SECONDS);
         stopped.countDown();
     }
 
@@ -1209,18 +1326,56 @@ public final class RenderGameServer implements AutoCloseable {
         if (args.length != 0) throw new IllegalArgumentException("Usage: RenderGameServer");
         String configured = System.getenv("PORT");
         int port = configured == null || configured.trim().isEmpty() ? 10000 : Integer.parseInt(configured);
-        SupabaseConfig config = SupabaseConfig.fromEnvironment();
+        String backend = System.getenv("TETRIS_BACKEND");
+        if (backend == null || backend.trim().isEmpty()) backend = "supabase";
+        backend = backend.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!"firebase".equals(backend) && !"supabase".equals(backend)) {
+            throw new IllegalArgumentException("TETRIS_BACKEND must be firebase or supabase");
+        }
         int maxWebSocketConnections = environmentInt("TETRIS_MAX_WS_CONNECTIONS",
                 DEFAULT_MAX_WS_CONNECTIONS);
         int maxPendingAuth = environmentInt("TETRIS_MAX_PENDING_AUTH", DEFAULT_MAX_PENDING_AUTH);
-        RenderGameServer server = new RenderGameServer(new SupabaseTokenVerifier(config),
-                new SupabaseRankedMatchStore(config), System.getenv("RENDER_ADMIN_TOKEN"), port,
-                maxWebSocketConnections, maxPendingAuth);
-        server.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(server::close, "render-server-shutdown"));
-        System.out.println("Render PvP HTTP/WebSocket server listening on 0.0.0.0:" + server.getPort()
-                + " runId=" + server.getRunId() + " admission=" + server.isAdmissionOpen());
-        server.stopped.await();
+        String adminToken = System.getenv("TETRIS_ADMIN_TOKEN");
+        if (adminToken == null || adminToken.isEmpty()) adminToken = System.getenv("RENDER_ADMIN_TOKEN");
+        FirebaseServerContext firebase = null;
+        try {
+            TokenVerifier verifier;
+            RankedMatchStore store;
+            if ("firebase".equals(backend)) {
+                firebase = FirebaseServerContext.fromEnvironment();
+                verifier = new FirebaseTokenVerifier(firebase.getAuth(), firebase.getFirestore());
+                store = new FirestoreRankedMatchStore(firebase.getFirestore(), firebase.getAuth());
+            } else {
+                SupabaseConfig config = SupabaseConfig.fromEnvironment();
+                verifier = new SupabaseTokenVerifier(config);
+                store = new SupabaseRankedMatchStore(config);
+            }
+            RenderGameServer server = new RenderGameServer(verifier, store, adminToken, port,
+                    maxWebSocketConnections, maxPendingAuth);
+            FirebaseServerContext context = firebase;
+            AtomicBoolean cleaned = new AtomicBoolean();
+            Runnable cleanup = () -> {
+                server.close();
+                if (context != null && cleaned.compareAndSet(false, true)) {
+                    try { context.close(); }
+                    catch (Exception failure) { LOG.log(Level.WARNING, "Firebase shutdown failed", failure); }
+                }
+            };
+            Runtime.getRuntime().addShutdownHook(new Thread(cleanup, "ranked-server-shutdown"));
+            try {
+                server.start();
+                System.out.println("Ranked PvP HTTP/WebSocket server listening on 0.0.0.0:" + server.getPort()
+                        + " backend=" + backend + " runId=" + server.getRunId()
+                        + " admission=" + server.isAdmissionOpen());
+                server.stopped.await();
+            } finally { cleanup.run(); }
+        } catch (Exception startupFailure) {
+            if (firebase != null) {
+                try { firebase.close(); }
+                catch (Exception cleanupFailure) { startupFailure.addSuppressed(cleanupFailure); }
+            }
+            throw startupFailure;
+        }
     }
 
     private static int environmentInt(String name, int defaultValue) {

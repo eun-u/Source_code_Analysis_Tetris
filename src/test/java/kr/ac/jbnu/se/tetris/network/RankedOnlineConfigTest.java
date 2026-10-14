@@ -14,13 +14,15 @@ public final class RankedOnlineConfigTest {
             if (stream == null) throw new AssertionError("Public online defaults missing from classpath");
             defaults.load(stream);
         }
-        if (defaults.size() != 3
-                || !"wss://tetris-ranked-pvp.onrender.com/ws".equals(defaults.getProperty("server.url"))
-                || !"https://gadzyccwxnxzdmdgjptx.supabase.co".equals(defaults.getProperty("supabase.url"))
-                || !defaults.getProperty("supabase.publishableKey", "").startsWith("sb_publishable_"))
-            throw new AssertionError("Only the three intended public online settings may ship");
+        if (defaults.size() != 4
+                || !"firebase".equals(defaults.getProperty("online.provider"))
+                || !"wss://campus-quest-pvp-633154644935.asia-northeast3.run.app/ws".equals(defaults.getProperty("server.url"))
+                || !"campus-quest-tetris".equals(defaults.getProperty("firebase.projectId"))
+                || !defaults.getProperty("firebase.apiKey", "").matches("AIza[A-Za-z0-9_-]{35}"))
+            throw new AssertionError("Only the four intended public Firebase settings may ship");
 
-        String[] env = { "TETRIS_SERVER_URL", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY" };
+        String[] env = { "TETRIS_SERVER_URL", "TETRIS_ONLINE_PROVIDER",
+                "FIREBASE_PROJECT_ID", "FIREBASE_API_KEY", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY" };
         boolean ambientOverride = false;
         for (String name : env) ambientOverride |= System.getenv(name) != null;
         String old = System.getProperty("tetris.client.config");
@@ -28,8 +30,9 @@ public final class RankedOnlineConfigTest {
             System.setProperty("tetris.client.config", "missing-config-" + UUID.randomUUID() + ".properties");
             RankedOnlineConfig loaded = RankedOnlineConfig.load();
             if (loaded == null) throw new AssertionError("Default online config must load without local file");
-            if (!ambientOverride && !loaded.getServerUri().toString().equals(defaults.getProperty("server.url")))
-                throw new AssertionError("New checkout did not use the bundled default server");
+            if (!ambientOverride && (!loaded.isFirebase()
+                    || !loaded.getServerUri().toString().equals(defaults.getProperty("server.url"))))
+                throw new AssertionError("New checkout did not use the bundled Firebase server");
         } finally {
             if (old == null) System.clearProperty("tetris.client.config");
             else System.setProperty("tetris.client.config", old);

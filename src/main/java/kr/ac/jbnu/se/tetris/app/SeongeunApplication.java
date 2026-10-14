@@ -53,7 +53,7 @@ import kr.ac.jbnu.se.tetris.network.NetworkClient;
 import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
 import kr.ac.jbnu.se.tetris.network.RankedOnlineConfig;
 import kr.ac.jbnu.se.tetris.auth.AuthSession;
-import kr.ac.jbnu.se.tetris.auth.SupabaseAuthService;
+import kr.ac.jbnu.se.tetris.auth.AuthService;
 import kr.ac.jbnu.se.tetris.auth.UsernameIdentity;
 import kr.ac.jbnu.se.tetris.auth.SignUpResult;
 import kr.ac.jbnu.se.tetris.ranking.LeaderboardService;
@@ -145,7 +145,7 @@ public final class SeongeunApplication implements AutoCloseable {
     private PostLoginDestination postLoginDestination = PostLoginDestination.NONE;
     private String accountStatus = "로컬 플레이";
     private RankedOnlineConfig rankedConfig;
-    private SupabaseAuthService auth;
+    private AuthService auth;
     private AuthSession accountSession;
     private boolean authBusy;
     private long authEpoch;
@@ -205,7 +205,7 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         try {
             rankedConfig = RankedOnlineConfig.load();
-            if (rankedConfig != null) auth = new SupabaseAuthService(rankedConfig.getSupabaseConfig());
+            if (rankedConfig != null) auth = rankedConfig.createAuthService();
         } catch (IOException invalid) { lastMessage = "온라인 설정을 읽지 못했습니다. 로컬 플레이는 가능합니다."; }
         login.setOnlineAvailable(auth != null);
         authRefresh = new Timer(30000, event -> refreshAccount());
@@ -1146,7 +1146,7 @@ public final class SeongeunApplication implements AutoCloseable {
         rankingBusy = true; leaderboard.setBusy(true);
         new javax.swing.SwingWorker<java.util.List<LeaderboardEntry>, Void>() {
             @Override protected java.util.List<LeaderboardEntry> doInBackground() throws Exception {
-                return new LeaderboardService(rankedConfig.getSupabaseConfig()).top100(requestedAccount.getAccessToken());
+                return rankedConfig.createLeaderboardService().top100(requestedAccount.getAccessToken());
             }
             @Override protected void done() {
                 if (closed) return;
@@ -1192,7 +1192,7 @@ public final class SeongeunApplication implements AutoCloseable {
         ScreenRouter.requireEdt();
         if (closed) return;
         if (match != null || network != null) closeSession();
-        final NetworkClient client = new WebSocketNetworkClient();
+        final NetworkClient client = new WebSocketNetworkClient(rankedConfig != null && rankedConfig.isFirebase());
         network = client;
         onlineConnected = false;
         onlineResultReturned = false;

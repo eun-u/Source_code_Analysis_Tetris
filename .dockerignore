@@ -1,5 +1,6 @@
 *
 !Dockerfile
+!Dockerfile.cloudrun
 !pom.xml
 !mvnw
 !.mvn/

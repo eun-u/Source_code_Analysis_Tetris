@@ -52,12 +52,17 @@ public final class RenderGameServerTest {
         Probe[] probes = new Probe[6];
         try {
             String base = "http://127.0.0.1:" + server.getPort();
+            assertEquals(200, request(base + "/health", "GET", null));
             assertEquals(200, request(base + "/healthz", "GET", null));
+            assertEquals(503, request(base + "/ready", "GET", null));
+            assertEquals(503, request(base + "/readyz", "GET", null));
             if (!requestText(base + "/", null).contains("Match admission: closed"))
                 throw new AssertionError("Public server page must explain closed admission");
             assertEquals(401, request(base + "/admin/status", "GET", null));
             assertEquals(503, request(base + "/ws", "GET", "Bearer " + USERS[0]));
             assertEquals(200, request(base + "/admin/open", "POST", "Bearer " + ADMIN));
+            assertEquals(200, request(base + "/ready", "GET", null));
+            assertEquals(200, request(base + "/readyz", "GET", null));
             if (!requestText(base + "/", null).contains("Match admission: open"))
                 throw new AssertionError("Public server page must explain open admission");
             fragmentedAndMalformedBoundary(server.getPort());
@@ -131,6 +136,8 @@ public final class RenderGameServerTest {
                 if (pair == 0) assertStatusContains(base, "active=2", "unresolved=2");
             }
             assertEquals(200, request(base + "/admin/drain", "POST", "Bearer " + ADMIN));
+            assertEquals(503, request(base + "/ready", "GET", null));
+            assertEquals(503, request(base + "/readyz", "GET", null));
             Probe first = probes[0];
             long rejectedId = first.client.send(RoomCommand.createRoom(2));
             NetworkUpdate rejected = first.awaitOutcome(rejectedId);
@@ -195,6 +202,7 @@ public final class RenderGameServerTest {
             while (second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
             if (second.isAdmissionOpen()) throw new AssertionError("Uncertain lease kept admission open");
             assertEquals(200, request(base + "/healthz", "GET", null));
+            assertEquals(503, request(base + "/readyz", "GET", null));
             deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
             while (!second.isAdmissionOpen() && System.nanoTime() < deadline) Thread.sleep(20);
             if (!second.isAdmissionOpen()) throw new AssertionError("Transient lease error did not recover");

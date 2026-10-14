@@ -64,12 +64,14 @@ public final class RankedApplicationFlowTest {
                 catch (Throwable failure) { peerFailure.set(failure); }
             }, "ranked-app-ws-fixture");
             peer.setDaemon(true); peer.start();
-            String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey"};
+            String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey",
+                    "tetris.online.provider"};
             String[] previous = new String[keys.length];
             for (int index = 0; index < keys.length; index++) previous[index] = System.getProperty(keys[index]);
             System.setProperty(keys[0], "ws://127.0.0.1:" + socket.getLocalPort() + "/ws");
             System.setProperty(keys[1], "http://127.0.0.1:" + http.getAddress().getPort());
             System.setProperty(keys[2], "sb_publishable_fixture");
+            System.setProperty(keys[3], "supabase");
             SeongeunApplication[] app = new SeongeunApplication[1];
             try {
                 onEdt(() -> app[0] = new SeongeunApplication(new Random(7), null));
