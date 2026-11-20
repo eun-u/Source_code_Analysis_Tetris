@@ -7,10 +7,12 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+
 import javax.imageio.ImageIO;
+
 import kr.ac.jbnu.se.tetris.core.PieceType;
 
-/** Clean, saturated cartoon skin shared by the board, HOLD and NEXT. */
+// Clean, saturated cartoon skin shared by the board, HOLD and NEXT.
 public final class ConcreteBlockSkin {
     private static final String ORE_PATH = "/ui/campus-rpg/ore-tile.png";
     private static final BufferedImage ORE_IMAGE = loadOreImage();
@@ -120,20 +122,44 @@ public final class ConcreteBlockSkin {
         }
     }
 
-    /** Ignore the transparent outer canvas of the PNG before fitting it in one block. */
+    // 이미지의 투명한 여백을 제외하고 실제 그림이 표시되는 영역을 계산한다.
     private static Rectangle findVisibleArea(BufferedImage image) {
-        if (image == null) return null;
-        int left = image.getWidth(), top = image.getHeight(), right = -1, bottom = -1;
+
+        if (image == null) {
+            return null;
+        }
+
+        int left = image.getWidth();
+        int top = image.getHeight();
+        int right = -1;
+        int bottom = -1;
+
+        // 이미지의 모든 픽셀 검사
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
-                if ((image.getRGB(x, y) >>> 24) <= 8) continue;
-                if (x < left) left = x;
-                if (x > right) right = x;
-                if (y < top) top = y;
-                if (y > bottom) bottom = y;
+
+                // 투명한 픽셀은 제외
+                if ((image.getRGB(x, y) >>> 24) <= 8) {
+                    continue;
+                }
+
+                // 실제 이미지 영역의 경계 갱신
+                left = Math.min(left, x);
+                right = Math.max(right, x);
+                top = Math.min(top, y);
+                bottom = Math.max(bottom, y);
             }
         }
-        return right < left ? null : new Rectangle(left, top, right - left + 1, bottom - top + 1);
+
+        // 유효한 픽셀이 없는 경우
+        return right < left
+                ? null
+                : new Rectangle(
+                        left,
+                        top,
+                        right - left + 1,
+                        bottom - top + 1
+                );
     }
 
     /** Retain a legible ore indicator when the PNG cannot be loaded or for ghost cells. */

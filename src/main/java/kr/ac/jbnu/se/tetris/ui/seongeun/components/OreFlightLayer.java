@@ -12,7 +12,7 @@ import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
-/** 광석이 깨진 실제 보드 칸에서 획득 슬롯까지 날아가는 비차단 화면 효과. */
+// 광석이 깨진 실제 보드 칸에서 획득 슬롯까지 날아가는 비차단 화면 효과.
 public final class OreFlightLayer extends JComponent {
     private static final int DURATION = 780;
     private final List<Flight> flights = new ArrayList<Flight>();
@@ -63,25 +63,7 @@ public final class OreFlightLayer extends JComponent {
         if (age < 0 || age > DURATION) return;
         int sx = flight.source.x, sy = flight.source.y;
         if (age < 220) {
-            float fade = 1f - age / 220f;
-            int radius = 5 + Math.round(age / 9f);
-            g.setColor(new Color(255, 183, 60, Math.round(210 * fade)));
-            g.drawOval(sx - radius, sy - radius, radius * 2, radius * 2);
-            g.setColor(new Color(255, 247, 185, Math.round(240 * fade)));
-            g.drawOval(sx - Math.max(2, radius / 2), sy - Math.max(2, radius / 2),
-                    Math.max(4, radius), Math.max(4, radius));
-            for (int i = 0; i < 12; i++) {
-                double angle = Math.PI * 2 * i / 12 + i * 0.15;
-                int px = sx + (int) Math.round(Math.cos(angle) * radius);
-                int py = sy + (int) Math.round(Math.sin(angle) * radius);
-                g.setColor(i % 3 == 0 ? new Color(255, 248, 196, Math.round(240 * fade))
-                        : new Color(235, 165, 71, Math.round(200 * fade)));
-                g.fillRect(px, py, i % 3 == 0 ? 5 : 3, i % 3 == 0 ? 5 : 3);
-            }
-            if (age < 90) {
-                g.setColor(new Color(255, 252, 221, Math.round(235 * (1f - age / 90f))));
-                g.fillRect(sx - 5, sy - 5, 11, 11);
-            }
+            paintLaunchEffect(g, sx, sy, age);
         }
         if (age >= 70 && age < 560) {
             float t = Math.max(0f, Math.min(1f, (age - 70f) / 490f));
@@ -123,6 +105,78 @@ public final class OreFlightLayer extends JComponent {
                         flight.target.y - flight.targetHeight / 2 - inset,
                         flight.targetWidth + inset * 2, flight.targetHeight + inset * 2);
             }
+        }
+    }
+
+    // 광석 생성 위치에서 발생하는 빛과 입자 이펙트를 렌더링한다.
+    private static void paintLaunchEffect(Graphics2D g, int sx, int sy, long age) {
+
+        // 생성 이펙트의 투명도와 크기 계산
+        float fade = 1f - age / 220f;
+        int radius = 5 + Math.round(age / 9f);
+
+        // 바깥쪽 빛 효과
+        g.setColor(new Color(
+                255, 183, 60,
+                Math.round(210 * fade)
+        ));
+
+        g.drawOval(
+                sx - radius,
+                sy - radius,
+                radius * 2,
+                radius * 2
+        );
+
+        // 안쪽 빛 효과
+        g.setColor(new Color(
+                255, 247, 185,
+                Math.round(240 * fade)
+        ));
+
+        g.drawOval(
+                sx - Math.max(2, radius / 2),
+                sy - Math.max(2, radius / 2),
+                Math.max(4, radius),
+                Math.max(4, radius)
+        );
+
+        // 광석 주변으로 퍼지는 입자
+        for (int i = 0; i < 12; i++) {
+
+            double angle = Math.PI * 2 * i / 12 + i * 0.15;
+
+            int px = sx + (int) Math.round(
+                    Math.cos(angle) * radius
+            );
+
+            int py = sy + (int) Math.round(
+                    Math.sin(angle) * radius
+            );
+
+            g.setColor(
+                    i % 3 == 0
+                            ? new Color(255, 248, 196, Math.round(240 * fade))
+                            : new Color(235, 165, 71, Math.round(200 * fade))
+            );
+
+            g.fillRect(
+                    px,
+                    py,
+                    i % 3 == 0 ? 5 : 3,
+                    i % 3 == 0 ? 5 : 3
+            );
+        }
+
+        // 생성 직후 중심부 섬광
+        if (age < 90) {
+
+            g.setColor(new Color(
+                    255, 252, 221,
+                    Math.round(235 * (1f - age / 90f))
+            ));
+
+            g.fillRect(sx - 5, sy - 5, 11, 11);
         }
     }
 
