@@ -1,17 +1,39 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.event.ActionListener;
 import java.util.List;
-import javax.swing.*;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-import kr.ac.jbnu.se.tetris.ranking.LeaderboardEntry;
-import kr.ac.jbnu.se.tetris.ui.seongeun.components.*;
 
-/** Ranked online list with real-time podium, not placeholder player data. */
+import kr.ac.jbnu.se.tetris.ranking.LeaderboardEntry;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusBackButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
+
+// Ranked online list with real-time podium, not placeholder player data.
 public final class LeaderboardPanel extends ScenePanel {
+    private static final String EMPTY_VIEW = "empty";
     private final PixelButton back=new CampusBackButton("돌아가기"),reload=new PixelButton("새로고침");
     private final JLabel status=new JLabel("");
     private final CardLayout views=new CardLayout();
@@ -44,30 +66,90 @@ public final class LeaderboardPanel extends ScenePanel {
         table.setFillsViewportHeight(true);
         table.getColumnModel().getColumn(0).setPreferredWidth(90);
         table.getColumnModel().getColumn(1).setPreferredWidth(260);
-        DefaultTableCellRenderer render=new DefaultTableCellRenderer(){
-            @Override public Component getTableCellRendererComponent(JTable t,Object value,boolean selected,boolean focus,int row,int col){
-                super.getTableCellRendererComponent(t,value,selected,false,row,col);
-                setHorizontalAlignment(col==1?SwingConstants.LEFT:SwingConstants.CENTER);
-                setBorder(new EmptyBorder(0,14,0,14));
-                boolean special=row<3;
-                setFont(UniversityPixelTheme.font(15,special?Font.BOLD:Font.PLAIN));
-                setForeground(special&&col==0?CampusArt.BROWN:CampusArt.NAVY);
-                if(!selected)setBackground(row==0?new Color(0xFFF0C2):row==1?new Color(0xE4F0FC):row==2?new Color(0xFFE5D0):
-                    row%2==0?CampusArt.WHITE:new Color(0xF8F3EA));
-                return this;
-            }
-        };
+
+        // 분리한 테이블 렌더러 사용
+        DefaultTableCellRenderer render = new RankingCellRenderer();
+
         for(int i=0;i<model.getColumnCount();i++)table.getColumnModel().getColumn(i).setCellRenderer(render);
         JScrollPane scroll=new JScrollPane(table);
         scroll.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(CampusArt.GREEN,4),
                 new EmptyBorder(7,7,7,7)));
         scroll.getViewport().setBackground(CampusArt.WHITE);
         board.add(scroll,BorderLayout.CENTER);
-        body.add(board,"table");body.add(emptyState(),"empty");views.show(body,"empty");
+        body.add(board, "table");
+        body.add(emptyState(), EMPTY_VIEW);
+        views.show(body, EMPTY_VIEW);
         add(body,BorderLayout.CENTER);
         status.setForeground(CampusArt.NAVY);status.setFont(UniversityPixelTheme.font(13,Font.BOLD));
         add(status,BorderLayout.SOUTH);
     }
+
+    // 랭킹 테이블의 순위별 색상과 텍스트 정렬을 담당한다.
+    private static final class RankingCellRenderer extends DefaultTableCellRenderer {
+
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table,
+                Object value,
+                boolean selected,
+                boolean focus,
+                int row,
+                int col) {
+
+            super.getTableCellRendererComponent(
+                    table, value, selected, false, row, col);
+
+            // 이름은 왼쪽 정렬, 나머지 정보는 가운데 정렬
+            setHorizontalAlignment(
+                    col == 1
+                            ? SwingConstants.LEFT
+                            : SwingConstants.CENTER
+            );
+
+            setBorder(new EmptyBorder(0, 14, 0, 14));
+
+            // 상위 3명 강조
+            boolean special = row < 3;
+
+            setFont(UniversityPixelTheme.font(
+                    15,
+                    special ? Font.BOLD : Font.PLAIN
+            ));
+
+            setForeground(
+                    special && col == 0
+                            ? CampusArt.BROWN
+                            : CampusArt.NAVY
+            );
+
+            // 순위에 따른 배경 색상
+            if (!selected) {
+                setBackground(backgroundForRow(row));
+            }
+            return this;
+        }
+
+        // 랭킹 순위에 따른 테이블 행 배경색을 반환한다.
+        private static Color backgroundForRow(int row) {
+
+            switch (row) {
+                case 0:
+                    return new Color(0xFFF0C2);
+
+                case 1:
+                    return new Color(0xE4F0FC);
+
+                case 2:
+                    return new Color(0xFFE5D0);
+
+                default:
+                    return row % 2 == 0
+                            ? CampusArt.WHITE
+                            : new Color(0xF8F3EA);
+            }
+        }
+    }
+
     private JPanel emptyState(){
         CampusArt.Card empty=CampusArt.card(new GridBagLayout(),CampusArt.GREEN,25);
         JPanel content=new JPanel();content.setOpaque(false);
@@ -103,12 +185,15 @@ public final class LeaderboardPanel extends ScenePanel {
         for(LeaderboardEntry entry:entries){if(entry.getRank()>=1&&entry.getRank()<=3)best[entry.getRank()-1]=entry;}
         podium.add(podiumCard(2,best[1]));podium.add(podiumCard(1,best[0]));podium.add(podiumCard(3,best[2]));
         podium.revalidate();podium.repaint();
-        if(entries.isEmpty()){emptyTitle.setText("전적 없음");views.show(body,"empty");}
+        if (entries.isEmpty()) {
+            emptyTitle.setText("전적 없음");
+            views.show(body, EMPTY_VIEW);
+        }
         else views.show(body,"table");
         setStatus(entries.isEmpty()?"":entries.size()+"명");
     }
     public void setStatus(String text){status.setText(text);}
-    public void setError(String text){setStatus(text);if(model.getRowCount()==0){emptyTitle.setText("랭킹을 불러오지 못했습니다");views.show(body,"empty");}}
+    public void setError(String text){setStatus(text);if(model.getRowCount()==0){emptyTitle.setText("랭킹을 불러오지 못했습니다"); views.show(body, EMPTY_VIEW);}}
     public void setBusy(boolean busy){reload.setEnabled(!busy);if(busy){status.setText("랭킹을 불러오는 중...");if(model.getRowCount()==0)emptyTitle.setText("랭킹을 불러오는 중...");}}
     public void setBackAction(ActionListener action){back.addActionListener(action);}
     public void setReloadAction(ActionListener action){reload.addActionListener(action);}
