@@ -8,6 +8,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
@@ -83,46 +84,121 @@ public final class CartoonBattleTopHud extends JPanel {
         return badge;
     }
 
+    // 전투 HUD의 종료 버튼을 생성한다.
     public static PixelButton quitButton(String text) {
-        PixelButton button = new PixelButton(text) {
-            @Override protected void paintComponent(Graphics graphics) {
-                Graphics2D g = (Graphics2D) graphics.create();
-                try {
-                    int w = getWidth(), h = getHeight();
-                    if (w < 12 || h < 12) return;
-                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                    boolean danger = UniversityPixelTheme.CORAL.equals(getBackground());
-                    boolean pressed = getModel().isPressed();
-                    boolean hover = getModel().isRollover();
-                    Color surface = danger ? new Color(0xF48B80) : new Color(0xF4A17D);
-                    if (hover) surface = danger ? new Color(0xFF9B90) : new Color(0xFFB18D);
-                    if (pressed) surface = danger ? new Color(0xD87470) : new Color(0xDF8D69);
-                    g.setColor(SHADOW);
-                    g.fillRoundRect(1, 5, w - 2, h - 5, 18, 18);
-                    g.setColor(OUTLINE);
-                    g.fillRoundRect(0, 0, w, h - 3, 18, 18);
-                    g.setColor(surface);
-                    g.fillRoundRect(3, 3 + (pressed ? 2 : 0), w - 6, h - 9, 14, 14);
-                    if (!pressed) {
-                        g.setColor(new Color(255, 255, 255, 115));
-                        g.drawRoundRect(6, 5, w - 13, h - 13, 10, 10);
-                    }
-                    g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
-                    FontMetrics fm = g.getFontMetrics();
-                    String caption = getText() == null ? "" : getText();
-                    int tx = (w - fm.stringWidth(caption)) / 2;
-                    int ty = (h - fm.getHeight()) / 2 + fm.getAscent() - 1 + (pressed ? 2 : 0);
-                    g.setColor(UniversityPixelTheme.TEXT);
-                    g.drawString(caption, tx, ty);
-                } finally { g.dispose(); }
-            }
-        };
+
+        PixelButton button = new QuitHudButton(text);
+
         button.primary();
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         button.setRolloverEnabled(true);
         button.setFocusable(false);
+
         return button;
+    }
+
+    // 전투 HUD 종료 버튼의 렌더링을 담당한다.
+
+    private static final class QuitHudButton extends PixelButton {
+
+        private QuitHudButton(String text) {
+            super(text);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+
+            Graphics2D g = (Graphics2D) graphics.create();
+
+            try {
+                int w = getWidth();
+                int h = getHeight();
+
+                if (w < 12 || h < 12) {
+                    return;
+                }
+
+                g.setRenderingHint(
+                        RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON
+                );
+
+                g.setRenderingHint(
+                        RenderingHints.KEY_TEXT_ANTIALIASING,
+                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+                );
+
+                // 버튼 상태 확인
+                boolean danger = UniversityPixelTheme.CORAL.equals(getBackground());
+                boolean pressed = getModel().isPressed();
+                boolean hover = getModel().isRollover();
+
+                // 버튼 상태에 따른 배경색
+                Color surface = danger
+                        ? new Color(0xF48B80)
+                        : new Color(0xF4A17D);
+
+                if (hover) {
+                    surface = danger
+                            ? new Color(0xFF9B90)
+                            : new Color(0xFFB18D);
+                }
+
+                if (pressed) {
+                    surface = danger
+                            ? new Color(0xD87470)
+                            : new Color(0xDF8D69);
+                }
+
+                // 버튼 그림자
+                g.setColor(SHADOW);
+                g.fillRoundRect(1, 5, w - 2, h - 5, 18, 18);
+
+                // 버튼 외곽선
+                g.setColor(OUTLINE);
+                g.fillRoundRect(0, 0, w, h - 3, 18, 18);
+
+                // 버튼 배경
+                g.setColor(surface);
+
+                g.fillRoundRect(
+                        3,
+                        3 + (pressed ? 2 : 0),
+                        w - 6,
+                        h - 9,
+                        14,
+                        14
+                );
+
+                // 버튼 내부 테두리
+                if (!pressed) {
+                    g.setColor(new Color(255, 255, 255, 115));
+                    g.drawRoundRect(6, 5, w - 13, h - 13, 10, 10);
+                }
+
+                // 버튼 텍스트
+                g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+
+                FontMetrics fm = g.getFontMetrics();
+
+                String caption = getText() == null
+                        ? ""
+                        : getText();
+
+                int tx = (w - fm.stringWidth(caption)) / 2;
+
+                int ty = (h - fm.getHeight()) / 2
+                        + fm.getAscent()
+                        - 1
+                        + (pressed ? 2 : 0);
+
+                g.setColor(UniversityPixelTheme.TEXT);
+                g.drawString(caption, tx, ty);
+
+            } finally {
+                g.dispose();
+            }
+        }
     }
 
     @Override public void doLayout() {

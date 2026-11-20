@@ -1,8 +1,17 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import javax.swing.*;
+
+import javax.swing.JButton;
 
 /** Swing 화면 전체에서 공통으로 사용하는 절제된 픽셀 버튼. */
 public class PixelButton extends JButton {
@@ -25,16 +34,16 @@ public class PixelButton extends JButton {
         repaint();
     }
 
-    /** 화면의 주된 다음 행동. 한 화면에 하나만 두는 것을 기본으로 한다. */
+    // 화면의 주된 다음 행동. 한 화면에 하나만 두는 것을 기본으로 한다.
     public PixelButton primary() { setAccent(UniversityPixelTheme.GOLD); return this; }
 
-    /** 돌아가기·취소처럼 흐름을 바꾸지 않는 보조 행동. */
+    // 돌아가기·취소처럼 흐름을 바꾸지 않는 보조 행동.
     public PixelButton secondary() { setAccent(UniversityPixelTheme.PANEL_LIGHT); return this; }
 
-    /** 대전 시작·준비처럼 긍정적인 확정 행동. */
+    // 대전 시작·준비처럼 긍정적인 확정 행동.
     public PixelButton positive() { setAccent(UniversityPixelTheme.MINT); return this; }
 
-    /** 대전 포기·방 나가기처럼 진행 중인 상태를 끊는 행동. */
+    // 대전 포기·방 나가기처럼 진행 중인 상태를 끊는 행동.
     public PixelButton danger() { setAccent(UniversityPixelTheme.CORAL); return this; }
 
     @Override public void setBackground(Color background) {
@@ -69,35 +78,83 @@ public class PixelButton extends JButton {
                 }
                 return;
             }
-            Color base = !enabled ? new Color(0xD1C9B9) : hover ? lighten(accent) : accent;
-            int arc = Math.min(23, Math.max(12, h / 2));
-            g.setColor(new Color(44, 27, 18, 85));
-            g.fillRoundRect(4, 5, w - 7, h - 7, arc, arc);
-            g.setColor(new Color(0x382018));
-            g.fillRoundRect(1 + offset, 1 + offset, w - 6, h - 7, arc, arc);
-            g.setPaint(new GradientPaint(0,offset + 3, lighten(base),0,h - 7 + offset,base));
-            g.fillRoundRect(4 + offset, 4 + offset, w - 12, h - 14, arc - 3, arc - 3);
-            g.setColor(new Color(255,255,255,160));
-            g.setStroke(new BasicStroke(1.8f));
-            g.drawRoundRect(7 + offset, 7 + offset, w - 18, h - 21, arc - 5, arc - 5);
-            g.setFont(getFont());
-                FontMetrics m = g.getFontMetrics();
-                int avail = Math.max(0, w - 20);
-                while (value.length() > 1 && m.stringWidth(value) > avail) value = value.substring(0, value.length()-2) + "…";
-                Color fg = CampusArt.INK;
-                if (enabled && (accent.equals(UniversityPixelTheme.MINT) || accent.equals(UniversityPixelTheme.CORAL))) fg = Color.WHITE;
-                g.setColor(new Color(255,255,255,130));
-                int tx = (w - m.stringWidth(value)) / 2 + offset;
-                int ty = (h - m.getHeight()) / 2 + m.getAscent() + offset;
-                if (fg.equals(Color.WHITE)) g.drawString(value,tx+1,ty+2);
-                g.setColor(enabled ? fg : new Color(0x817870));
-                g.drawString(value,tx,ty);
-            if (isFocusOwner()) {
-                g.setColor(new Color(0x14568E));
-                g.setStroke(new BasicStroke(2f));
-                g.drawRoundRect(5 + offset, 5 + offset, w - 14, h - 16, arc, arc);
-            }
-        } finally { g.dispose(); }
+            paintStandardButton(g, w, h, offset, enabled, hover, value);
+        }
+        finally {
+            g.dispose();
+        }
+    }
+
+    // 일반 버튼의 배경, 테두리, 텍스트 및 포커스 상태를 렌더링한다.
+    private void paintStandardButton(Graphics2D g, int w, int h,
+                                    int offset, boolean enabled,
+                                    boolean hover, String value) {
+
+        Color base = !enabled
+                ? new Color(0xD1C9B9)
+                : hover ? lighten(accent) : accent;
+
+        int arc = Math.min(23, Math.max(12, h / 2));
+
+        // 버튼 그림자
+        g.setColor(new Color(44, 27, 18, 85));
+        g.fillRoundRect(4, 5, w - 7, h - 7, arc, arc);
+
+        // 버튼 외곽선
+        g.setColor(new Color(0x382018));
+        g.fillRoundRect(1 + offset, 1 + offset,
+                w - 6, h - 7, arc, arc);
+
+        // 버튼 배경
+        g.setPaint(new GradientPaint(
+                0, offset + 3, lighten(base),
+                0, h - 7 + offset, base));
+
+        g.fillRoundRect(4 + offset, 4 + offset,
+                w - 12, h - 14, arc - 3, arc - 3);
+
+        // 버튼 내부 테두리
+        g.setColor(new Color(255, 255, 255, 160));
+        g.setStroke(new BasicStroke(1.8f));
+        g.drawRoundRect(7 + offset, 7 + offset,
+                w - 18, h - 21, arc - 5, arc - 5);
+
+        // 버튼 텍스트
+        g.setFont(getFont());
+
+        FontMetrics m = g.getFontMetrics();
+        int avail = Math.max(0, w - 20);
+
+        while (value.length() > 1 && m.stringWidth(value) > avail) {
+            value = value.substring(0, value.length() - 2) + "…";
+        }
+
+        Color fg = CampusArt.INK;
+
+        if (enabled && (accent.equals(UniversityPixelTheme.MINT)
+                || accent.equals(UniversityPixelTheme.CORAL))) {
+            fg = Color.WHITE;
+        }
+
+        g.setColor(new Color(255, 255, 255, 130));
+
+        int tx = (w - m.stringWidth(value)) / 2 + offset;
+        int ty = (h - m.getHeight()) / 2 + m.getAscent() + offset;
+
+        if (fg.equals(Color.WHITE)) {
+            g.drawString(value, tx + 1, ty + 2);
+        }
+
+        g.setColor(enabled ? fg : new Color(0x817870));
+        g.drawString(value, tx, ty);
+
+        // 키보드 포커스 테두리
+        if (isFocusOwner()) {
+            g.setColor(new Color(0x14568E));
+            g.setStroke(new BasicStroke(2f));
+            g.drawRoundRect(5 + offset, 5 + offset,
+                    w - 14, h - 16, arc, arc);
+        }
     }
 
     private static Color lighten(Color color) {

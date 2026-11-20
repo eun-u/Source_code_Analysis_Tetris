@@ -11,10 +11,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 
-/**
- * 튜토리얼의 크림색 뒤로 가기 버튼을 화면 간에 공유한다.
- * 표시는 아이콘 + Swing 버튼 텍스트이고, 이벤트와 accessible name은 그대로 제공한다.
- */
+// 튜토리얼의 크림색 뒤로 가기 버튼을 화면 간에 공유한다. + 표시는 아이콘 + Swing 버튼 텍스트이고, 이벤트와 accessible name은 그대로 제공한다.
 public final class CampusBackButton extends PixelButton {
     private static final Color BROWN = new Color(0x51321D);
     private static final Color INK = new Color(0x13254D);
@@ -61,23 +58,61 @@ public final class CampusBackButton extends PixelButton {
                 g.setFont(UniversityPixelTheme.font(26, Font.BOLD));
                 g.drawString("←", iconX, h / 2 + 9 + down);
             }
-            String value = getText() == null ? "" : getText();
-            Font textFont = getFont() != null ? getFont() : UniversityPixelTheme.font(18, Font.BOLD);
-            g.setFont(textFont);
-            FontMetrics fm = g.getFontMetrics();
-            int start = iconX + icon + 8;
-            int maxWidth = Math.max(1, w - start - 9);
-            while (value.length() > 1 && fm.stringWidth(value) > maxWidth)
-                value = value.substring(0, value.length() - 2) + "…";
-            int x = start + Math.max(0, (maxWidth - fm.stringWidth(value)) / 2);
-            int y = (h - fm.getHeight()) / 2 + fm.getAscent() + down - 1;
-            g.setColor(isEnabled() ? INK : new Color(0x99918A));
-            g.drawString(value, x, y);
+
+            paintButtonText(g, w, h, down, iconX, icon);
+
             if (isFocusOwner()) {
                 g.setColor(new Color(0x2B79BC));
                 g.setStroke(new BasicStroke(2f));
                 g.drawRoundRect(4, down + 4, w - 10, h - 12, arc - 3, arc - 3);
             }
-        } finally { g.dispose(); }
+        } finally {
+            g.dispose();
+        }
+    }
+
+    // 버튼 텍스트의 글꼴, 위a치 및 표시 길이를 계산하여 렌더링한다.
+    private void paintButtonText(Graphics2D g, int w, int h, int down, int iconX, int icon) {
+
+        // 버튼 텍스트
+        String value = getText() == null ? "" : getText();
+
+        // 글꼴 설정
+        Font textFont = getFont() != null
+                ? getFont()
+                : UniversityPixelTheme.font(18, Font.BOLD);
+
+        g.setFont(textFont);
+
+        FontMetrics fm = g.getFontMetrics();
+
+        int start = iconX + icon + 8;
+        int maxWidth = Math.max(1, w - start - 9);
+
+        // 버튼 너비에 맞춰 텍스트 줄이기
+        while (value.length() > 1
+                && fm.stringWidth(value) > maxWidth) {
+
+            value = value.substring(0, value.length() - 2) + "…";
+        }
+
+        // 텍스트 표시 좌표
+        int x = start + Math.max(
+                0,
+                (maxWidth - fm.stringWidth(value)) / 2
+        );
+
+        int y = (h - fm.getHeight()) / 2
+                + fm.getAscent()
+                + down - 1;
+
+        // 활성화 상태에 따른 텍스트 색상
+        g.setColor(
+                isEnabled()
+                        ? INK
+                        : new Color(0x99918A)
+        );
+
+        g.drawString(value, x, y);
     }
 }
