@@ -8,11 +8,12 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.image.BufferedImage;
-import javax.swing.JButton;
+
 import javax.swing.BorderFactory;
-import javax.swing.SwingConstants;
+import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 
 import kr.ac.jbnu.se.tetris.ui.seongeun.Board;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
@@ -27,6 +28,8 @@ public final class TutorialScenePanel extends JPanel {
     private static final int DESIGN_W = 1448;
     private static final int DESIGN_H = 1086;
     private static final String ASSET_ROOT = "/ui/campus-rpg/tutorial/";
+    private static final String MODE_TUTORIAL = "Tutorial";
+    private static final String MODE_SPRINT = "Sprint";
     private static final Color INK = new Color(0x13254D);
     private static final Color BROWN = new Color(0x51321D);
     private static final Color CREAM = new Color(0xFFFAEC);
@@ -49,7 +52,7 @@ public final class TutorialScenePanel extends JPanel {
     private final JButton back = new JButton("돌아가기 [ESC]");
     // The same illustrated play scene serves Tutorial, Sprint and Infinite.
     // These values change artwork and non-gameplay captions, never game state.
-    private String displayMode = "Tutorial";
+    private String displayMode = MODE_TUTORIAL;
     private double uiScale = 1;
     private int originX, originY;
 
@@ -81,11 +84,11 @@ public final class TutorialScenePanel extends JPanel {
     }
 
     public void setDisplayMode(String modeName) {
-        if (!"Tutorial".equals(modeName) && !"Sprint".equals(modeName) && !"Infinite".equals(modeName)) {
+        if (!MODE_TUTORIAL.equals(modeName) && !MODE_SPRINT.equals(modeName) && !"Infinite".equals(modeName)) {
             throw new IllegalArgumentException("Unknown local mode: " + modeName);
         }
         displayMode = modeName;
-        back.setToolTipText("Tutorial".equals(modeName)
+        back.setToolTipText(MODE_TUTORIAL.equals(modeName)
                 ? "튜토리얼을 종료하고 이전 화면으로 돌아갑니다 (ESC)"
                 : "게임을 종료하고 모드 선택 화면으로 돌아갑니다 (ESC)");
         repaint();
@@ -169,9 +172,9 @@ public final class TutorialScenePanel extends JPanel {
 
     private void paintStaticUI(Graphics2D g) {
         // Each local mode reuses the exact same playfield, HUD, mascot and controls.
-        String logo = "Sprint".equals(displayMode) ? "sprint_mode_logo.png"
+        String logo = MODE_SPRINT.equals(displayMode) ? "sprint_mode_logo.png"
                 : "Infinite".equals(displayMode) ? "infinite_mode_logo.png" : "tutorial_title.png";
-        if ("Tutorial".equals(displayMode)) picture(g, logo, 54, 21, 292, 113);
+        if (MODE_TUTORIAL.equals(displayMode)) picture(g, logo, 54, 21, 292, 113);
         else picture(g, logo, 43, 1, 410, 146);
 
         // Keep a real Swing button (with text) for keyboard and automated UI tests.
@@ -181,8 +184,8 @@ public final class TutorialScenePanel extends JPanel {
         panel(g, 154, 152, 1140, 70, 18, BROWN, CREAM, 3f);
         panel(g, 174, 161, 218, 52, 14, new Color(0xD9B875), new Color(0xFFE2A2), 2f);
         picture(g, "icon_book.png", 92, 152, 76, 74);
-        final boolean tutorial = "Tutorial".equals(displayMode);
-        final boolean sprint = "Sprint".equals(displayMode);
+        final boolean tutorial = MODE_TUTORIAL.equals(displayMode);
+        final boolean sprint = MODE_SPRINT.equals(displayMode);
         String heading = tutorial ? stepLabel.getText() : sprint ? "SPRINT / 40" : "INFINITE";
         centeredLabel(g, heading, 283, 196, 25, new Color(0x6A371A));
         String caption = tutorial ? instruction.getText()
@@ -216,7 +219,7 @@ public final class TutorialScenePanel extends JPanel {
         panel(g, 1147, 236, 268, 218, 20, new Color(0x51321D), new Color(0xFFF8EC), 3f);
         statRow(g, 1155, 246, "icon_time.png", "시간", timeValue.getText());
         statRow(g, 1155, 314, "icon_lines.png", "지운 줄",
-                "Sprint".equals(displayMode) ? linesValue.getText() + "/40" : linesValue.getText());
+                MODE_SPRINT.equals(displayMode) ? linesValue.getText() + "/40" : linesValue.getText());
         statRow(g, 1155, 382, "icon_combo.png", "콤보", comboValue.getText());
 
         // Prominent illustrated controls: left lower area, safely below HOLD.
