@@ -13,10 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
 
-/**
- * 게임 타이틀식 세로 메뉴. 마우스를 올리거나 ↑↓ 키로 고르고, 클릭이나 Enter로 실행한다.
- * 선택된 항목은 금색 화살표와 밝은 띠로 표시된다.
- */
+/*
+ - 게임 타이틀식 세로 메뉴. 마우스를 올리거나 ↑↓ 키로 고르고, 클릭이나 Enter로 실행한다.
+ - 선택된 항목은 금색 화살표와 밝은 띠로 표시된다.
+*/
 public final class GameMenu extends JPanel {
     private final List<Item> items = new ArrayList<Item>();
     private int selected;
@@ -93,8 +93,8 @@ public final class GameMenu extends JPanel {
         private String description;
         private String badge;
         private Color badgeColor;
-        private BufferedImage skin;
-        private Rectangle skinBounds;
+        private transient BufferedImage skin;
+        private transient Rectangle skinBounds;
 
         Item(String title, String description, Color accent) {
             super(title);
