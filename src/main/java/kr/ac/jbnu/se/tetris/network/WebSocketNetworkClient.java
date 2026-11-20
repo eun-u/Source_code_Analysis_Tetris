@@ -223,6 +223,11 @@ public final class WebSocketNetworkClient implements NetworkClient {
                 completeHandshake(ctx, value);
                 return;
             }
+            handleFrame(ctx, value);
+        }
+
+        /** 핸드셰이크 뒤의 WebSocket 프레임. 게임 갱신은 텍스트 프레임으로만 받는다. */
+        private void handleFrame(ChannelHandlerContext ctx, Object value) throws IOException {
             if (value instanceof TextWebSocketFrame) {
                 byte[] bytes = ByteBufUtil.getBytes(((TextWebSocketFrame) value).content());
                 publish(WireCodec.decodeUpdatePayload(bytes));
