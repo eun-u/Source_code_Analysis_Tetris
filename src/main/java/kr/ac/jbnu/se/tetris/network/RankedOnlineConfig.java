@@ -19,6 +19,8 @@ import kr.ac.jbnu.se.tetris.supabase.SupabaseConfig;
 
 /** Public online endpoints and publishable Auth keys. Never stores account tokens. */
 public final class RankedOnlineConfig {
+    private static final String PROVIDER_FIREBASE = "firebase";
+    private static final String PROVIDER_SUPABASE = "supabase";
     private final URI serverUri;
     private final SupabaseConfig supabaseConfig;
     private final FirebaseConfig firebaseConfig;
@@ -51,6 +53,35 @@ public final class RankedOnlineConfig {
     }
 
     public static RankedOnlineConfig load() throws IOException {
+        Properties properties = readProperties();
+        String server = value(properties, "server.url", "TETRIS_SERVER_URL");
+        String provider = value(properties, "online.provider", "TETRIS_ONLINE_PROVIDER");
+        String firebaseProject = value(properties, "firebase.projectId", "FIREBASE_PROJECT_ID");
+        String firebaseKey = value(properties, "firebase.apiKey", "FIREBASE_API_KEY");
+        String url = value(properties, "supabase.url", "SUPABASE_URL");
+        String key = value(properties, "supabase.publishableKey", "SUPABASE_PUBLISHABLE_KEY");
+        if (server.isEmpty() && provider.isEmpty() && firebaseProject.isEmpty()
+                && firebaseKey.isEmpty() && url.isEmpty() && key.isEmpty()) return null;
+        if (provider.isEmpty()) {
+            provider = !firebaseProject.isEmpty() || !firebaseKey.isEmpty() ? PROVIDER_FIREBASE : PROVIDER_SUPABASE;
+        }
+        if (!PROVIDER_FIREBASE.equalsIgnoreCase(provider) && !PROVIDER_SUPABASE.equalsIgnoreCase(provider))
+            throw new IOException("Unknown online provider");
+        try {
+            if (PROVIDER_FIREBASE.equalsIgnoreCase(provider)) {
+                return new RankedOnlineConfig(URI.create(requireServer(server, firebaseProject, firebaseKey,
+                        "Incomplete public Firebase online configuration")),
+                        firebaseConfig(properties, firebaseProject, firebaseKey));
+            }
+            requireServer(server, url, key, "Incomplete public Supabase online configuration");
+            return new RankedOnlineConfig(URI.create(server), new SupabaseConfig(url, key));
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            throw new IOException("Invalid public online configuration", error);
+        }
+    }
+
+    /** 외부 설정 파일이 있으면 그것만 읽고, 없으면 JAR에 포함된 공개 기본값을 읽는다. */
+    private static Properties readProperties() throws IOException {
         Properties properties = new Properties();
         Path file = configFile();
         if (file != null && Files.isRegularFile(file)) {
@@ -64,38 +95,25 @@ public final class RankedOnlineConfig {
                 if (defaults != null) properties.load(defaults);
             }
         }
-        String server = value(properties, "server.url", "TETRIS_SERVER_URL");
-        String provider = value(properties, "online.provider", "TETRIS_ONLINE_PROVIDER");
-        String firebaseProject = value(properties, "firebase.projectId", "FIREBASE_PROJECT_ID");
-        String firebaseKey = value(properties, "firebase.apiKey", "FIREBASE_API_KEY");
-        String url = value(properties, "supabase.url", "SUPABASE_URL");
-        String key = value(properties, "supabase.publishableKey", "SUPABASE_PUBLISHABLE_KEY");
-        if (server.isEmpty() && provider.isEmpty() && firebaseProject.isEmpty()
-                && firebaseKey.isEmpty() && url.isEmpty() && key.isEmpty()) return null;
-        if (provider.isEmpty()) provider = !firebaseProject.isEmpty() || !firebaseKey.isEmpty() ? "firebase" : "supabase";
-        if (!"firebase".equalsIgnoreCase(provider) && !"supabase".equalsIgnoreCase(provider))
-            throw new IOException("Unknown online provider");
-        try {
-            if ("firebase".equalsIgnoreCase(provider)) {
-                if (server.isEmpty() || firebaseProject.isEmpty() || firebaseKey.isEmpty())
-                    throw new IOException("Incomplete public Firebase online configuration");
-                FirebaseConfig firebase = new FirebaseConfig(firebaseProject, firebaseKey);
-                String authEmulator = value(properties, "firebase.authEmulatorUrl", "FIREBASE_AUTH_EMULATOR_URL");
-                String tokenEmulator = value(properties, "firebase.tokenEmulatorUrl", "FIREBASE_TOKEN_EMULATOR_URL");
-                if (!authEmulator.isEmpty() || !tokenEmulator.isEmpty()) {
-                    if (authEmulator.isEmpty() || tokenEmulator.isEmpty())
-                        throw new IOException("Both local Firebase emulator URLs are required");
-                    firebase = FirebaseConfig.forLocalEmulator(firebaseProject, firebaseKey,
-                            URI.create(authEmulator), URI.create(tokenEmulator));
-                }
-                return new RankedOnlineConfig(URI.create(server), firebase);
-            }
-            if (server.isEmpty() || url.isEmpty() || key.isEmpty())
-                throw new IOException("Incomplete public Supabase online configuration");
-            return new RankedOnlineConfig(URI.create(server), new SupabaseConfig(url, key));
-        } catch (IllegalArgumentException | IllegalStateException error) {
-            throw new IOException("Invalid public online configuration", error);
-        }
+        return properties;
+    }
+
+    private static String requireServer(String server, String first, String second, String message)
+            throws IOException {
+        if (server.isEmpty() || first.isEmpty() || second.isEmpty()) throw new IOException(message);
+        return server;
+    }
+
+    /** 두 에뮬레이터 주소가 모두 있을 때만 로컬 Firebase 에뮬레이터로 연결한다. */
+    private static FirebaseConfig firebaseConfig(Properties properties, String project, String apiKey)
+            throws IOException {
+        String authEmulator = value(properties, "firebase.authEmulatorUrl", "FIREBASE_AUTH_EMULATOR_URL");
+        String tokenEmulator = value(properties, "firebase.tokenEmulatorUrl", "FIREBASE_TOKEN_EMULATOR_URL");
+        FirebaseConfig firebase = new FirebaseConfig(project, apiKey);
+        if (authEmulator.isEmpty() && tokenEmulator.isEmpty()) return firebase;
+        if (authEmulator.isEmpty() || tokenEmulator.isEmpty())
+            throw new IOException("Both local Firebase emulator URLs are required");
+        return FirebaseConfig.forLocalEmulator(project, apiKey, URI.create(authEmulator), URI.create(tokenEmulator));
     }
 
     private static Path configFile() {
