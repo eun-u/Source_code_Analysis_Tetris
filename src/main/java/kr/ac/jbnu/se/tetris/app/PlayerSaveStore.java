@@ -7,6 +7,7 @@ import java.util.*;
 
 /** 단일 PC 로컬 진행, 재화, 캐릭터를 원자적으로 저장한다. */
 public final class PlayerSaveStore {
+    private static final String DEFAULT_CHARACTER = "student";
     private final Path file;
     private boolean loadedVersionOne;
     private static final List<String> LEGACY_ENCOUNTERS = Arrays.asList(
@@ -108,13 +109,13 @@ public final class PlayerSaveStore {
 
     public static final class Data {
         private static final Set<String> CHARACTERS = new HashSet<String>(
-                Arrays.asList("student", "attacker", "defender", "utility"));
+                Arrays.asList(DEFAULT_CHARACTER, "attacker", "defender", "utility"));
         private final int coins;
         private final String selected;
         private final Set<String> owned, cleared;
         public Data(int coins, String selected, Set<String> owned, Set<String> cleared) {
             if (coins < 0 || selected == null || owned == null || cleared == null
-                    || !CHARACTERS.contains(selected) || !owned.contains("student")
+                    || !CHARACTERS.contains(selected) || !owned.contains(DEFAULT_CHARACTER)
                     || !CHARACTERS.containsAll(owned) || !owned.contains(selected))
                 throw new IllegalArgumentException("Invalid local profile");
             this.coins = coins;
@@ -123,7 +124,7 @@ public final class PlayerSaveStore {
             this.cleared = Collections.unmodifiableSet(new LinkedHashSet<String>(cleared));
         }
         public static Data initial() {
-            return new Data(0, "student", Collections.singleton("student"),
+            return new Data(0, DEFAULT_CHARACTER, Collections.singleton(DEFAULT_CHARACTER),
                     Collections.<String>emptySet());
         }
         public int getCoins() { return coins; }

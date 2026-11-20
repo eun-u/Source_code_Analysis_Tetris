@@ -34,16 +34,32 @@ public final class TutorialSession implements PlaySession {
         if (!result.isAccepted()) return;
         // 키를 누른 사실이 아니라 실제 이동/회전/보관/고정 이벤트로 달성을 판단
         for (GameEvent event : result.getEvents()) {
-            boolean achieved = step == 0 && event.getType() == GameEvent.Type.PIECE_MOVED
-                    && (action == GameAction.Type.MOVE_LEFT || action == GameAction.Type.MOVE_RIGHT)
-                || step == 1 && event.getType() == GameEvent.Type.PIECE_ROTATED
-                || step == 2 && event.getType() == GameEvent.Type.PIECE_MOVED && action == GameAction.Type.SOFT_DROP
-                || step == 3 && event.getType() == GameEvent.Type.PIECE_HELD
-                || step == 4 && event.getType() == GameEvent.Type.PIECE_PLACED && action == GameAction.Type.HARD_DROP;
-            if (achieved) { step++; break; }
+            if (achievesCurrentGoal(event.getType(), action)) {
+                step++;
+                break;
+            }
         }
         if (isCompleted() && getPlayerState().getStatus() == GameState.Status.RUNNING) {
             controller.submit(GameAction.Type.PAUSE);
+        }
+    }
+
+    /** 현재 단계의 목표 조작이 실제 엔진 이벤트로 이어졌는지 판정한다. */
+    private boolean achievesCurrentGoal(GameEvent.Type event, GameAction.Type action) {
+        switch (step) {
+            case 0:
+                return event == GameEvent.Type.PIECE_MOVED
+                        && (action == GameAction.Type.MOVE_LEFT || action == GameAction.Type.MOVE_RIGHT);
+            case 1:
+                return event == GameEvent.Type.PIECE_ROTATED;
+            case 2:
+                return event == GameEvent.Type.PIECE_MOVED && action == GameAction.Type.SOFT_DROP;
+            case 3:
+                return event == GameEvent.Type.PIECE_HELD;
+            case 4:
+                return event == GameEvent.Type.PIECE_PLACED && action == GameAction.Type.HARD_DROP;
+            default:
+                return false;
         }
     }
 
@@ -57,8 +73,9 @@ public final class TutorialSession implements PlaySession {
     @Override public void resume() {
         if (!closed && !isFinished() && isPaused()) controller.submit(GameAction.Type.RESUME);
     }
-    /** 상대 AI가 없는 튜토리얼의 별도 판단 주기 미사용 */
-    @Override public void pulse(long nowNanos) { }
+    @Override public void pulse(long nowNanos) {
+        // 상대 AI가 없는 튜토리얼에는 별도 판단 주기가 없어 할 일이 없다.
+    }
     @Override public GameState getPlayerState() { return controller.getState(); }
     @Override public BattleState getBattleState() { return null; }
     @Override public boolean isPaused() { return getPlayerState().getStatus() == GameState.Status.PAUSED; }

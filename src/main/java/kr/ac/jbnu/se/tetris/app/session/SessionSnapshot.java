@@ -21,14 +21,12 @@ public final class SessionSnapshot {
                 || (localParticipantId != null && blank(localParticipantId))) {
             throw new IllegalArgumentException("Invalid session snapshot");
         }
-        if (phase == SessionPhase.RUNNING || phase == SessionPhase.PAUSED
-                || phase == SessionPhase.FINISHED) {
+        BattleState.Status expected = expectedBattleStatus(phase);
+        if (expected != null) {
             if (battleState == null || blank(matchId) || blank(localParticipantId)
                     || battleState.getParticipant(localParticipantId) == null) {
                 throw new IllegalArgumentException("Active session needs a local battle participant");
             }
-            BattleState.Status expected = phase == SessionPhase.RUNNING ? BattleState.Status.RUNNING
-                    : phase == SessionPhase.PAUSED ? BattleState.Status.PAUSED : BattleState.Status.FINISHED;
             if (battleState.getStatus() != expected) {
                 throw new IllegalArgumentException("Session phase and battle status disagree");
             }
@@ -42,6 +40,16 @@ public final class SessionSnapshot {
         this.matchId = matchId;
         this.battleState = battleState == null ? null : BattleSnapshots.copyOf(battleState);
         this.capabilities = capabilities;
+    }
+
+    /** 전투를 가진 단계의 기대 전투 상태. 대기·연결 단계처럼 전투가 없는 단계는 null이다. */
+    private static BattleState.Status expectedBattleStatus(SessionPhase phase) {
+        switch (phase) {
+            case RUNNING: return BattleState.Status.RUNNING;
+            case PAUSED: return BattleState.Status.PAUSED;
+            case FINISHED: return BattleState.Status.FINISHED;
+            default: return null;
+        }
     }
 
     private static boolean blank(String value) { return value == null || value.trim().isEmpty(); }

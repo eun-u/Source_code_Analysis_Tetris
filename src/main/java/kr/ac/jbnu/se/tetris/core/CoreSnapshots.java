@@ -49,13 +49,10 @@ public final class CoreSnapshots {
             BoardState board, Piece activePiece, int pieceX, int pieceY, int linesCleared,
             boolean awaitingSpawn, PieceType holdPiece, boolean canHold, List<PieceType> nextPieces,
             int ghostY, int combo, int pendingGarbageLines, String holdItemId, int holdOreCellIndex) {
-        if (actorId == null || actorId.trim().isEmpty() || actorId.length() > 128
-                || version < 0 || tick < 0 || status == null || board == null
-                || board.getWidth() != 10 || board.getHeight() != 22 || linesCleared < 0
-                || holdPiece == null || holdPiece == PieceType.GARBAGE || nextPieces == null
+        if (!isValidActor(actorId) || version < 0 || tick < 0 || status == null || !isStandardBoard(board)
+                || linesCleared < 0 || holdPiece == null || holdPiece == PieceType.GARBAGE || nextPieces == null
                 || nextPieces.size() > 3 || ghostY < -1 || ghostY >= 22 || combo < -1
-                || pendingGarbageLines < 0 || (holdItemId == null && holdOreCellIndex != -1)
-                || (holdItemId != null && (holdOreCellIndex < 0 || holdOreCellIndex > 3))) {
+                || pendingGarbageLines < 0 || !isValidHoldOre(holdItemId, holdOreCellIndex)) {
             throw new IllegalArgumentException("Invalid game snapshot");
         }
         for (PieceType next : nextPieces) {
@@ -70,20 +67,39 @@ public final class CoreSnapshots {
         if (status == GameState.Status.READY && activePiece != null) {
             throw new IllegalArgumentException("READY cannot contain an active piece");
         }
-        if (activePiece != null) {
-            if (pieceX < -4 || pieceX > 13 || pieceY < -4 || pieceY > 25) {
-                throw new IllegalArgumentException("Piece anchor outside snapshot bounds");
-            }
-            if (active && !PlacementSimulator.canPlace(board, activePiece, pieceX, pieceY)) {
-                throw new IllegalArgumentException("Active piece overlaps the board");
-            }
-            if (active && ghostY != PlacementSimulator.hardDrop(board, activePiece, pieceX, pieceY).getY()) {
-                throw new IllegalArgumentException("Ghost position disagrees with board");
-            }
-        }
+        if (activePiece != null) validateActivePiece(board, activePiece, pieceX, pieceY, ghostY, active);
         return new GameState(actorId, version, tick, status, board, activePiece, pieceX, pieceY,
                 linesCleared, awaitingSpawn, holdPiece, canHold, nextPieces, ghostY, combo,
                 pendingGarbageLines, holdItemId, holdOreCellIndex);
+    }
+
+    private static boolean isValidActor(String actorId) {
+        return actorId != null && !actorId.trim().isEmpty() && actorId.length() <= 128;
+    }
+
+    private static boolean isStandardBoard(BoardState board) {
+        return board != null && board.getWidth() == 10 && board.getHeight() == 22;
+    }
+
+    /** 보관 블록의 광석 칸은 아이템이 있을 때만 0~3, 없으면 -1이어야 한다. */
+    private static boolean isValidHoldOre(String holdItemId, int holdOreCellIndex) {
+        if (holdItemId == null) return holdOreCellIndex == -1;
+        return holdOreCellIndex >= 0 && holdOreCellIndex <= 3;
+    }
+
+    /** 진행 중인 사본의 활성 블록은 보드와 겹치지 않고 Ghost 위치가 실제 낙하 위치와 같아야 한다. */
+    private static void validateActivePiece(BoardState board, Piece activePiece, int pieceX, int pieceY,
+            int ghostY, boolean active) {
+        if (pieceX < -4 || pieceX > 13 || pieceY < -4 || pieceY > 25) {
+            throw new IllegalArgumentException("Piece anchor outside snapshot bounds");
+        }
+        if (!active) return;
+        if (!PlacementSimulator.canPlace(board, activePiece, pieceX, pieceY)) {
+            throw new IllegalArgumentException("Active piece overlaps the board");
+        }
+        if (ghostY != PlacementSimulator.hardDrop(board, activePiece, pieceX, pieceY).getY()) {
+            throw new IllegalArgumentException("Ghost position disagrees with board");
+        }
     }
 
     /** 외부 사본의 불변식 확인 및 컬렉션 방어 복사 */
