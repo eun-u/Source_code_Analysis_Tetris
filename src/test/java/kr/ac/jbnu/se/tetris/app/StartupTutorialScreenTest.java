@@ -22,8 +22,7 @@ public final class StartupTutorialScreenTest {
     }
 
     private static void testTutorialStartup() {
-        SeongeunApplication app = new SeongeunApplication(new Random(31));
-        try {
+        try (SeongeunApplication app = new SeongeunApplication(new Random(31))) {
             assert "LOBBY".equals(app.getCurrentScreen());
 
             app.prepareFirstWindowScreen();
@@ -44,14 +43,11 @@ public final class StartupTutorialScreenTest {
             assert "LOBBY".equals(app.getCurrentScreen());
             assert app.getLocalState() == null;
             assert !app.isLocalGravityRunning();
-        } finally {
-            app.close();
         }
     }
 
     private static void testSkipPreferenceDoesNotSkipStartup() {
-        SeongeunApplication app = new SeongeunApplication(new Random(32));
-        try {
+        try (SeongeunApplication app = new SeongeunApplication(new Random(32))) {
             JCheckBox skip = findCheckBox(app.getScreens(), "다시 보지 않기");
             assert skip != null;
 
@@ -63,8 +59,6 @@ public final class StartupTutorialScreenTest {
             assert "LOCAL_GAME".equals(app.getCurrentScreen());
             assert app.getLocalState() != null;
             assert app.isLocalGravityRunning();
-        } finally {
-            app.close();
         }
     }
 

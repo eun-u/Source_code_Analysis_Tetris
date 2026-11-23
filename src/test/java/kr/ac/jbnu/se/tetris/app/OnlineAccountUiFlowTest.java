@@ -48,65 +48,70 @@ public final class OnlineAccountUiFlowTest {
         System.setProperty(keys[1], "http://127.0.0.1:" + api.getAddress().getPort());
         System.setProperty(keys[2], "sb_publishable_fixture");
         System.setProperty(keys[3], "supabase");
-        SeongeunApplication[] app = new SeongeunApplication[1];
         try {
-            onEdt(() -> {
-                app[0] = new SeongeunApplication(new Random(441), null);
-                button(panel(app[0], MainLobbyPanel.class), "PvP 랭킹").doClick();
-                login(app[0], "Player_01", "password123");
-            });
-            check(firstEntered.await(3, TimeUnit.SECONDS), "login HTTP started off EDT");
-            onEdt(() -> {
-                LoginPanel panel = panel(app[0], LoginPanel.class);
-                check(!button(panel, "온라인 로그인").isEnabled(), "busy prevents duplicate login");
-                check(child(panel, JPasswordField.class).getPassword().length == 0, "password input cleared");
-                button(panel, "온라인 로그인").doClick();
-            });
-            check(logins.get() == 1, "busy login was not submitted twice");
-            releaseFirst.countDown();
-            await(() -> "LEADERBOARD".equals(app[0].getCurrentScreen())
-                    && table(app[0]).getRowCount() == 1, "leaderboard after login and refresh");
-            check(refreshes.get() == 1, "near-expiry token refreshed once before leaderboard");
-            check("Bearer fresh".equals(rankingBearer.get()), "leaderboard used fresh token");
+            try (EdtApplicationFixture fixture = EdtApplicationFixture.open(new Random(441), null)) {
+                SeongeunApplication app = fixture.get();
+                try {
+                    onEdt(() -> {
+                        button(panel(app, MainLobbyPanel.class), "PvP 랭킹").doClick();
+                        login(app, "Player_01", "password123");
+                    });
+                    check(firstEntered.await(3, TimeUnit.SECONDS), "login HTTP started off EDT");
+                    onEdt(() -> {
+                        LoginPanel panel = panel(app, LoginPanel.class);
+                        check(!button(panel, "온라인 로그인").isEnabled(), "busy prevents duplicate login");
+                        check(child(panel, JPasswordField.class).getPassword().length == 0, "password input cleared");
+                        button(panel, "온라인 로그인").doClick();
+                    });
+                    check(logins.get() == 1, "busy login was not submitted twice");
+                    releaseFirst.countDown();
+                    await(() -> "LEADERBOARD".equals(app.getCurrentScreen())
+                            && table(app).getRowCount() == 1, "leaderboard after login and refresh");
+                    check(refreshes.get() == 1, "near-expiry token refreshed once before leaderboard");
+                    check("Bearer fresh".equals(rankingBearer.get()), "leaderboard used fresh token");
 
-            onEdt(() -> {
-                button(panel(app[0], LeaderboardPanel.class), "돌아가기").doClick();
-                button(panel(app[0], MainLobbyPanel.class), "설정").doClick();
-                button(panel(app[0], SettingsPanel.class), "로그아웃").doClick();
-                check(!app[0].isSignedIn(), "logout clears identity immediately");
-                check(table(app[0]).getRowCount() == 0, "old account ranking rows cleared");
-            });
-            await(() -> button(panel(app[0], SettingsPanel.class), "로그인 / 가입").isEnabled(),
-                    "logout completed");
-            onEdt(() -> {
-                button(panel(app[0], SettingsPanel.class), "로그인 / 가입").doClick();
-                button(panel(app[0], LoginPanel.class), "회원가입").doClick();
-                SignUpPanel signUp = panel(app[0], SignUpPanel.class);
-                child(signUp, JTextField.class).setText("New_01");
-                JPasswordField[] secrets = passwordFields(signUp);
-                secrets[0].setText("password123"); secrets[1].setText("password123");
-                button(signUp, "가입").doClick();
-                check(secrets[0].getPassword().length == 0 && secrets[1].getPassword().length == 0,
-                        "signup secrets cleared");
-            });
-            await(() -> signups.get() == 1 && app[0].getLastMessage() != null
-                    && app[0].getLastMessage().contains("가입 실패"), "failed signup completed");
-            onEdt(() -> {
-                check(!app[0].isSignedIn(), "failed signup did not restore stale identity");
-                check(table(app[0]).getRowCount() == 0, "failed signup kept ranking empty");
-                button(panel(app[0], SignUpPanel.class), "돌아가기").doClick();
-                login(app[0], "Slow_02", "password123");
-            });
-            check(lateEntered.await(3, TimeUnit.SECONDS), "second login started");
-            int completedBeforeClose = onEdtInt(() -> app[0].getCompletedAuthRequests());
-            onEdt(() -> app[0].close());
-            releaseLate.countDown();
-            await(() -> app[0].getCompletedAuthRequests() > completedBeforeClose,
-                    "late login completion callback");
-            onEdt(() -> check(!app[0].isSignedIn(), "late completion after close ignored"));
+                    onEdt(() -> {
+                        button(panel(app, LeaderboardPanel.class), "돌아가기").doClick();
+                        button(panel(app, MainLobbyPanel.class), "설정").doClick();
+                        button(panel(app, SettingsPanel.class), "로그아웃").doClick();
+                        check(!app.isSignedIn(), "logout clears identity immediately");
+                        check(table(app).getRowCount() == 0, "old account ranking rows cleared");
+                    });
+                    await(() -> button(panel(app, SettingsPanel.class), "로그인 / 가입").isEnabled(),
+                            "logout completed");
+                    onEdt(() -> {
+                        button(panel(app, SettingsPanel.class), "로그인 / 가입").doClick();
+                        button(panel(app, LoginPanel.class), "회원가입").doClick();
+                        SignUpPanel signUp = panel(app, SignUpPanel.class);
+                        child(signUp, JTextField.class).setText("New_01");
+                        JPasswordField[] secrets = passwordFields(signUp);
+                        secrets[0].setText("password123"); secrets[1].setText("password123");
+                        button(signUp, "가입").doClick();
+                        check(secrets[0].getPassword().length == 0 && secrets[1].getPassword().length == 0,
+                                "signup secrets cleared");
+                    });
+                    await(() -> signups.get() == 1 && app.getLastMessage() != null
+                            && app.getLastMessage().contains("가입 실패"), "failed signup completed");
+                    onEdt(() -> {
+                        check(!app.isSignedIn(), "failed signup did not restore stale identity");
+                        check(table(app).getRowCount() == 0, "failed signup kept ranking empty");
+                        button(panel(app, SignUpPanel.class), "돌아가기").doClick();
+                        login(app, "Slow_02", "password123");
+                    });
+                    check(lateEntered.await(3, TimeUnit.SECONDS), "second login started");
+                    int completedBeforeClose = onEdtInt(() -> app.getCompletedAuthRequests());
+                    onEdt(() -> app.close());
+                    releaseLate.countDown();
+                    await(() -> app.getCompletedAuthRequests() > completedBeforeClose,
+                            "late login completion callback");
+                    onEdt(() -> check(!app.isSignedIn(), "late completion after close ignored"));
+                } finally {
+                    releaseFirst.countDown(); releaseLate.countDown();
+                }
+            }
         } finally {
-            releaseFirst.countDown(); releaseLate.countDown();
-            onEdt(() -> { if (app[0] != null) app[0].close(); });
+            releaseFirst.countDown();
+            releaseLate.countDown();
             for (int i = 0; i < keys.length; i++) {
                 if (previous[i] == null) System.clearProperty(keys[i]);
                 else System.setProperty(keys[i], previous[i]);

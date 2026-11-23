@@ -19,8 +19,7 @@ public final class MonsterSessionTest {
     }
 
     private static void pauseCancelsAndResumes() throws Exception {
-        MonsterSession session = new MonsterSession(1);
-        try {
+        try (MonsterSession session = new MonsterSession(1)) {
             long before = session.getBattleState().getVersion();
             session.pulse(VIRTUAL_TURN_NANOS);
             session.pause();
@@ -42,8 +41,6 @@ public final class MonsterSessionTest {
                     "Resumed asynchronous worker makes a legal placement");
             check(session.getOpponentState().getVersion() > 1,
                     "Monster actions reached shared engine");
-        } finally {
-            session.close();
         }
     }
 

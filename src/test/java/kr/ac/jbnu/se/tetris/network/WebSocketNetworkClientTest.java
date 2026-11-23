@@ -69,8 +69,7 @@ public final class WebSocketNetworkClientTest {
             CountDownLatch connected = new CountDownLatch(1);
             CountDownLatch room = new CountDownLatch(1);
             AtomicReference<String> failureReason = new AtomicReference<String>();
-            WebSocketNetworkClient client = new WebSocketNetworkClient(true, 5000);
-            try {
+            try (WebSocketNetworkClient client = new WebSocketNetworkClient(true, 5000)) {
                 client.subscribe(update -> {
                     if (update.getType() == NetworkUpdate.Type.CONNECTED) connected.countDown();
                     if (update.getType() == NetworkUpdate.Type.ROOM_STATE) room.countDown();
@@ -83,7 +82,7 @@ public final class WebSocketNetworkClientTest {
                 check(failureReason.get() == null, "Transient 503 surfaced as terminal failure");
                 client.send(RoomCommand.createRoom(2));
                 check(room.await(5, TimeUnit.SECONDS), "Game command works after retry");
-            } finally { client.close(); }
+            }
             peer.join(1000);
             if (failure.get() != null) throw new AssertionError("Cold start fixture failed", failure.get());
         }

@@ -39,14 +39,12 @@ public final class StoryDialogueFlowTest {
     private static final String CRISIS = "아직 집에 보낼 순 없다…!";
 
     public static void main(String[] args) throws Exception {
-        final SeongeunApplication[] holder = new SeongeunApplication[1];
-        try {
+        try (EdtApplicationFixture fixture = EdtApplicationFixture.open(new Random(20260928L), null)) {
+            final SeongeunApplication app = fixture.get();
             edt(() -> {
-                holder[0] = new SeongeunApplication(new Random(20260928L), null);
-                button(holder[0].getScreens(), "lobbyStory").doClick();
-                button(holder[0].getScreens(), "storyStart").doClick();
+                button(app.getScreens(), "lobbyStory").doClick();
+                button(app.getScreens(), "storyStart").doClick();
             });
-            final SeongeunApplication app = holder[0];
 
             // 1) 전투 시작: 몬스터의 조우 대사가 나온다.
             check(onEdt(() -> texts(app)).equals(Arrays.asList(ENCOUNTER)),
@@ -99,8 +97,6 @@ public final class StoryDialogueFlowTest {
             check(onEdt(() -> screenText(app)).contains("몬스터: 크으… 오늘은 네가 계산해라…")
                             && onEdt(() -> screenText(app)).contains("플레이어: 후… 오늘은 1차만 하고 집에 가겠습니다."),
                     "승리 결과 화면에 몬스터(패배)·플레이어(승리) 대사");
-        } finally {
-            edt(() -> { if (holder[0] != null) holder[0].close(); });
         }
         System.out.println("PASS StoryDialogueFlowTest: encounter, strong attack, 30s talk, loss/retry, HP, crisis, win");
     }

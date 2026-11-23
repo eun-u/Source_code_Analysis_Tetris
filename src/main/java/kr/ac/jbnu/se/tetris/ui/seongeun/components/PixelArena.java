@@ -474,11 +474,8 @@ public final class PixelArena extends JComponent {
         boolean player = dialogueSpeaker == DialogueSpeaker.PLAYER;
         // Use the actual free lane calculated by the Swing layout. A fixed 190px
         // bubble would start underneath the opposing board and be cut off by it.
-        int laneWidth = player && storyLeftLaneEnd > 0 ? storyLeftLaneEnd - 16
-                : !player && storyRightLaneStart > 0 ? s.w - storyRightLaneStart - 16
-                : Math.max(130, Math.round(s.w * 0.19f)) - 12;
-        int width = Math.max(70, Math.min(player ? 210 : 190, laneWidth));
-        int textSize = width < 130 ? 13 : width < 165 ? 14 : 16;
+        int width = Math.max(70, Math.min(player ? 210 : 190, storyDialogueLaneWidth(s, player)));
+        int textSize = storyDialogueTextSize(width);
         int lineHeight = textSize + 5;
         g.setFont(UniversityPixelTheme.font(textSize, Font.BOLD));
         FontMetrics fm = g.getFontMetrics();
@@ -486,8 +483,7 @@ public final class PixelArena extends JComponent {
         int bodyHeight = 37 + lines.size() * lineHeight;
         int actorX = player ? s.playerCenterX() : s.monsterX;
         int actorTop = player ? s.portraitY : s.monsterFoot - s.monsterSize;
-        int zoneX = player ? 8 : storyRightLaneStart > 0
-                ? storyRightLaneStart + 8 : s.w - width - 8;
+        int zoneX = storyDialogueLeft(s, player, width);
         // Keep bubbles above the HP bars and sprite silhouettes rather than covering them.
         int y = Math.max(12, Math.min(s.h - bodyHeight - 25, actorTop - bodyHeight - 58));
         int tailX = clampSpeech(actorX, zoneX + width / 4, zoneX + width * 3 / 4);
@@ -525,6 +521,22 @@ public final class PixelArena extends JComponent {
                 baseline += lineHeight;
             }
         } finally { bubble.dispose(); }
+    }
+
+    private int storyDialogueLaneWidth(Stage stage, boolean player) {
+        if (player && storyLeftLaneEnd > 0) return storyLeftLaneEnd - 16;
+        if (!player && storyRightLaneStart > 0) return stage.w - storyRightLaneStart - 16;
+        return Math.max(130, Math.round(stage.w * 0.19f)) - 12;
+    }
+
+    private static int storyDialogueTextSize(int width) {
+        if (width < 130) return 13;
+        return width < 165 ? 14 : 16;
+    }
+
+    private int storyDialogueLeft(Stage stage, boolean player, int width) {
+        if (player) return 8;
+        return storyRightLaneStart > 0 ? storyRightLaneStart + 8 : stage.w - width - 8;
     }
 
     private static int clampSpeech(int value, int low, int high) {
