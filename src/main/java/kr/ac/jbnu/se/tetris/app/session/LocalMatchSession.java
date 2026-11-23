@@ -7,6 +7,7 @@ import java.util.function.LongSupplier;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import kr.ac.jbnu.se.tetris.app.MonsterSession;
+import kr.ac.jbnu.se.tetris.battle.BattleEvent;
 import kr.ac.jbnu.se.tetris.battle.BattleResult;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.core.PlayerIntent;
@@ -121,8 +122,8 @@ public final class LocalMatchSession implements MatchSession {
         if (closed || failure != null || engine.isPaused() || engine.isFinished()) return;
         BattleResult previous = engine.getLastBattleResult();
         try {
-            engine.pulse(clock.getAsLong());
-            if (engine.getLastBattleResult() != previous) publish(null, engine.getLastBattleResult());
+            List<BattleEvent> events = engine.pulseAndCollectEvents(clock.getAsLong());
+            if (!events.isEmpty() || engine.getLastBattleResult() != previous) publishEvents(null, events);
         } catch (RuntimeException error) {
             failure = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             engine.pause(); stopClock(); publish(null, null);
@@ -159,9 +160,11 @@ public final class LocalMatchSession implements MatchSession {
         SwingUtilities.invokeLater(() -> { if (!closed) publish(outcome, null); });
     }
     private void publish(CommandOutcome outcome, BattleResult result) {
+        publishEvents(outcome, result == null ? Collections.emptyList() : result.getEvents());
+    }
+    private void publishEvents(CommandOutcome outcome, List<BattleEvent> events) {
         if (engine.isFinished()) stopClock();
-        SessionUpdate update = new SessionUpdate(getSnapshot(), result == null
-                ? Collections.emptyList() : result.getEvents(), outcome);
+        SessionUpdate update = new SessionUpdate(getSnapshot(), events, outcome);
         for (ListenerSlot slot : new ArrayList<ListenerSlot>(listeners)) {
             if (slot.active && !closed) slot.listener.onUpdate(update);
         }

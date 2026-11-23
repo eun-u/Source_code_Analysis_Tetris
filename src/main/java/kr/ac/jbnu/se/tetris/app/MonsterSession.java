@@ -2,6 +2,7 @@ package kr.ac.jbnu.se.tetris.app;
 
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.LongSupplier;
@@ -169,34 +170,42 @@ public final class MonsterSession implements PlaySession {
         }
     }
     @Override public void pulse(long nowNanos) {
-        if (closed || isPaused() || isFinished()) return;
+        pulseAndCollectEvents(nowNanos);
+    }
+
+    /** Apply one AI plan and return every event it produced in command order. */
+    public List<BattleEvent> pulseAndCollectEvents(long nowNanos) {
+        if (closed || isPaused() || isFinished()) return Collections.emptyList();
         AIPlan ready = ai.poll(getOpponentState());
+        List<BattleEvent> events = new ArrayList<BattleEvent>();
         if (ready != null) {
-            applyPlan(ready);
+            applyPlan(ready, events);
             nextDecisionNanos = nowNanos + actionDelayNanos;
         }
         requestDecisionIfReady(nowNanos);
+        return Collections.unmodifiableList(events);
     }
 
     /** AI가 확정한 계획의 동작을 순서대로 제출하고, 전부 수락되면 정책 상태 갱신과 아이템 사용까지 진행한다. */
-    private void applyPlan(AIPlan plan) {
+    private void applyPlan(AIPlan plan, List<BattleEvent> events) {
         lastPlan = plan;
-        int accepted = submitPlanActions(plan);
+        int accepted = submitPlanActions(plan, events);
         boolean allAccepted = accepted == plan.getActions().size();
         PolicyDecision decision = plan.getPolicyDecision();
         if (decision != null && accepted > 0 && allAccepted) {
             previousWeights = decision.getWeights();
             policyState = decision.getNextPolicyState();
         }
-        if (!isFinished() && allAccepted) useOneMonsterItem();
+        if (!isFinished() && allAccepted) useOneMonsterItem(events);
     }
 
     /** 거절되거나 전투가 끝나기 전까지 수락된 동작 수를 돌려준다. */
-    private int submitPlanActions(AIPlan plan) {
+    private int submitPlanActions(AIPlan plan, List<BattleEvent> events) {
         int accepted = 0;
         for (GameAction.Type action : plan.getActions()) {
             BattleResult result = battle.submit(opponentParticipantId, action);
             lastBattleResult = result;
+            events.addAll(result.getEvents());
             if (!result.isAccepted()) break;
             accepted++;
             if (isFinished()) break;
@@ -214,7 +223,7 @@ public final class MonsterSession implements PlaySession {
     }
 
     /** AI 배치가 확정된 뒤 사용 가능한 수동 아이템 한 개만 사용한다. */
-    private void useOneMonsterItem() {
+    private void useOneMonsterItem(List<BattleEvent> events) {
         BattleState state = battle.getState();
         ParticipantState self = state.getParticipant(opponentParticipantId);
         ParticipantState player = state.getParticipant(localParticipantId);
@@ -223,6 +232,7 @@ public final class MonsterSession implements PlaySession {
             boolean againstPlayer = ItemIds.GARBAGE_BOMB.equals(item) || ItemIds.NULLIFY.equals(item);
             String target = againstPlayer ? localParticipantId : opponentParticipantId;
             BattleResult used = battle.submitItem(opponentParticipantId, new GameAction.ItemUse(item, target));
+            events.addAll(used.getEvents());
             if (used.isAccepted()) {
                 lastBattleResult = used;
                 break;
