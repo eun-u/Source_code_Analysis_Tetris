@@ -14,6 +14,7 @@ import kr.ac.jbnu.se.tetris.ui.ScreenRouter;
 
 /** 로컬 전투의 시계·AI 실행을 소유하는 EDT 전용 대전 어댑터 */
 public final class LocalMatchSession implements MatchSession {
+    private static final String SESSION_NOT_RUNNING = "SESSION_NOT_RUNNING";
     private final MonsterSession engine;
     private final LongSupplier clock;
     private final Timer gravity;
@@ -50,7 +51,7 @@ public final class LocalMatchSession implements MatchSession {
         requireOpen();
         if (intent == null) throw new IllegalArgumentException("Intent required");
         long id = ++requestId;
-        if (!getSnapshot().getCapabilities().canSubmit()) return reject(id, "SESSION_NOT_RUNNING");
+        if (!getSnapshot().getCapabilities().canSubmit()) return reject(id, SESSION_NOT_RUNNING);
         if (intent.getItemUse() == null) engine.submit(intent.getType());
         else engine.submitItem(intent.getItemUse());
         publishResult(id, engine.getLastBattleResult());
@@ -59,7 +60,7 @@ public final class LocalMatchSession implements MatchSession {
 
     @Override public long requestPause(boolean paused) {
         requireOpen(); long id = ++requestId;
-        if (engine.isFinished() || failure != null) return reject(id, "SESSION_NOT_RUNNING");
+        if (engine.isFinished() || failure != null) return reject(id, SESSION_NOT_RUNNING);
         if (paused == engine.isPaused()) {
             deferOutcome(new CommandOutcome(id, true, null, engine.getMatchId(),
                     engine.getBattleState().getVersion()));
@@ -72,7 +73,7 @@ public final class LocalMatchSession implements MatchSession {
 
     @Override public long leave() {
         requireOpen(); long id = ++requestId;
-        if (engine.isFinished()) return reject(id, "SESSION_NOT_RUNNING");
+        if (engine.isFinished()) return reject(id, SESSION_NOT_RUNNING);
         publishResult(id, engine.leave()); stopClock(); return id;
     }
 

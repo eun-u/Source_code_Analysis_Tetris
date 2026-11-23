@@ -49,6 +49,9 @@ import kr.ac.jbnu.se.tetris.network.protocol.WireRequest;
 
 /** The same game protocol over authenticated WebSocket text messages. */
 public final class WebSocketNetworkClient implements NetworkClient {
+    private static final String CONNECTION_FAILED = "CONNECTION_FAILED";
+    private static final String CONNECTION_LOST = "CONNECTION_LOST";
+    private static final String HANDSHAKE_TIMEOUT = "HANDSHAKE_TIMEOUT";
     private static final long COLD_START_RETRY_MILLIS = 75000;
     private final boolean retryColdStart;
     private final long retryDeadlineMillis;
@@ -109,7 +112,7 @@ public final class WebSocketNetworkClient implements NetworkClient {
             try { Thread.sleep(delay); }
             catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                terminate("CONNECTION_FAILED", true);
+                terminate(CONNECTION_FAILED, true);
                 return;
             }
         }
@@ -133,107 +136,156 @@ public final class WebSocketNetworkClient implements NetworkClient {
             ioGroup = group;
             Bootstrap bootstrap = new Bootstrap().group(group).channel(NioSocketChannel.class)
                     .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
-                    .handler(new ChannelInitializer<SocketChannel>() {
-                        @Override protected void initChannel(SocketChannel ch) {
-                            if (ssl != null) {
-                                SslHandler handler = ssl.newHandler(ch.alloc(), options.getHost(), options.getPort());
-                                SSLParameters parameters = handler.engine().getSSLParameters();
-                                parameters.setEndpointIdentificationAlgorithm("HTTPS");
-                                handler.engine().setSSLParameters(parameters);
-                                ch.pipeline().addLast(handler);
-                            }
-                            ch.pipeline().addLast(new HttpClientCodec(), new HttpObjectAggregator(8192),
-                                    new IdleStateHandler(60, 0, 0),
-                                    new WebSocketFrameAggregator(WireCodec.MAX_FRAME_BYTES),
-                                    new SimpleChannelInboundHandler<Object>() {
-                                @Override public void channelActive(ChannelHandlerContext ctx) {
-                                    handshaker.handshake(ctx.channel());
-                                }
-                                @Override protected void channelRead0(ChannelHandlerContext ctx, Object value)
-                                        throws Exception {
-                                    if (!handshaker.isHandshakeComplete()) {
-                                        if (!(value instanceof FullHttpResponse)) throw new IOException("Invalid handshake");
-                                        FullHttpResponse response = (FullHttpResponse) value;
-                                        if (!HttpResponseStatus.SWITCHING_PROTOCOLS.equals(response.status())) {
-                                            String reason = response.status().code() == 401 ? "AUTH_INVALID"
-                                                    : response.status().code() == 503 ? "SERVICE_UNAVAILABLE"
-                                                    : "HANDSHAKE_FAILED";
-                                            attempt.finish(reason, response.status().code() == 503, false);
-                                            ctx.close();
-                                            return;
-                                        }
-                                        handshaker.finishHandshake(ctx.channel(), response);
-                                        if (closed.get() || openingAttempt != attempt
-                                                || !attempt.finish(null, false, true)) {
-                                            ctx.close();
-                                            return;
-                                        }
-                                        connected = true;
-                                        drain();
-                                        return;
-                                    }
-                                    if (value instanceof TextWebSocketFrame) {
-                                        byte[] bytes = ByteBufUtil.getBytes(((TextWebSocketFrame) value).content());
-                                        publish(WireCodec.decodeUpdatePayload(bytes));
-                                    } else if (value instanceof PingWebSocketFrame) {
-                                        ctx.writeAndFlush(new PongWebSocketFrame(((PingWebSocketFrame) value).content().retain()));
-                                    } else if (value instanceof CloseWebSocketFrame) {
-                                        terminate("CONNECTION_LOST", false);
-                                    } else if (!(value instanceof PongWebSocketFrame)) {
-                                        throw new IOException("Unsupported WebSocket frame");
-                                    }
-                                }
-                                @Override public void channelInactive(ChannelHandlerContext ctx) {
-                                    if (!attempt.success) attempt.finish("CONNECTION_FAILED", true, false);
-                                    else terminate("CONNECTION_LOST", false);
-                                }
-                                @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable error) {
-                                    if (!attempt.success) {
-                                        attempt.finish("CONNECTION_FAILED", true, false);
-                                        ctx.close();
-                                    } else terminate("CONNECTION_LOST", false);
-                                }
-                                @Override public void userEventTriggered(ChannelHandlerContext ctx, Object event) {
-                                    if (event instanceof IdleStateEvent
-                                            && ((IdleStateEvent) event).state() == IdleState.READER_IDLE) {
-                                        if (!attempt.success) {
-                                            attempt.finish("HANDSHAKE_TIMEOUT", true, false);
-                                            ctx.close();
-                                        } else terminate("CONNECTION_IDLE_TIMEOUT", false);
-                                    }
-                                }
-                            });
-                        }
-                    });
+                    .handler(new ClientInitializer(options, ssl, handshaker, attempt));
             io.netty.channel.ChannelFuture future = bootstrap.connect(options.getHost(), options.getPort());
             if (!future.await(6, TimeUnit.SECONDS) || !future.isSuccess()) {
                 future.channel().close();
-                attempt.finish("CONNECTION_FAILED", true, false);
+                attempt.finish(CONNECTION_FAILED, true, false);
                 return attempt;
             }
             opened = future.channel();
             channel = opened;
             if (closed.get()) attempt.finish("CLIENT_CLOSED", false, false);
-            long handshakeWaitMillis = retryColdStart
-                    ? Math.min(20000L, Math.max(1L,
-                            TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())))
-                    : TimeUnit.SECONDS.toMillis(90);
-            if (!attempt.done.await(handshakeWaitMillis, TimeUnit.MILLISECONDS)) {
-                attempt.finish("HANDSHAKE_TIMEOUT", true, false);
+            if (!attempt.done.await(handshakeWaitMillis(deadline), TimeUnit.MILLISECONDS)) {
+                attempt.finish(HANDSHAKE_TIMEOUT, true, false);
             }
             if (attempt.success) drain();
         } catch (Exception error) {
-            attempt.finish("CONNECTION_FAILED", true, false);
+            attempt.finish(CONNECTION_FAILED, true, false);
         } finally {
-            if (!attempt.success) {
-                if (opened != null) opened.close();
-                if (group != null) group.shutdownGracefully(0, 1, TimeUnit.SECONDS);
-                if (channel == opened) channel = null;
-                if (ioGroup == group) ioGroup = null;
-            }
-            if (openingAttempt == attempt) openingAttempt = null;
+            // 성공한 연결의 채널과 이벤트 루프는 연결 수명 동안 유지해야 하므로 실패한 시도만 정리한다.
+            releaseFailedAttempt(attempt, opened, group);
         }
         return attempt;
+    }
+
+    private long handshakeWaitMillis(long deadline) {
+        if (!retryColdStart) return TimeUnit.SECONDS.toMillis(90);
+        return Math.min(20000L, Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+    }
+
+    private void releaseFailedAttempt(Attempt attempt, Channel opened, NioEventLoopGroup group) {
+        if (!attempt.success) {
+            if (opened != null) opened.close();
+            if (group != null) group.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+            if (channel == opened) channel = null;
+            if (ioGroup == group) ioGroup = null;
+        }
+        if (openingAttempt == attempt) openingAttempt = null;
+    }
+
+    /** TLS(wss)일 때 호스트 이름 검증을 켜고 HTTP·WebSocket 처리기를 순서대로 붙인다. */
+    private final class ClientInitializer extends ChannelInitializer<SocketChannel> {
+        private final ConnectionOptions options;
+        private final SslContext ssl;
+        private final WebSocketClientHandshaker handshaker;
+        private final Attempt attempt;
+
+        ClientInitializer(ConnectionOptions options, SslContext ssl, WebSocketClientHandshaker handshaker,
+                Attempt attempt) {
+            this.options = options;
+            this.ssl = ssl;
+            this.handshaker = handshaker;
+            this.attempt = attempt;
+        }
+
+        @Override protected void initChannel(SocketChannel ch) {
+            if (ssl != null) {
+                SslHandler handler = ssl.newHandler(ch.alloc(), options.getHost(), options.getPort());
+                SSLParameters parameters = handler.engine().getSSLParameters();
+                parameters.setEndpointIdentificationAlgorithm("HTTPS");
+                handler.engine().setSSLParameters(parameters);
+                ch.pipeline().addLast(handler);
+            }
+            ch.pipeline().addLast(new HttpClientCodec(), new HttpObjectAggregator(8192),
+                    new IdleStateHandler(60, 0, 0),
+                    new WebSocketFrameAggregator(WireCodec.MAX_FRAME_BYTES),
+                    new ClientHandler(handshaker, attempt));
+        }
+    }
+
+    /** 한 번의 연결 시도에 묶인 처리기. 핸드셰이크 전 실패는 시도 결과로, 이후 실패는 연결 종료로 보고한다. */
+    private final class ClientHandler extends SimpleChannelInboundHandler<Object> {
+        private final WebSocketClientHandshaker handshaker;
+        private final Attempt attempt;
+
+        ClientHandler(WebSocketClientHandshaker handshaker, Attempt attempt) {
+            this.handshaker = handshaker;
+            this.attempt = attempt;
+        }
+
+        @Override public void channelActive(ChannelHandlerContext ctx) {
+            handshaker.handshake(ctx.channel());
+        }
+
+        @Override protected void channelRead0(ChannelHandlerContext ctx, Object value) throws Exception {
+            if (!handshaker.isHandshakeComplete()) {
+                completeHandshake(ctx, value);
+                return;
+            }
+            handleFrame(ctx, value);
+        }
+
+        /** 핸드셰이크 뒤의 WebSocket 프레임. 게임 갱신은 텍스트 프레임으로만 받는다. */
+        private void handleFrame(ChannelHandlerContext ctx, Object value) throws IOException {
+            if (value instanceof TextWebSocketFrame) {
+                byte[] bytes = ByteBufUtil.getBytes(((TextWebSocketFrame) value).content());
+                publish(WireCodec.decodeUpdatePayload(bytes));
+            } else if (value instanceof PingWebSocketFrame) {
+                ctx.writeAndFlush(new PongWebSocketFrame(((PingWebSocketFrame) value).content().retain()));
+            } else if (value instanceof CloseWebSocketFrame) {
+                terminate(CONNECTION_LOST, false);
+            } else if (!(value instanceof PongWebSocketFrame)) {
+                throw new IOException("Unsupported WebSocket frame");
+            }
+        }
+
+        private void completeHandshake(ChannelHandlerContext ctx, Object value) throws IOException {
+            if (!(value instanceof FullHttpResponse)) throw new IOException("Invalid handshake");
+            FullHttpResponse response = (FullHttpResponse) value;
+            if (!HttpResponseStatus.SWITCHING_PROTOCOLS.equals(response.status())) {
+                int code = response.status().code();
+                // 503은 Cloud Run 콜드 스타트일 수 있으므로 재시도할 수 있는 실패로 보고한다.
+                attempt.finish(handshakeFailure(code), code == 503, false);
+                ctx.close();
+                return;
+            }
+            handshaker.finishHandshake(ctx.channel(), response);
+            if (closed.get() || openingAttempt != attempt || !attempt.finish(null, false, true)) {
+                ctx.close();
+                return;
+            }
+            connected = true;
+            drain();
+        }
+
+        @Override public void channelInactive(ChannelHandlerContext ctx) {
+            if (!attempt.success) attempt.finish(CONNECTION_FAILED, true, false);
+            else terminate(CONNECTION_LOST, false);
+        }
+
+        @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable error) {
+            if (!attempt.success) {
+                attempt.finish(CONNECTION_FAILED, true, false);
+                ctx.close();
+            } else terminate(CONNECTION_LOST, false);
+        }
+
+        @Override public void userEventTriggered(ChannelHandlerContext ctx, Object event) {
+            if (!(event instanceof IdleStateEvent) || ((IdleStateEvent) event).state() != IdleState.READER_IDLE) {
+                return;
+            }
+            if (!attempt.success) {
+                attempt.finish(HANDSHAKE_TIMEOUT, true, false);
+                ctx.close();
+            } else terminate("CONNECTION_IDLE_TIMEOUT", false);
+        }
+    }
+
+    private static String handshakeFailure(int statusCode) {
+        if (statusCode == 401) return "AUTH_INVALID";
+        if (statusCode == 503) return "SERVICE_UNAVAILABLE";
+        return "HANDSHAKE_FAILED";
     }
 
     @Override public synchronized long send(RoomCommand command) {
@@ -382,7 +434,7 @@ public final class WebSocketNetworkClient implements NetworkClient {
     private static final class Attempt {
         private final CountDownLatch done = new CountDownLatch(1);
         private final AtomicBoolean decided = new AtomicBoolean();
-        private volatile String reason = "CONNECTION_FAILED";
+        private volatile String reason = CONNECTION_FAILED;
         private volatile boolean retryable;
         private volatile boolean success;
         private boolean finish(String reason, boolean retryable, boolean success) {

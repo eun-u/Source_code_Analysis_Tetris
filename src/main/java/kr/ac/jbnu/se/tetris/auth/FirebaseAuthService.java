@@ -9,6 +9,8 @@ import kr.ac.jbnu.se.tetris.firebase.FirebaseHttp;
 
 /** Firebase Identity Toolkit client for the Java 8 desktop. No Admin credentials belong here. */
 public final class FirebaseAuthService implements AuthService {
+    private static final String EMAIL = "email";
+    private static final String PASSWORD = "password";
     private final FirebaseHttp http;
     private AuthSession session;
 
@@ -61,25 +63,25 @@ public final class FirebaseAuthService implements AuthService {
 
     /** Username accounts use a non-deliverable address; email recovery is only for real email accounts. */
     @Override public void recoverPassword(String email) throws AuthException, IOException {
-        String address = required(email, "email");
+        String address = required(email, EMAIL);
         if (UsernameIdentity.fromEmail(address) != null)
             throw new AuthException("RECOVERY_UNAVAILABLE_FOR_USERNAME");
         JsonObject body = new JsonObject();
         body.addProperty("requestType", "PASSWORD_RESET");
-        body.addProperty("email", address);
+        body.addProperty(EMAIL, address);
         http.auth("accounts:sendOobCode", body);
     }
 
     @Override public synchronized AuthSession completePasswordRecovery(String email, String code, String newPassword)
             throws AuthException, IOException {
         session = null;
-        String address = required(email, "email");
+        String address = required(email, EMAIL);
         if (UsernameIdentity.fromEmail(address) != null)
             throw new AuthException("RECOVERY_UNAVAILABLE_FOR_USERNAME");
         JsonObject verify = new JsonObject();
         verify.addProperty("oobCode", required(code, "code"));
         JsonObject verified = http.auth("accounts:resetPassword", verify);
-        if (!address.equalsIgnoreCase(AuthJson.string(verified, "email")))
+        if (!address.equalsIgnoreCase(AuthJson.string(verified, EMAIL)))
             throw new AuthException("RECOVERY_EMAIL_MISMATCH");
         verify.addProperty("newPassword", requiredPassword(newPassword));
         http.auth("accounts:resetPassword", verify);
@@ -90,7 +92,7 @@ public final class FirebaseAuthService implements AuthService {
         AuthSession current = requireSession();
         JsonObject body = new JsonObject();
         body.addProperty("idToken", current.getAccessToken());
-        body.addProperty("password", requiredPassword(newPassword));
+        body.addProperty(PASSWORD, requiredPassword(newPassword));
         body.addProperty("returnSecureToken", true);
         try {
             AuthSession updated = parseSession(http.auth("accounts:update", body), false);
@@ -119,8 +121,8 @@ public final class FirebaseAuthService implements AuthService {
 
     private static JsonObject credentials(String email, String password) {
         JsonObject body = new JsonObject();
-        body.addProperty("email", required(email, "email"));
-        body.addProperty("password", requiredPassword(password));
+        body.addProperty(EMAIL, required(email, EMAIL));
+        body.addProperty(PASSWORD, requiredPassword(password));
         body.addProperty("returnSecureToken", true);
         return body;
     }

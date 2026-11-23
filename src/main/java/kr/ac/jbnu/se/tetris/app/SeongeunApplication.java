@@ -30,6 +30,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JPasswordField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.WindowConstants;
 import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.character.CharacterCatalog;
 import kr.ac.jbnu.se.tetris.character.CharacterSpec;
@@ -39,6 +40,7 @@ import kr.ac.jbnu.se.tetris.app.session.MatchSession;
 import kr.ac.jbnu.se.tetris.app.session.OnlineMatchSession;
 import kr.ac.jbnu.se.tetris.app.session.SessionPhase;
 import kr.ac.jbnu.se.tetris.app.session.SessionSnapshot;
+import kr.ac.jbnu.se.tetris.app.session.SessionUpdate;
 import kr.ac.jbnu.se.tetris.app.session.Subscription;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
 import kr.ac.jbnu.se.tetris.battle.BattleEvent;
@@ -50,6 +52,7 @@ import kr.ac.jbnu.se.tetris.network.ConnectionOptions;
 import kr.ac.jbnu.se.tetris.network.NetworkSubscription;
 import kr.ac.jbnu.se.tetris.network.NetworkUpdate;
 import kr.ac.jbnu.se.tetris.network.RoomCommand;
+import kr.ac.jbnu.se.tetris.network.RequestOutcome;
 import kr.ac.jbnu.se.tetris.network.RoomState;
 import kr.ac.jbnu.se.tetris.network.NetworkClient;
 import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
@@ -92,6 +95,12 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.panels.WaitingRoomPanel;
 
 /** 성은 원본 화면과 이동 버튼에 현재 게임 세션을 붙이는 실행 조립부. */
 public final class SeongeunApplication implements AutoCloseable {
+    private static final String PLAYER_LABEL = "Player";
+    private static final String WAITING_ROOM_BUTTON = "대기방으로";
+    private static final String LOCAL_PLAY_STATUS = "로컬 플레이";
+    private static final String NAVIGATE_BACK = "navigate-back";
+    private static final String USERNAME_RULE = "아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요.";
+    private static final String LOGIN_COMPLETE_PREFIX = "온라인 PvP 로그인 완료 · ";
     private static final String LOGIN = "LOGIN";
     private static final String SIGN_UP = "SIGN_UP";
     private static final String LOBBY = "LOBBY";
@@ -145,7 +154,7 @@ public final class SeongeunApplication implements AutoCloseable {
     private String loginReturnScreen = LOBBY;
     private enum PostLoginDestination { NONE, ONLINE_BATTLE, LEADERBOARD }
     private PostLoginDestination postLoginDestination = PostLoginDestination.NONE;
-    private String accountStatus = "로컬 플레이";
+    private String accountStatus = LOCAL_PLAY_STATUS;
     private RankedOnlineConfig rankedConfig;
     private AuthService auth;
     private AuthSession accountSession;
@@ -235,10 +244,10 @@ public final class SeongeunApplication implements AutoCloseable {
         buildMenu();
         UniversityPixelTheme.apply(screens);
         screens.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
-                .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), "navigate-back");
+                .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), NAVIGATE_BACK);
         screens.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), "navigate-back");
-        screens.getActionMap().put("navigate-back", new javax.swing.AbstractAction() {
+                .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), NAVIGATE_BACK);
+        screens.getActionMap().put(NAVIGATE_BACK, new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent event) { navigateBack(); }
         });
         show(LOBBY);
@@ -265,17 +274,7 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void bindActions() {
         // 원본의 로그인 버튼은 계정 확인 기능이 아니라 로컬 로비 진입이었다.
-        login.setLoginAction(event -> {
-            clearSecrets(login);
-            postLoginDestination = PostLoginDestination.NONE;
-            loginReturnScreen = LOBBY;
-            show(LOBBY);
-            if (LOBBY.equals(currentScreen) && !skipTutorial && frame != null && frame.isShowing())
-                SwingUtilities.invokeLater(() -> {
-                    if (!closed && LOBBY.equals(currentScreen) && !skipTutorial)
-                        startTutorial(LOBBY);
-                });
-        });
+        login.setLoginAction(event -> enterLocalLobby());
         login.setBackAction(event -> cancelLogin());
         login.setOnlineLoginAction(event -> loginOnline());
         login.setSignUpAction(event -> show(SIGN_UP));
@@ -288,12 +287,7 @@ public final class SeongeunApplication implements AutoCloseable {
         lobby.setTutorialAction(event -> startTutorial(LOBBY));
         lobby.setServerAction(event -> showLeaderboard());
         lobby.setSettingsAction(event -> showSettings());
-        settings.setAccountAction(event -> {
-            if (accountSession == null) {
-                openLogin(SETTINGS, PostLoginDestination.NONE);
-            }
-            else signOutOnline();
-        });
+        settings.setAccountAction(event -> toggleAccount());
         settings.setBackAction(event -> show(LOBBY));
         settings.setTutorialAction(event -> startTutorial(SETTINGS));
         settings.setBgmMuteAction(audio::setBgmMuted);
@@ -308,13 +302,7 @@ public final class SeongeunApplication implements AutoCloseable {
         characterShop.setSelectionAction(this::selectCharacter);
         characterShop.setSkinSelectionAction(this::selectBackgroundSkin);
         storySelect.setBackAction(event -> show(LOBBY));
-        for (int index = 0; index < stages.getStages().size(); index++) {
-            final int stageIndex = index;
-            for (MonsterSpec monster : stages.getStages().get(index).getEncounters()) {
-                final String selected = monster.getId();
-                storySelect.setStageAction(stageIndex, selected, event -> startStory(stageIndex, selected));
-            }
-        }
+        bindStageActions();
         roomList.setBackAction(event -> leaveOnlineLobby());
         roomList.setRooms(Collections.<RoomData>emptyList(), room -> joinRoom(room.getRoomName()));
         roomList.setCreateRoomAction(event -> createRoom());
@@ -322,10 +310,7 @@ public final class SeongeunApplication implements AutoCloseable {
         roomList.setRetryAction(event -> retryOnlineConnection());
         waitingRoom.setBackAction(event -> leaveRoom());
         waitingRoom.setReadyAction(event -> toggleReady());
-        battle.setResultAction(event -> {
-            if (match != null && match.getSnapshot().getPhase() == SessionPhase.FINISHED) renderMatch();
-            else message("전투가 끝나면 실제 결과가 자동으로 표시됩니다.");
-        });
+        battle.setResultAction(event -> showBattleResult());
         result.setReturnAction(event -> returnFromResult());
         result.setLobbyAction(event -> { closeSession(); show(LOBBY); });
         result.setNextAction(event -> startNextStory());
@@ -340,6 +325,39 @@ public final class SeongeunApplication implements AutoCloseable {
         battle.getPlayerBoard().setItemHandler(this::useItem);
         battle.setItemAction(this::useItem);
         battle.setBackAction(event -> backFromGame());
+    }
+
+    // 원본의 로그인 버튼은 계정 확인 기능이 아니라 로컬 로비 진입이었다.
+    private void enterLocalLobby() {
+        clearSecrets(login);
+        postLoginDestination = PostLoginDestination.NONE;
+        loginReturnScreen = LOBBY;
+        show(LOBBY);
+        if (LOBBY.equals(currentScreen) && !skipTutorial && frame != null && frame.isShowing())
+            SwingUtilities.invokeLater(() -> {
+                if (!closed && LOBBY.equals(currentScreen) && !skipTutorial)
+                    startTutorial(LOBBY);
+            });
+    }
+
+    private void toggleAccount() {
+        if (accountSession == null) openLogin(SETTINGS, PostLoginDestination.NONE);
+        else signOutOnline();
+    }
+
+    private void bindStageActions() {
+        for (int index = 0; index < stages.getStages().size(); index++) {
+            final int stageIndex = index;
+            for (MonsterSpec monster : stages.getStages().get(index).getEncounters()) {
+                final String selected = monster.getId();
+                storySelect.setStageAction(stageIndex, selected, event -> startStory(stageIndex, selected));
+            }
+        }
+    }
+
+    private void showBattleResult() {
+        if (match != null && match.getSnapshot().getPhase() == SessionPhase.FINISHED) renderMatch();
+        else message("전투가 끝나면 실제 결과가 자동으로 표시됩니다.");
     }
 
     private void buildMenu() {
@@ -682,8 +700,7 @@ public final class SeongeunApplication implements AutoCloseable {
     }
 
     private void renderLocal() {
-        GameState state = localGame != null ? localGame.getPlayerState()
-                : tutorial != null ? tutorial.getPlayerState() : null;
+        GameState state = currentLocalState();
         if (state == null) return;
         GameState previous = localPanel.getPlayerBoard().getGameState();
         localPanel.setState(state);
@@ -697,50 +714,65 @@ public final class SeongeunApplication implements AutoCloseable {
                 if (localGame.isCompleted()) localPanel.setCompleted(true);
                 return;
             }
-            if (tutorial.isCompleted()) saveSkipTutorial(true);
-            result.setResultDetails(tutorial.isCompleted() ? "COMPLETE" : "GAME OVER", "Player",
-                    Integer.toString(state.getLinesCleared()), "—", "—", "—");
-            result.setReturnButtonText(tutorialReturnScreen.equals(SETTINGS) ? "설정으로" : "로비로");
-            result.setRankedStatus(""); result.setStoryActions(false, false, "");
-            result.setStoryDialogue(Collections.emptyList());
-            show(RESULT);
+            showTutorialResult(state);
         } else if (state.getStatus() == GameState.Status.PAUSED) localGravity.stop();
         else localGravity.start();
     }
 
+    private GameState currentLocalState() {
+        if (localGame != null) return localGame.getPlayerState();
+        return tutorial != null ? tutorial.getPlayerState() : null;
+    }
+
+    /** 튜토리얼을 마치면 다음부터 자동 안내를 건너뛰고 결과 화면을 보여 준다. */
+    private void showTutorialResult(GameState state) {
+        if (tutorial.isCompleted()) saveSkipTutorial(true);
+        result.setResultDetails(tutorial.isCompleted() ? "COMPLETE" : "GAME OVER", PLAYER_LABEL,
+                Integer.toString(state.getLinesCleared()), "—", "—", "—");
+        result.setReturnButtonText(tutorialReturnScreen.equals(SETTINGS) ? "설정으로" : "로비로");
+        result.setRankedStatus(""); result.setStoryActions(false, false, "");
+        result.setStoryDialogue(Collections.emptyList());
+        show(RESULT);
+    }
+
     private void installMatch(MatchSession session) {
         match = session;
-        matchSubscription = SessionUiBinding.bind(session, update -> {
-            if (closed || session != match) return;
-            if (storyBattle && session instanceof LocalMatchSession) {
-                LocalMatchSession local = (LocalMatchSession) session;
-                CampaignProgress before = progress.getCampaignProgress();
-                StoryProgressService.ResultDisposition disposition =
-                        progress.recordBattleResult(update.getSnapshot().getMatchId(), local.getLastBattleResult());
-                List<StoryDialogueCue> cues = dialogues.onResult(progress.getActiveRun(),
-                        disposition, before, progress.getCampaignProgress());
-                if (!cues.isEmpty()) resultDialogue = cues;
-                if (disposition == StoryProgressService.ResultDisposition.APPLIED_WIN) {
-                    EncounterRun won = progress.getActiveRun();
-                    boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
-                    int baseReward = storyReward(won.getMonster().getTier());
-                    int reward = firstClear ? baseReward : baseReward / 5;
-                    PlayerSaveStore.Data updated = firstClear
-                            ? saveData.withFirstClear(won.getEncounterId(), reward)
-                            : saveData.withReplayReward(won.getEncounterId(), reward);
-                    if (commitSave(updated)) earnedReward = reward;
-                }
-            }
-            CommandOutcome outcome = update.getOutcome();
-            if (outcome != null && itemRequests.remove(outcome.getRequestId()) && !outcome.isAccepted())
-                battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
-            renderMatch();
-            battle.applyEvents(update.getEvents(), update.getSnapshot().getLocalParticipantId());
-            if (storyBattle) {
-                showStoryDialogues(update.getSnapshot(), update.getEvents());
-                showStoryHpDialogue(update.getSnapshot());
-            }
-        });
+        matchSubscription = SessionUiBinding.bind(session, update -> onMatchUpdate(session, update));
+    }
+
+    private void onMatchUpdate(MatchSession session, SessionUpdate update) {
+        if (closed || session != match) return;
+        if (storyBattle && session instanceof LocalMatchSession) {
+            recordStoryResult((LocalMatchSession) session, update.getSnapshot().getMatchId());
+        }
+        CommandOutcome outcome = update.getOutcome();
+        if (outcome != null && itemRequests.remove(outcome.getRequestId()) && !outcome.isAccepted())
+            battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
+        renderMatch();
+        battle.applyEvents(update.getEvents(), update.getSnapshot().getLocalParticipantId());
+        if (storyBattle) {
+            showStoryDialogues(update.getSnapshot(), update.getEvents());
+            showStoryHpDialogue(update.getSnapshot());
+        }
+    }
+
+    /** 스토리 전투 결과를 진행 상태에 한 번만 반영하고, 처음 이긴 경우 보상을 저장한다. */
+    private void recordStoryResult(LocalMatchSession local, String matchId) {
+        CampaignProgress before = progress.getCampaignProgress();
+        StoryProgressService.ResultDisposition disposition =
+                progress.recordBattleResult(matchId, local.getLastBattleResult());
+        List<StoryDialogueCue> cues = dialogues.onResult(progress.getActiveRun(),
+                disposition, before, progress.getCampaignProgress());
+        if (!cues.isEmpty()) resultDialogue = cues;
+        if (disposition != StoryProgressService.ResultDisposition.APPLIED_WIN) return;
+        EncounterRun won = progress.getActiveRun();
+        boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
+        int fullReward = storyReward(won.getMonster().getTier());
+        int reward = firstClear ? fullReward : repeatReward(fullReward);
+        PlayerSaveStore.Data next = firstClear
+                ? saveData.withFirstClear(won.getEncounterId(), reward)
+                : saveData.withReplayReward(won.getEncounterId(), reward);
+        if (commitSave(next)) earnedReward = reward;
     }
 
     /** Queued story dialogue (strong attack and timed exchange) remains event-driven. */
@@ -778,69 +810,105 @@ public final class SeongeunApplication implements AutoCloseable {
         if (match == null) return;
         SessionSnapshot snapshot = match.getSnapshot();
         if (snapshot.getPhase() == SessionPhase.FAILED) {
-            if (match instanceof OnlineMatchSession && displayedBattleMatchId == null) {
-                show(ROOM_LIST);
-                return;
-            }
-            result.setResultDetails("CONNECTION LOST", "Player", "—", "—", "—", "—");
-            result.setReturnButtonText("대기방으로");
-            result.setStoryDialogue(Collections.emptyList());
-            show(RESULT);
+            renderFailedMatch();
             return;
         }
         BattleState state = snapshot.getBattleState();
         if (state == null) return;
         battle.setMode(match instanceof OnlineMatchSession);
-        if (!snapshot.getMatchId().equals(displayedBattleMatchId)) {
-            String localId = snapshot.getLocalParticipantId();
-            String opponentId = null;
-            for (String id : state.getParticipants().keySet()) {
-                if (!id.equals(localId)) { opponentId = id; break; }
-            }
-            if (opponentId != null) {
-                battle.setPlayers(new PlayerData(state.getParticipant(localId).getName(), 0, "—", false),
-                        new PlayerData(state.getParticipant(opponentId).getName(), 0, "—", false));
-            }
-            displayedBattleMatchId = snapshot.getMatchId();
-        }
+        if (!snapshot.getMatchId().equals(displayedBattleMatchId)) introducePlayers(snapshot, state);
         battle.setState(state, snapshot.getLocalParticipantId());
-        if (snapshot.getPhase() == SessionPhase.FINISHED) {
-            if (match instanceof OnlineMatchSession && onlineResultReturned) {
-                show(WAITING_ROOM);
-                return;
-            }
-            boolean won = snapshot.getLocalParticipantId().equals(state.getWinnerId());
-            int lines = state.getParticipant(snapshot.getLocalParticipantId()).getGameState().getLinesCleared();
-            String outcome = state.getWinnerId() == null ? "DRAW" : won ? "VICTORY" : "DEFEAT";
-            kr.ac.jbnu.se.tetris.battle.ParticipantState local =
-                    state.getParticipant(snapshot.getLocalParticipantId());
-            String reward = storyBattle && won ? Integer.toString(earnedReward) : "0";
-            result.setResultDetails(outcome, local.getName(), Integer.toString(lines),
-                    Integer.toString(local.getMaxCombo()), Integer.toString(local.getTotalDamage()), reward);
-            result.setReturnButtonText(storyBattle ? "Story로" : "대기방으로");
-            result.setRankedStatus(match instanceof OnlineMatchSession && network instanceof WebSocketNetworkClient
-                    ? rankStatusText(rankedSaveStatus) : "");
-            EncounterRun active = storyBattle ? progress.getActiveRun() : null;
-            int storyLevel = active == null ? 0 : DifficultyProfileCatalog.forEncounter(active.getMonster()).getLevel();
-            String badge = !won ? "" : storyLevel == 3 ? "교양 이수증 획득!"
-                    : storyLevel == 6 ? "캡스톤 통과 · 졸업장 획득!"
-                    : storyLevel == 9 ? "취업 성공 · 사원증 획득!" : "";
-            result.setStoryActions(storyBattle, won && storyLevel < 9, badge);
-            result.setStoryDialogue(storyBattle ? resultDialogue : Collections.emptyList());
-            if (!snapshot.getMatchId().equals(resultPresentedMatchId)) {
-                resultPresentedMatchId = snapshot.getMatchId();
-                audio.play(won ? AudioService.Event.VICTORY : AudioService.Event.DEFEAT);
-                battle.finish(won);
-                if (!"FORFEIT".equals(state.getReason())) {
-                    final String finishedMatch = snapshot.getMatchId();
-                    resultDelay = new Timer(850, event -> {
-                        if (match != null && finishedMatch.equals(match.getSnapshot().getMatchId())
-                                && BATTLE.equals(currentScreen)) show(RESULT);
-                    });
-                    resultDelay.setRepeats(false); resultDelay.start();
-                } else show(RESULT);
-            }
-        } else if (match instanceof OnlineMatchSession) show(BATTLE);
+        if (snapshot.getPhase() == SessionPhase.FINISHED) renderFinishedMatch(snapshot, state);
+        else if (match instanceof OnlineMatchSession) show(BATTLE);
+    }
+
+    private void renderFailedMatch() {
+        if (match instanceof OnlineMatchSession && displayedBattleMatchId == null) {
+            show(ROOM_LIST);
+            return;
+        }
+        result.setResultDetails("CONNECTION LOST", PLAYER_LABEL, "—", "—", "—", "—");
+        result.setReturnButtonText(WAITING_ROOM_BUTTON);
+        result.setStoryDialogue(Collections.emptyList());
+        show(RESULT);
+    }
+
+    /** 새 경기를 처음 그릴 때만 양쪽 이름을 전투 화면에 넣는다. */
+    private void introducePlayers(SessionSnapshot snapshot, BattleState state) {
+        String localId = snapshot.getLocalParticipantId();
+        String opponentId = opponentOf(state, localId);
+        if (opponentId != null) {
+            battle.setPlayers(new PlayerData(state.getParticipant(localId).getName(), 0, "—", false),
+                    new PlayerData(state.getParticipant(opponentId).getName(), 0, "—", false));
+        }
+        displayedBattleMatchId = snapshot.getMatchId();
+    }
+
+    /** 참가자 중 주어진 ID가 아닌 첫 번째 참가자. 혼자 남은 전투면 null이다. */
+    private static String opponentOf(BattleState state, String participantId) {
+        for (String id : state.getParticipants().keySet()) {
+            if (!id.equals(participantId)) return id;
+        }
+        return null;
+    }
+
+    private void renderFinishedMatch(SessionSnapshot snapshot, BattleState state) {
+        if (match instanceof OnlineMatchSession && onlineResultReturned) {
+            show(WAITING_ROOM);
+            return;
+        }
+        boolean won = snapshot.getLocalParticipantId().equals(state.getWinnerId());
+        fillMatchResult(snapshot, state, won);
+        if (!snapshot.getMatchId().equals(resultPresentedMatchId)) presentResult(snapshot, state, won);
+    }
+
+    private void fillMatchResult(SessionSnapshot snapshot, BattleState state, boolean won) {
+        kr.ac.jbnu.se.tetris.battle.ParticipantState local =
+                state.getParticipant(snapshot.getLocalParticipantId());
+        int lines = local.getGameState().getLinesCleared();
+        String outcome = matchOutcome(state.getWinnerId(), won);
+        String reward = storyBattle && won ? Integer.toString(earnedReward) : "0";
+        result.setResultDetails(outcome, local.getName(), Integer.toString(lines),
+                Integer.toString(local.getMaxCombo()), Integer.toString(local.getTotalDamage()), reward);
+        result.setReturnButtonText(storyBattle ? "Story로" : WAITING_ROOM_BUTTON);
+        result.setRankedStatus(match instanceof OnlineMatchSession && network instanceof WebSocketNetworkClient
+                ? rankStatusText(rankedSaveStatus) : "");
+        EncounterRun active = storyBattle ? progress.getActiveRun() : null;
+        int storyLevel = active == null ? 0 : DifficultyProfileCatalog.forEncounter(active.getMonster()).getLevel();
+        result.setStoryActions(storyBattle, won && storyLevel < 9, won ? storyBadge(storyLevel) : "");
+        result.setStoryDialogue(storyBattle ? resultDialogue : Collections.emptyList());
+    }
+
+    private static String matchOutcome(String winnerId, boolean won) {
+        if (winnerId == null) return "DRAW";
+        return won ? "VICTORY" : "DEFEAT";
+    }
+
+    /** 각 단계의 마지막 전투(3·6·9단계)를 이겼을 때 받는 증서 문구 */
+    private static String storyBadge(int storyLevel) {
+        switch (storyLevel) {
+            case 3: return "교양 이수증 획득!";
+            case 6: return "캡스톤 통과 · 졸업장 획득!";
+            case 9: return "취업 성공 · 사원증 획득!";
+            default: return "";
+        }
+    }
+
+    /** 결과 연출은 경기마다 한 번만 하고, 기권이 아니면 종료 연출 뒤 결과 화면으로 넘긴다. */
+    private void presentResult(SessionSnapshot snapshot, BattleState state, boolean won) {
+        resultPresentedMatchId = snapshot.getMatchId();
+        audio.play(won ? AudioService.Event.VICTORY : AudioService.Event.DEFEAT);
+        battle.finish(won);
+        if ("FORFEIT".equals(state.getReason())) {
+            show(RESULT);
+            return;
+        }
+        final String finishedMatch = snapshot.getMatchId();
+        resultDelay = new Timer(850, event -> {
+            if (match != null && finishedMatch.equals(match.getSnapshot().getMatchId())
+                    && BATTLE.equals(currentScreen)) show(RESULT);
+        });
+        resultDelay.setRepeats(false); resultDelay.start();
     }
 
     private void togglePause() {
@@ -880,13 +948,18 @@ public final class SeongeunApplication implements AutoCloseable {
             return;
         }
         String target = participant.getId();
-        if ("garbage_bomb".equals(item) || "nullify".equals(item)) {
-            for (String candidate : state.getParticipants().keySet())
-                if (!candidate.equals(target)) { target = candidate; break; }
+        // 방해 아이템만 상대에게 쓰고 나머지는 자신에게 쓴다.
+        if (targetsOpponent(item)) {
+            String opponent = opponentOf(state, target);
+            if (opponent != null) target = opponent;
         }
         long requestId = match.submit(new PlayerIntent(GameAction.Type.USE_ITEM,
                 new GameAction.ItemUse(item, target)));
         itemRequests.add(requestId);
+    }
+
+    private static boolean targetsOpponent(String item) {
+        return "garbage_bomb".equals(item) || "nullify".equals(item);
     }
 
     private void forfeit() {
@@ -1001,43 +1074,58 @@ public final class SeongeunApplication implements AutoCloseable {
         final char[] password = login.getPassword();
         login.clearPassword();
         final boolean legacyEmail = username.contains("@");
-        if (password.length == 0 || (legacyEmail && (username.length() > 254 || username.indexOf('@') < 1))) {
-            java.util.Arrays.fill(password, '\0'); login.setStatus("아이디와 비밀번호를 입력하세요."); return;
-        }
-        if (!legacyEmail) {
-            try { UsernameIdentity.normalize(username); }
-            catch (IllegalArgumentException invalid) {
-                java.util.Arrays.fill(password, '\0');
-                login.setStatus("아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요."); return;
-            }
-        }
+        if (!validateLoginInput(username, password, legacyEmail)) return;
         final String accountLabel = legacyEmail ? username : UsernameIdentity.normalize(username);
-        final long epoch = ++authEpoch;
-        if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; clearLeaderboardForIdentityChange(); setAccountStatus("로컬 플레이");
-        authBusy = true; login.setBusy(true); login.setStatus("로그인 중...");
+        final long epoch = beginAuthRequest();
+        login.setBusy(true); login.setStatus("로그인 중...");
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception {
                 try { return legacyEmail ? auth.signIn(username, new String(password))
                         : auth.signInUsername(username, new String(password)); }
                 finally { java.util.Arrays.fill(password, '\0'); }
             }
-            @Override protected void done() {
-                completedAuthRequests++;
-                if (closed || epoch != authEpoch || !LOGIN.equals(currentScreen)) {
-                    try { discardStaleAuthSession(get()); }
-                    catch (Exception ignored) { /* No session to discard. */ }
-                    return;
-                }
-                authBusy = false; login.setBusy(false);
-                try {
-                    accountSession = get();
-                    login.setStatus("온라인 로그인 완료");
-                    setAccountStatus("온라인 PvP 로그인 완료 · " + accountLabel);
-                    resumeAfterLogin();
-                } catch (Exception failed) { accountSession = null; login.setStatus("로그인 실패 · 계정 또는 서버 연결을 확인하세요."); }
-            }
+            @Override protected void done() { finishLogin(this, epoch, accountLabel); }
         }.execute();
+    }
+
+    /** 입력이 잘못되면 비밀번호 배열을 지우고 안내를 띄운 뒤 false를 돌려준다. */
+    private boolean validateLoginInput(String username, char[] password, boolean legacyEmail) {
+        if (password.length == 0 || (legacyEmail && (username.length() > 254 || username.indexOf('@') < 1))) {
+            java.util.Arrays.fill(password, '\0'); login.setStatus("아이디와 비밀번호를 입력하세요."); return false;
+        }
+        if (legacyEmail) return true;
+        try {
+            UsernameIdentity.normalize(username);
+            return true;
+        } catch (IllegalArgumentException invalid) {
+            java.util.Arrays.fill(password, '\0');
+            login.setStatus(USERNAME_RULE); return false;
+        }
+    }
+
+    /** 새 인증 요청을 시작하며 이전 계정의 온라인 연결과 순위 정보를 정리한다. */
+    private long beginAuthRequest() {
+        final long epoch = ++authEpoch;
+        if (network instanceof WebSocketNetworkClient) closeSession();
+        accountSession = null; clearLeaderboardForIdentityChange(); setAccountStatus(LOCAL_PLAY_STATUS);
+        authBusy = true;
+        return epoch;
+    }
+
+    private void finishLogin(javax.swing.SwingWorker<AuthSession, Void> worker, long epoch, String accountLabel) {
+        completedAuthRequests++;
+        if (closed || epoch != authEpoch || !LOGIN.equals(currentScreen)) {
+            try { discardStaleAuthSession(worker.get()); }
+            catch (Exception ignored) { /* No session to discard. */ }
+            return;
+        }
+        authBusy = false; login.setBusy(false);
+        try {
+            accountSession = worker.get();
+            login.setStatus("온라인 로그인 완료");
+            setAccountStatus(LOGIN_COMPLETE_PREFIX + accountLabel);
+            resumeAfterLogin();
+        } catch (Exception failed) { accountSession = null; login.setStatus("로그인 실패 · 계정 또는 서버 연결을 확인하세요."); }
     }
 
     private void registerOnline() {
@@ -1050,41 +1138,41 @@ public final class SeongeunApplication implements AutoCloseable {
         try { UsernameIdentity.normalize(username); }
         catch (IllegalArgumentException invalid) {
             java.util.Arrays.fill(password, '\0');
-            message("아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요."); return;
+            message(USERNAME_RULE); return;
         }
         if (password.length < 8 || !matches) {
             java.util.Arrays.fill(password, '\0'); message("8자 이상 비밀번호와 확인란을 확인하세요."); return;
         }
-        final long epoch = ++authEpoch;
-        if (network instanceof WebSocketNetworkClient) closeSession();
-        accountSession = null; clearLeaderboardForIdentityChange(); setAccountStatus("로컬 플레이");
-        authBusy = true; signUp.setBusy(true);
+        final long epoch = beginAuthRequest();
+        signUp.setBusy(true);
         new javax.swing.SwingWorker<SignUpResult, Void>() {
             @Override protected SignUpResult doInBackground() throws Exception {
                 try { return auth.signUpUsername(username, new String(password)); }
                 finally { java.util.Arrays.fill(password, '\0'); }
             }
-            @Override protected void done() {
-                completedAuthRequests++;
-                if (closed || epoch != authEpoch || !SIGN_UP.equals(currentScreen)) {
-                    try { discardStaleAuthSession(get().getSession()); }
-                    catch (Exception ignored) { /* No session to discard. */ }
-                    return;
-                }
-                authBusy = false; signUp.setBusy(false);
-                try {
-                    SignUpResult registered = get();
-                    accountSession = registered.getSession();
-                    if (accountSession == null) {
-                        login.setStatus("가입은 접수됐지만 서버의 계정 확인 설정 때문에 로그인할 수 없습니다. 운영자에게 알려주세요.");
-                        if (SIGN_UP.equals(currentScreen)) show(LOGIN);
-                    } else {
-                        setAccountStatus("온라인 PvP 로그인 완료 · " + UsernameIdentity.normalize(username));
-                        resumeAfterLogin();
-                    }
-                } catch (Exception failed) { message("가입 실패 · 계정 정보 또는 서버 연결을 확인하세요."); }
-            }
+            @Override protected void done() { finishRegistration(this, epoch, username); }
         }.execute();
+    }
+
+    private void finishRegistration(javax.swing.SwingWorker<SignUpResult, Void> worker, long epoch, String username) {
+        completedAuthRequests++;
+        if (closed || epoch != authEpoch || !SIGN_UP.equals(currentScreen)) {
+            try { discardStaleAuthSession(worker.get().getSession()); }
+            catch (Exception ignored) { /* No session to discard. */ }
+            return;
+        }
+        authBusy = false; signUp.setBusy(false);
+        try {
+            SignUpResult registered = worker.get();
+            accountSession = registered.getSession();
+            if (accountSession == null) {
+                login.setStatus("가입은 접수됐지만 서버의 계정 확인 설정 때문에 로그인할 수 없습니다. 운영자에게 알려주세요.");
+                if (SIGN_UP.equals(currentScreen)) show(LOGIN);
+            } else {
+                setAccountStatus(LOGIN_COMPLETE_PREFIX + UsernameIdentity.normalize(username));
+                resumeAfterLogin();
+            }
+        } catch (Exception failed) { message("가입 실패 · 계정 정보 또는 서버 연결을 확인하세요."); }
     }
 
     private void refreshAccount() {
@@ -1095,37 +1183,44 @@ public final class SeongeunApplication implements AutoCloseable {
         settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
         new javax.swing.SwingWorker<AuthSession, Void>() {
             @Override protected AuthSession doInBackground() throws Exception { return auth.refresh(); }
-            @Override protected void done() {
-                if (closed || epoch != authEpoch) return;
-                authBusy = false;
-                settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
-                try {
-                    accountSession = get();
-                } catch (Exception failed) {
-                    if (accountSession.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000) {
-                        accountSession = null;
-                        clearLeaderboardForIdentityChange();
-                    } else rankingReloadPending = false;
-                    setAccountStatus("온라인 인증 갱신에 실패했습니다. 다시 로그인하세요.");
-                    if (LEADERBOARD.equals(currentScreen))
-                        leaderboard.setError("인증 갱신에 실패했습니다. 다시 로그인하거나 새로고침하세요.");
-                    if (network instanceof WebSocketNetworkClient && BATTLE.equals(currentScreen))
-                        battle.setFeedback("온라인 인증 갱신 실패 · 서버 연결을 확인하세요.");
-                    return;
-                }
-                if (network instanceof WebSocketNetworkClient && onlineConnected) {
-                    try { refreshRequestId = network.refreshAuthentication(accountSession.getAccessToken()); }
-                    catch (IllegalStateException disconnected) {
-                        onlineConnected = false; roomList.setConnected(false);
-                        battle.setFeedback("로그인 유지 · 대전 서버에 다시 연결하세요.");
-                    }
-                }
-                if (rankingReloadPending && LEADERBOARD.equals(currentScreen)) {
-                    rankingReloadPending = false;
-                    loadLeaderboard();
-                }
-            }
+            @Override protected void done() { finishRefresh(this, epoch); }
         }.execute();
+    }
+
+    private void finishRefresh(javax.swing.SwingWorker<AuthSession, Void> worker, long epoch) {
+        if (closed || epoch != authEpoch) return;
+        authBusy = false;
+        settings.setAccountStatus(accountStatus, accountSession != null, auth != null, authBusy);
+        try {
+            accountSession = worker.get();
+        } catch (Exception failed) {
+            reportRefreshFailure();
+            return;
+        }
+        if (network instanceof WebSocketNetworkClient && onlineConnected) {
+            try { refreshRequestId = network.refreshAuthentication(accountSession.getAccessToken()); }
+            catch (IllegalStateException disconnected) {
+                onlineConnected = false; roomList.setConnected(false);
+                battle.setFeedback("로그인 유지 · 대전 서버에 다시 연결하세요.");
+            }
+        }
+        if (rankingReloadPending && LEADERBOARD.equals(currentScreen)) {
+            rankingReloadPending = false;
+            loadLeaderboard();
+        }
+    }
+
+    /** 토큰이 이미 만료됐으면 계정을 내리고, 아직 유효하면 순위 재조회만 보류를 푼다. */
+    private void reportRefreshFailure() {
+        if (accountSession.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000) {
+            accountSession = null;
+            clearLeaderboardForIdentityChange();
+        } else rankingReloadPending = false;
+        setAccountStatus("온라인 인증 갱신에 실패했습니다. 다시 로그인하세요.");
+        if (LEADERBOARD.equals(currentScreen))
+            leaderboard.setError("인증 갱신에 실패했습니다. 다시 로그인하거나 새로고침하세요.");
+        if (network instanceof WebSocketNetworkClient && BATTLE.equals(currentScreen))
+            battle.setFeedback("온라인 인증 갱신 실패 · 서버 연결을 확인하세요.");
     }
 
     private void signOutOnline() {
@@ -1137,7 +1232,7 @@ public final class SeongeunApplication implements AutoCloseable {
         final long epoch = ++authEpoch;
         accountSession = null; clearLeaderboardForIdentityChange(); authBusy = true;
         String returnScreen = SETTINGS.equals(currentScreen) ? SETTINGS : LOBBY;
-        setAccountStatus("로컬 플레이");
+        setAccountStatus(LOCAL_PLAY_STATUS);
         if (SETTINGS.equals(returnScreen)) showSettings(); else show(LOBBY);
         new javax.swing.SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception { auth.signOut(); return null; }
@@ -1251,18 +1346,7 @@ public final class SeongeunApplication implements AutoCloseable {
                 roomList.setConnected(true);
                 break;
             case ROOM_STATE:
-                roomState = update.getRoomState();
-                if (roomState.getPhase() == RoomState.Phase.CLOSED) {
-                    roomState = null;
-                    requestedRoomName = null;
-                    show(ROOM_LIST);
-                } else {
-                    renderRoom();
-                    if (roomState.getPhase() == RoomState.Phase.WAITING
-                            && (WAITING_ROOM.equals(currentScreen) || ROOM_LIST.equals(currentScreen))) {
-                        show(WAITING_ROOM);
-                    }
-                }
+                onRoomState(update.getRoomState());
                 break;
             case MATCH_STARTED:
                 onlineResultReturned = false;
@@ -1270,52 +1354,76 @@ public final class SeongeunApplication implements AutoCloseable {
                 result.setRankedStatus(network instanceof WebSocketNetworkClient ? rankStatusText(rankedSaveStatus) : "");
                 break;
             case RANKED_SAVE_STATUS:
-                if (match == null || !update.getMatchId().equals(match.getSnapshot().getMatchId())) break;
-                rankedSaveStatus = update.getReasonCode();
-                result.setRankedStatus(rankStatusText(rankedSaveStatus));
-                if ("SAVED".equals(rankedSaveStatus) && LEADERBOARD.equals(currentScreen)) loadLeaderboard();
+                onRankedSaveStatus(update);
                 break;
             case CONNECTION_FAILED:
             case ERROR:
-            case CLOSED: {
-                onlineConnected = false;
-                String reason = update.getReasonCode();
-                if ("SERVICE_UNAVAILABLE".equals(reason)) {
-                    roomList.setConnectionFailed("대전 접수가 닫혀 있습니다");
-                } else if ("HANDSHAKE_FAILED".equals(reason)) {
-                    roomList.setConnectionFailed("게임 서버 주소를 확인하세요");
-                } else if ("AUTH_INVALID".equals(reason)) {
-                    authEpoch++;
-                    accountSession = null;
-                    clearLeaderboardForIdentityChange();
-                    authBusy = false;
-                    setAccountStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
-                    roomList.setConnectionFailed("로그인이 만료되었습니다");
-                    roomList.setRetryLabel("다시 로그인");
-                } else {
-                    roomList.setConnectionFailed(reason);
-                }
-                if (WAITING_ROOM.equals(currentScreen)) show(ROOM_LIST);
-                if (BATTLE.equals(currentScreen)) battle.setFeedback("서버 연결이 끊겼습니다 · 결과를 확인하세요.");
+            case CLOSED:
+                onConnectionEnded(update.getReasonCode());
                 break;
-            }
             case REQUEST_OUTCOME:
-                if (update.getRequestOutcome().getRequestId() == refreshRequestId) {
-                    refreshRequestId = -1;
-                    if (!update.getRequestOutcome().isAccepted()) {
-                        accountSession = null;
-                        clearLeaderboardForIdentityChange();
-                        setAccountStatus("인증이 만료되었습니다. 온라인 계정에 다시 로그인하세요.");
-                    }
-                }
-                if (!update.getRequestOutcome().isAccepted()) {
-                    if (BATTLE.equals(currentScreen))
-                        battle.setFeedback("요청 거절 · " + update.getRequestOutcome().getReasonCode());
-                    else message("요청 거절: " + update.getRequestOutcome().getReasonCode());
-                }
+                onRequestOutcome(update.getRequestOutcome());
                 break;
             default: break;
         }
+    }
+
+    private void onRoomState(RoomState state) {
+        roomState = state;
+        if (roomState.getPhase() == RoomState.Phase.CLOSED) {
+            roomState = null;
+            requestedRoomName = null;
+            show(ROOM_LIST);
+            return;
+        }
+        renderRoom();
+        if (roomState.getPhase() == RoomState.Phase.WAITING
+                && (WAITING_ROOM.equals(currentScreen) || ROOM_LIST.equals(currentScreen))) {
+            show(WAITING_ROOM);
+        }
+    }
+
+    private void onRankedSaveStatus(NetworkUpdate update) {
+        if (match == null || !update.getMatchId().equals(match.getSnapshot().getMatchId())) return;
+        rankedSaveStatus = update.getReasonCode();
+        result.setRankedStatus(rankStatusText(rankedSaveStatus));
+        if ("SAVED".equals(rankedSaveStatus) && LEADERBOARD.equals(currentScreen)) loadLeaderboard();
+    }
+
+    /** 연결 종료 사유를 방 목록 안내로 바꾸고, 인증 만료면 계정을 내린다. */
+    private void onConnectionEnded(String reason) {
+        onlineConnected = false;
+        if ("SERVICE_UNAVAILABLE".equals(reason)) {
+            roomList.setConnectionFailed("대전 접수가 닫혀 있습니다");
+        } else if ("HANDSHAKE_FAILED".equals(reason)) {
+            roomList.setConnectionFailed("게임 서버 주소를 확인하세요");
+        } else if ("AUTH_INVALID".equals(reason)) {
+            authEpoch++;
+            accountSession = null;
+            clearLeaderboardForIdentityChange();
+            authBusy = false;
+            setAccountStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
+            roomList.setConnectionFailed("로그인이 만료되었습니다");
+            roomList.setRetryLabel("다시 로그인");
+        } else {
+            roomList.setConnectionFailed(reason);
+        }
+        if (WAITING_ROOM.equals(currentScreen)) show(ROOM_LIST);
+        if (BATTLE.equals(currentScreen)) battle.setFeedback("서버 연결이 끊겼습니다 · 결과를 확인하세요.");
+    }
+
+    private void onRequestOutcome(RequestOutcome outcome) {
+        if (outcome.getRequestId() == refreshRequestId) {
+            refreshRequestId = -1;
+            if (!outcome.isAccepted()) {
+                accountSession = null;
+                clearLeaderboardForIdentityChange();
+                setAccountStatus("인증이 만료되었습니다. 온라인 계정에 다시 로그인하세요.");
+            }
+        }
+        if (outcome.isAccepted()) return;
+        if (BATTLE.equals(currentScreen)) battle.setFeedback("요청 거절 · " + outcome.getReasonCode());
+        else message("요청 거절: " + outcome.getReasonCode());
     }
 
     private void renderRoom() {
@@ -1421,20 +1529,24 @@ public final class SeongeunApplication implements AutoCloseable {
         try {
             dialog.run();
         } finally {
-            if (!closed) {
-                if (pausedGame != null && pausedGame == localGame && !pausedGame.isFinished()) {
-                    pausedGame.resume();
-                    renderLocal();
-                }
-                if (pausedTutorial != null && pausedTutorial == tutorial && !pausedTutorial.isFinished()) {
-                    pausedTutorial.resume();
-                    renderLocal();
-                }
-                if (pausedMatch != null && pausedMatch == match
-                        && pausedMatch.getSnapshot().getPhase() == SessionPhase.PAUSED)
-                    pausedMatch.requestPause(false);
-            }
+            if (!closed) resumeAfterDialog(pausedGame, pausedTutorial, pausedMatch);
         }
+    }
+
+    /** 대화 상자 동안 세션이 바뀌거나 끝나지 않았을 때만 멈춘 게임을 다시 이어 간다. */
+    private void resumeAfterDialog(LocalGameSession pausedGame, TutorialSession pausedTutorial,
+                                   MatchSession pausedMatch) {
+        if (pausedGame != null && pausedGame == localGame && !pausedGame.isFinished()) {
+            pausedGame.resume();
+            renderLocal();
+        }
+        if (pausedTutorial != null && pausedTutorial == tutorial && !pausedTutorial.isFinished()) {
+            pausedTutorial.resume();
+            renderLocal();
+        }
+        if (pausedMatch != null && pausedMatch == match
+                && pausedMatch.getSnapshot().getPhase() == SessionPhase.PAUSED)
+            pausedMatch.requestPause(false);
     }
 
     private static void clearSecrets(Container root) {
@@ -1481,7 +1593,7 @@ public final class SeongeunApplication implements AutoCloseable {
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         frame.setMinimumSize(new Dimension(Math.min(820, usable.width), Math.min(650, usable.height)));
         frame.setSize(Math.min(1200, usable.width), Math.min(900, usable.height));
-        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         frame.setLocationRelativeTo(null);
         frame.add(screens);
         frame.setGlassPane(transition);

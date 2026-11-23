@@ -77,8 +77,9 @@ public final class LocalGameSession implements PlaySession {
         if (!closed && !isFinished() && isPaused()) controller.submit(GameAction.Type.RESUME);
     }
 
-    /** 상대나 별도 판단 주기가 없는 로컬 모드다. */
-    @Override public void pulse(long nowNanos) { }
+    @Override public void pulse(long nowNanos) {
+        // 상대나 별도 판단 주기가 없는 로컬 모드라 할 일이 없다.
+    }
     @Override public GameState getPlayerState() { return controller.getState(); }
     @Override public BattleState getBattleState() { return null; }
     @Override public boolean isPaused() { return getPlayerState().getStatus() == GameState.Status.PAUSED; }

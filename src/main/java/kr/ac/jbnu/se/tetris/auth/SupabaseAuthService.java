@@ -10,6 +10,9 @@ import kr.ac.jbnu.se.tetris.supabase.SupabaseHttpException;
 
 /** Desktop authentication client. Requests are synchronous and must run off the EDT. */
 public final class SupabaseAuthService implements AuthService {
+    private static final String EMAIL = "email";
+    private static final String PASSWORD = "password";
+    private static final String ACCESS_TOKEN = "access_token";
     private final SupabaseHttp http;
     private AuthSession session;
 
@@ -40,7 +43,7 @@ public final class SupabaseAuthService implements AuthService {
                 ? result.getAsJsonObject("user") : result;
         String userId = AuthJson.string(user, "id");
         if (userId == null) throw new IOException("Invalid signup response");
-        if (result.has("access_token") && !result.get("access_token").isJsonNull()) {
+        if (result.has(ACCESS_TOKEN) && !result.get(ACCESS_TOKEN).isJsonNull()) {
             session = parseSession(result);
             return new SignUpResult(userId, false, session);
         }
@@ -91,7 +94,7 @@ public final class SupabaseAuthService implements AuthService {
 
     public void recoverPassword(String email) throws AuthException, IOException {
         JsonObject body = new JsonObject();
-        body.addProperty("email", required(email, "email"));
+        body.addProperty(EMAIL, required(email, EMAIL));
         request("POST", "/auth/v1/recover", body, null);
     }
 
@@ -101,11 +104,11 @@ public final class SupabaseAuthService implements AuthService {
         session = null;
         JsonObject body = new JsonObject();
         body.addProperty("type", "recovery");
-        body.addProperty("email", required(email, "email"));
+        body.addProperty(EMAIL, required(email, EMAIL));
         body.addProperty("token", required(otp, "otp"));
         AuthSession recovered = parseSession(request("POST", "/auth/v1/verify", body, null));
         JsonObject change = new JsonObject();
-        change.addProperty("password", requiredPassword(newPassword));
+        change.addProperty(PASSWORD, requiredPassword(newPassword));
         request("PUT", "/auth/v1/user", change, recovered.getAccessToken());
         session = recovered;
         return recovered;
@@ -114,7 +117,7 @@ public final class SupabaseAuthService implements AuthService {
     public synchronized AuthSession changePassword(String newPassword) throws AuthException, IOException {
         AuthSession current = requireSession();
         JsonObject body = new JsonObject();
-        body.addProperty("password", requiredPassword(newPassword));
+        body.addProperty(PASSWORD, requiredPassword(newPassword));
         request("PUT", "/auth/v1/user", body, current.getAccessToken());
         return current;
     }
@@ -144,8 +147,8 @@ public final class SupabaseAuthService implements AuthService {
 
     private static JsonObject credentials(String email, String password) {
         JsonObject result = new JsonObject();
-        result.addProperty("email", required(email, "email"));
-        result.addProperty("password", requiredPassword(password));
+        result.addProperty(EMAIL, required(email, EMAIL));
+        result.addProperty(PASSWORD, requiredPassword(password));
         return result;
     }
 
@@ -162,7 +165,7 @@ public final class SupabaseAuthService implements AuthService {
     }
 
     private static AuthSession parseSession(JsonObject body) throws IOException {
-        String token = AuthJson.string(body, "access_token");
+        String token = AuthJson.string(body, ACCESS_TOKEN);
         String refresh = AuthJson.string(body, "refresh_token");
         String userId = body.has("user") && body.get("user").isJsonObject()
                 ? AuthJson.string(body.getAsJsonObject("user"), "id") : null;

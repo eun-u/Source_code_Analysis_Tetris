@@ -80,6 +80,22 @@ import kr.ac.jbnu.se.tetris.supabase.SupabaseConfig;
 
 /** One-instance Render HTTP/WebSocket game server. All BattleManager calls run on the room queue. */
 public final class RenderGameServer implements AutoCloseable {
+    private static final String TEXT_PLAIN = "text/plain; charset=utf-8";
+    private static final String NOT_FOUND_TEXT = "not found";
+    private static final String ADMISSION_CLOSED_TEXT = "admission closed";
+    private static final String SERVER_BUSY_TEXT = "server busy";
+    private static final String AUTH_FAILED_TEXT = "authentication failed";
+    private static final String AUTH_UNAVAILABLE_TEXT = "authentication unavailable";
+    private static final String BEARER = "Bearer ";
+    private static final String RECOVER_STOPPED_RUN_PREFIX = "/admin/recover-stopped-run?runId=";
+    private static final String BACKEND_FIREBASE = "firebase";
+    private static final String BACKEND_SUPABASE = "supabase";
+    private static final String ADMISSION_CLOSED = "ADMISSION_CLOSED";
+    private static final String AUTH_SERVICE_UNAVAILABLE = "AUTH_SERVICE_UNAVAILABLE";
+    private static final String SAVE_FAILED = "SAVE_FAILED";
+    private static final String MATCH_RESULT_UNRESOLVED = "MATCH_RESULT_UNRESOLVED";
+    private static final String NOT_IN_ROOM = "NOT_IN_ROOM";
+    private static final String SERVER_STOPPED = "SERVER_STOPPED";
     private static final Logger LOG = Logger.getLogger(RenderGameServer.class.getName());
     private static final int DEFAULT_MAX_WS_CONNECTIONS = 128;
     private static final int DEFAULT_MAX_PENDING_AUTH = 16;
@@ -266,226 +282,235 @@ public final class RenderGameServer implements AutoCloseable {
 
         private void handleHttp(ChannelHandlerContext ctx, FullHttpRequest request) {
             String path = request.uri();
-            if ("GET".equals(request.method().name())
-                    && ("/health".equals(path) || "/healthz".equals(path))) {
-                respond(ctx, HttpResponseStatus.OK, "ok"); return;
+            boolean get = "GET".equals(request.method().name());
+            if (get && handlePublicGet(ctx, request, path)) return;
+            if (path.startsWith("/admin/")) { handleAdmin(ctx, request); return; }
+            if (!get || !"/ws".equals(path) || upgrading || !request.decoderResult().isSuccess()) {
+                respond(ctx, HttpResponseStatus.NOT_FOUND, NOT_FOUND_TEXT); return;
             }
-            if ("GET".equals(request.method().name())
-                    && ("/ready".equals(path) || "/readyz".equals(path))) {
-                respond(ctx, admissionOpen && leaseOwned && !draining && !closed.get()
-                        ? HttpResponseStatus.OK : HttpResponseStatus.SERVICE_UNAVAILABLE,
-                        admissionOpen && leaseOwned && !draining && !closed.get() ? "ready" : "not ready");
-                return;
+            if (!admissionOpen || draining) {
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, ADMISSION_CLOSED_TEXT); return;
             }
-            if ("GET".equals(request.method().name()) && "/".equals(path)) {
+            String authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION);
+            if (!isBearerHeader(authorization)) {
+                respond(ctx, HttpResponseStatus.UNAUTHORIZED, "authentication required"); return;
+            }
+            if (!reserveUpgradeSlot(ctx)) return;
+            beginUpgrade(ctx, request, authorization.substring(BEARER.length()));
+        }
+
+        /** 상태 확인·안내·순위표처럼 인증 없이 받는 GET 경로. 처리했으면 true를 돌려준다. */
+        private boolean handlePublicGet(ChannelHandlerContext ctx, FullHttpRequest request, String path) {
+            if ("/health".equals(path) || "/healthz".equals(path)) {
+                respond(ctx, HttpResponseStatus.OK, "ok");
+            } else if ("/ready".equals(path) || "/readyz".equals(path)) {
+                respondReadiness(ctx);
+            } else if ("/".equals(path)) {
                 respond(ctx, HttpResponseStatus.OK, "Tetris Ranked PvP server\n"
                         + "Desktop game endpoint: /ws\n"
                         + "Match admission: " + (admissionOpen && !draining ? "open" : "closed"));
-                return;
+            } else if ("/api/leaderboard".equals(path)) {
+                handleLeaderboard(ctx, request);
+            } else {
+                return false;
             }
-            if (path.startsWith("/admin/")) { handleAdmin(ctx, request); return; }
-            if ("GET".equals(request.method().name()) && "/api/leaderboard".equals(path)) {
-                handleLeaderboard(ctx, request); return;
-            }
-            if (!"GET".equals(request.method().name()) || !"/ws".equals(path) || upgrading
-                    || !request.decoderResult().isSuccess()) {
-                respond(ctx, HttpResponseStatus.NOT_FOUND, "not found"); return;
-            }
-            if (!admissionOpen || draining) {
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "admission closed"); return;
-            }
-            String authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION);
-            if (authorization == null || !authorization.startsWith("Bearer ")
-                    || authorization.length() > 8200 || authorization.length() < 15) {
-                respond(ctx, HttpResponseStatus.UNAUTHORIZED, "authentication required"); return;
-            }
+            return true;
+        }
+
+        /** 접수가 열려 있고 임대를 소유한 실행만 준비 완료로 응답한다. */
+        private void respondReadiness(ChannelHandlerContext ctx) {
+            boolean ready = admissionOpen && leaseOwned && !draining && !closed.get();
+            respond(ctx, ready ? HttpResponseStatus.OK : HttpResponseStatus.SERVICE_UNAVAILABLE,
+                    ready ? "ready" : "not ready");
+        }
+
+        /** 인증 대기 수와 게임 소켓 수 한도를 함께 예약한다. 실패하면 응답까지 보낸다. */
+        private boolean reserveUpgradeSlot(ChannelHandlerContext ctx) {
             if (unauthenticated.incrementAndGet() > maxPendingAuth) {
                 unauthenticated.decrementAndGet();
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy"); return;
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, SERVER_BUSY_TEXT);
+                return false;
             }
             if (!webSocketSlots.tryAcquire()) {
                 unauthenticated.decrementAndGet();
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "game sockets full"); return;
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "game sockets full");
+                return false;
             }
             reservedWebSocketSlot = true;
+            return true;
+        }
+
+        private void beginUpgrade(ChannelHandlerContext ctx, FullHttpRequest request, String token) {
             upgrading = true;
             request.retain();
             ctx.executor().schedule(() -> {
                 if (peer == null && upgrading) ctx.close();
             }, AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             try {
-                authExecutor.execute(() -> {
-                    AuthIdentity identity = null;
-                    HttpResponseStatus failure = null;
-                    try { identity = verifier.verify(authorization.substring(7)); }
-                    catch (AuthException invalid) { failure = HttpResponseStatus.UNAUTHORIZED; }
-                    catch (IOException unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
-                    catch (RuntimeException unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
-                    final AuthIdentity checked = identity;
-                    final HttpResponseStatus failureStatus = failure;
-                    ctx.executor().execute(() -> {
-                        try {
-                            if (!ctx.channel().isActive() || !upgrading) return;
-                            if (failureStatus != null) {
-                                respond(ctx, failureStatus, failureStatus == HttpResponseStatus.UNAUTHORIZED
-                                        ? "authentication failed" : "authentication unavailable"); return;
-                            }
-                            if (checked == null || checked.getExpiresAtEpochSecond()
-                                    <= System.currentTimeMillis() / 1000L) {
-                                respond(ctx, HttpResponseStatus.UNAUTHORIZED, "authentication failed"); return;
-                            }
-                            if (!admissionOpen || draining) {
-                                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "admission closed"); return;
-                            }
-                            WebSocketServerHandshaker handshaker = new WebSocketServerHandshakerFactory(
-                                    "ws://localhost/ws", null, false, WireCodec.MAX_FRAME_BYTES).newHandshaker(request);
-                            if (handshaker == null) {
-                                respond(ctx, HttpResponseStatus.BAD_REQUEST, "unsupported websocket"); return;
-                            }
-                            Peer accepted = new Peer(ctx.channel(), checked);
-                            if (users.putIfAbsent(accepted.id, accepted) != null) {
-                                respond(ctx, HttpResponseStatus.CONFLICT, "account already connected"); return;
-                            }
-                            pendingPeer = accepted;
-                            handshaker.handshake(ctx.channel(), request).addListener((ChannelFutureListener) result -> {
-                                if (!result.isSuccess()) { accepted.disconnect(); return; }
-                                peer = accepted;
-                                pendingPeer = null;
-                                upgrading = false;
-                                unauthenticated.decrementAndGet();
-                                accepted.send(NetworkUpdate.connected());
-                            });
-                        } finally { request.release(); }
-                    });
-                });
+                authExecutor.execute(() -> verifyUpgrade(ctx, request, token));
             } catch (RejectedExecutionException full) {
                 request.release();
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, SERVER_BUSY_TEXT);
             }
+        }
+
+        /** 인증 스레드에서 토큰을 확인하고, 결과 반영은 채널 이벤트 루프로 넘긴다. */
+        private void verifyUpgrade(ChannelHandlerContext ctx, FullHttpRequest request, String token) {
+            AuthIdentity identity = null;
+            HttpResponseStatus failure = null;
+            try { identity = verifier.verify(token); }
+            catch (AuthException invalid) { failure = HttpResponseStatus.UNAUTHORIZED; }
+            catch (IOException unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
+            catch (RuntimeException unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
+            final AuthIdentity checked = identity;
+            final HttpResponseStatus failureStatus = failure;
+            ctx.executor().execute(() -> finishUpgrade(ctx, request, checked, failureStatus));
+        }
+
+        private void finishUpgrade(ChannelHandlerContext ctx, FullHttpRequest request, AuthIdentity checked,
+                HttpResponseStatus failureStatus) {
+            try {
+                if (!ctx.channel().isActive() || !upgrading) return;
+                if (failureStatus != null) {
+                    respond(ctx, failureStatus, failureStatus == HttpResponseStatus.UNAUTHORIZED
+                            ? AUTH_FAILED_TEXT : AUTH_UNAVAILABLE_TEXT); return;
+                }
+                if (checked == null || isExpired(checked)) {
+                    respond(ctx, HttpResponseStatus.UNAUTHORIZED, AUTH_FAILED_TEXT); return;
+                }
+                if (!admissionOpen || draining) {
+                    respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, ADMISSION_CLOSED_TEXT); return;
+                }
+                WebSocketServerHandshaker handshaker = new WebSocketServerHandshakerFactory(
+                        "ws://localhost/ws", null, false, WireCodec.MAX_FRAME_BYTES).newHandshaker(request);
+                if (handshaker == null) {
+                    respond(ctx, HttpResponseStatus.BAD_REQUEST, "unsupported websocket"); return;
+                }
+                Peer accepted = new Peer(ctx.channel(), checked);
+                if (users.putIfAbsent(accepted.id, accepted) != null) {
+                    respond(ctx, HttpResponseStatus.CONFLICT, "account already connected"); return;
+                }
+                pendingPeer = accepted;
+                handshaker.handshake(ctx.channel(), request).addListener((ChannelFutureListener) result -> {
+                    if (!result.isSuccess()) { accepted.disconnect(); return; }
+                    peer = accepted;
+                    pendingPeer = null;
+                    upgrading = false;
+                    unauthenticated.decrementAndGet();
+                    accepted.send(NetworkUpdate.connected());
+                });
+            } finally { request.release(); }
         }
 
         private void handleLeaderboard(ChannelHandlerContext ctx, FullHttpRequest request) {
             if (!(store instanceof FirestoreRankedMatchStore)) {
-                respond(ctx, HttpResponseStatus.NOT_FOUND, "not found"); return;
+                respond(ctx, HttpResponseStatus.NOT_FOUND, NOT_FOUND_TEXT); return;
             }
             if (!admissionOpen || !leaseOwned || draining) {
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "admission closed"); return;
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, ADMISSION_CLOSED_TEXT); return;
             }
             String authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION);
-            if (authorization == null || !authorization.startsWith("Bearer ")
-                    || authorization.length() > 8200 || authorization.length() < 15) {
+            if (!isBearerHeader(authorization)) {
                 respond(ctx, HttpResponseStatus.UNAUTHORIZED, "authentication required"); return;
             }
-            final String token = authorization.substring(7);
+            final String token = authorization.substring(BEARER.length());
             try {
-                authExecutor.execute(() -> {
-                    HttpResponseStatus failure = null;
-                    try {
-                        AuthIdentity identity = verifier.verify(token);
-                        if (identity == null || identity.getExpiresAtEpochSecond()
-                                <= System.currentTimeMillis() / 1000L) failure = HttpResponseStatus.UNAUTHORIZED;
-                    } catch (AuthException invalid) { failure = HttpResponseStatus.UNAUTHORIZED; }
-                    catch (Exception unavailable) { failure = HttpResponseStatus.SERVICE_UNAVAILABLE; }
-                    if (failure != null) {
-                        final HttpResponseStatus status = failure;
-                        respondOnEventLoop(ctx, status, status == HttpResponseStatus.UNAUTHORIZED
-                                ? "authentication failed" : "authentication unavailable");
-                        return;
-                    }
-                    try {
-                        persistenceExecutor.execute(() -> {
-                            try {
-                                if (!admissionOpen || !leaseOwned || draining) {
-                                    respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
-                                            "admission closed"); return;
-                                }
-                                JsonArray array = new JsonArray();
-                                for (LeaderboardEntry entry : ((FirestoreRankedMatchStore) store).top100()) {
-                                    JsonObject row = new JsonObject();
-                                    row.addProperty("rank", entry.getRank());
-                                    row.addProperty("user_id", entry.getUserId());
-                                    row.addProperty("display_name", entry.getDisplayName());
-                                    row.addProperty("rating", entry.getRating());
-                                    row.addProperty("wins", entry.getWins());
-                                    row.addProperty("losses", entry.getLosses());
-                                    row.addProperty("games", entry.getGames());
-                                    array.add(row);
-                                }
-                                respondOnEventLoop(ctx, HttpResponseStatus.OK, array.toString(),
-                                        "application/json; charset=utf-8");
-                            } catch (Exception unavailable) {
-                                LOG.log(Level.WARNING, "Leaderboard query failed", unavailable);
-                                respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
-                                        "leaderboard unavailable");
-                            }
-                        });
-                    } catch (RejectedExecutionException full) {
-                        respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
-                    }
-                });
+                authExecutor.execute(() -> authorizeLeaderboard(ctx, token));
             } catch (RejectedExecutionException full) {
-                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, SERVER_BUSY_TEXT);
+            }
+        }
+
+        private void authorizeLeaderboard(ChannelHandlerContext ctx, String token) {
+            HttpResponseStatus failure = leaderboardAuthFailure(token);
+            if (failure != null) {
+                respondOnEventLoop(ctx, failure, failure == HttpResponseStatus.UNAUTHORIZED
+                        ? AUTH_FAILED_TEXT : AUTH_UNAVAILABLE_TEXT);
+                return;
+            }
+            try {
+                persistenceExecutor.execute(() -> sendLeaderboard(ctx));
+            } catch (RejectedExecutionException full) {
+                respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, SERVER_BUSY_TEXT);
+            }
+        }
+
+        /** 인증이 유효하면 null, 아니면 응답할 HTTP 상태를 돌려준다. */
+        private HttpResponseStatus leaderboardAuthFailure(String token) {
+            try {
+                AuthIdentity identity = verifier.verify(token);
+                return identity == null || isExpired(identity) ? HttpResponseStatus.UNAUTHORIZED : null;
+            } catch (AuthException invalid) {
+                return HttpResponseStatus.UNAUTHORIZED;
+            } catch (Exception unavailable) {
+                return HttpResponseStatus.SERVICE_UNAVAILABLE;
+            }
+        }
+
+        private void sendLeaderboard(ChannelHandlerContext ctx) {
+            try {
+                if (!admissionOpen || !leaseOwned || draining) {
+                    respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, ADMISSION_CLOSED_TEXT); return;
+                }
+                respondOnEventLoop(ctx, HttpResponseStatus.OK, leaderboardJson(),
+                        "application/json; charset=utf-8");
+            } catch (Exception unavailable) {
+                LOG.log(Level.WARNING, "Leaderboard query failed", unavailable);
+                respondOnEventLoop(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "leaderboard unavailable");
             }
         }
 
         private void handleAdmin(ChannelHandlerContext ctx, FullHttpRequest request) {
             String authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION);
-            byte[] supplied = authorization != null && authorization.startsWith("Bearer ")
-                    ? authorization.substring(7).getBytes(StandardCharsets.UTF_8) : new byte[0];
+            byte[] supplied = authorization != null && authorization.startsWith(BEARER)
+                    ? authorization.substring(BEARER.length()).getBytes(StandardCharsets.UTF_8) : new byte[0];
             if (!MessageDigest.isEqual(adminToken, supplied)) {
                 respond(ctx, HttpResponseStatus.UNAUTHORIZED, "unauthorized"); return;
             }
             String path = request.uri();
             String method = request.method().name();
             if ("GET".equals(method) && "/admin/status".equals(path)) {
-                try {
-                    roomsExecutor.execute(() -> {
-                        int active = 0;
-                        for (MatchAttempt match : unresolvedMatches.values()) {
-                            if (match.battle != null && match.battle.getState().getStatus()
-                                    == BattleState.Status.RUNNING) active++;
-                        }
-                        StringBuilder ids = new StringBuilder();
-                        int shown = 0;
-                        for (String id : unresolvedMatches.keySet()) {
-                            if (shown++ == 16) break;
-                            if (ids.length() != 0) ids.append(',');
-                            ids.append(id);
-                        }
-                        String status = "runId=" + runId + " admission=" + admissionOpen
-                                + " draining=" + draining + " users=" + users.size()
-                                + " rooms=" + rooms.size() + " active=" + active
-                                + " unresolved=" + unresolvedMatches.size() + " unresolvedIds=" + ids;
-                        ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK, status));
-                    });
-                } catch (RejectedExecutionException stopped) {
-                    respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server stopping");
-                }
+                sendAdminStatus(ctx);
             } else if ("POST".equals(method) && "/admin/drain".equals(path)) {
                 draining = true; admissionOpen = false;
                 changeAdmission(ctx, false);
             } else if ("POST".equals(method) && "/admin/open".equals(path)) {
                 changeAdmission(ctx, true);
-            } else if ("POST".equals(method) && path.startsWith("/admin/recover-stopped-run?runId=")) {
-                String stoppedRun = path.substring("/admin/recover-stopped-run?runId=".length());
-                if (!stoppedRun.matches("[A-Za-z0-9-]{1,128}") || runId.equals(stoppedRun)) {
-                    respond(ctx, HttpResponseStatus.BAD_REQUEST, "invalid run id"); return;
-                }
-                if (admissionOpen) { respond(ctx, HttpResponseStatus.CONFLICT, "close admission first"); return; }
-                try {
-                    persistenceExecutor.execute(() -> {
-                        try {
-                            int settled = store.voidStoppedRun(runId, stoppedRun);
-                            ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK, "voided=" + settled));
-                        } catch (Exception failure) {
-                            ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
-                                    "recovery failed"));
-                        }
-                    });
-                } catch (RejectedExecutionException full) {
-                    respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server busy");
-                }
-            } else respond(ctx, HttpResponseStatus.NOT_FOUND, "not found");
+            } else if ("POST".equals(method) && path.startsWith(RECOVER_STOPPED_RUN_PREFIX)) {
+                recoverStoppedRun(ctx, path.substring(RECOVER_STOPPED_RUN_PREFIX.length()));
+            } else respond(ctx, HttpResponseStatus.NOT_FOUND, NOT_FOUND_TEXT);
+        }
+
+        /** 방 큐에서 상태를 모아 운영자에게 한 줄로 보고한다. */
+        private void sendAdminStatus(ChannelHandlerContext ctx) {
+            try {
+                roomsExecutor.execute(() -> {
+                    String status = adminStatusLine();
+                    ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK, status));
+                });
+            } catch (RejectedExecutionException stopped) {
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "server stopping");
+            }
+        }
+
+        private void recoverStoppedRun(ChannelHandlerContext ctx, String stoppedRun) {
+            if (!stoppedRun.matches("[A-Za-z0-9-]{1,128}") || runId.equals(stoppedRun)) {
+                respond(ctx, HttpResponseStatus.BAD_REQUEST, "invalid run id"); return;
+            }
+            if (admissionOpen) { respond(ctx, HttpResponseStatus.CONFLICT, "close admission first"); return; }
+            try {
+                persistenceExecutor.execute(() -> {
+                    try {
+                        int settled = store.voidStoppedRun(runId, stoppedRun);
+                        ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.OK, "voided=" + settled));
+                    } catch (Exception failure) {
+                        ctx.executor().execute(() -> respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
+                                "recovery failed"));
+                    }
+                });
+            } catch (RejectedExecutionException full) {
+                respond(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, SERVER_BUSY_TEXT);
+            }
         }
 
         private void changeAdmission(ChannelHandlerContext ctx, boolean enabled) {
@@ -530,12 +555,57 @@ public final class RenderGameServer implements AutoCloseable {
         }
     }
 
+    /** Bearer 접두사와 길이 한도를 함께 확인한다. 길이 한도는 비정상적으로 큰 헤더를 인증 전에 거른다. */
+    private static boolean isBearerHeader(String authorization) {
+        return authorization != null && authorization.startsWith(BEARER)
+                && authorization.length() <= 8200 && authorization.length() >= 15;
+    }
+
+    private static boolean isExpired(AuthIdentity identity) {
+        return identity.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000L;
+    }
+
+    private String leaderboardJson() throws IOException {
+        JsonArray array = new JsonArray();
+        for (LeaderboardEntry entry : ((FirestoreRankedMatchStore) store).top100()) {
+            JsonObject row = new JsonObject();
+            row.addProperty("rank", entry.getRank());
+            row.addProperty("user_id", entry.getUserId());
+            row.addProperty("display_name", entry.getDisplayName());
+            row.addProperty("rating", entry.getRating());
+            row.addProperty("wins", entry.getWins());
+            row.addProperty("losses", entry.getLosses());
+            row.addProperty("games", entry.getGames());
+            array.add(row);
+        }
+        return array.toString();
+    }
+
+    /** 방 큐에서만 호출한다. 미정산 경기 ID는 최대 16개까지만 보여 준다. */
+    private String adminStatusLine() {
+        int active = 0;
+        for (MatchAttempt match : unresolvedMatches.values()) {
+            if (match.battle != null && match.battle.getState().getStatus() == BattleState.Status.RUNNING) active++;
+        }
+        StringBuilder ids = new StringBuilder();
+        int shown = 0;
+        for (String id : unresolvedMatches.keySet()) {
+            if (shown++ == 16) break;
+            if (ids.length() != 0) ids.append(',');
+            ids.append(id);
+        }
+        return "runId=" + runId + " admission=" + admissionOpen
+                + " draining=" + draining + " users=" + users.size()
+                + " rooms=" + rooms.size() + " active=" + active
+                + " unresolved=" + unresolvedMatches.size() + " unresolvedIds=" + ids;
+    }
+
     private static void respond(ChannelHandlerContext ctx, HttpResponseStatus status, String body) {
-        respond(ctx, status, body, "text/plain; charset=utf-8");
+        respond(ctx, status, body, TEXT_PLAIN);
     }
 
     private static void respondOnEventLoop(ChannelHandlerContext ctx, HttpResponseStatus status, String body) {
-        respondOnEventLoop(ctx, status, body, "text/plain; charset=utf-8");
+        respondOnEventLoop(ctx, status, body, TEXT_PLAIN);
     }
 
     private static void respondOnEventLoop(ChannelHandlerContext ctx, HttpResponseStatus status, String body,
@@ -558,45 +628,50 @@ public final class RenderGameServer implements AutoCloseable {
     private void tickRooms() {
         if (leaseOwned) {
             long nowNanos = System.nanoTime();
-            for (Room room : new ArrayList<Room>(rooms.values())) {
-                if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) {
-                    room.lastTickNanos = 0; // 일시정지·종료 후 재개할 때 쌓인 시간이 한꺼번에 흐르지 않게 한다.
-                    continue;
-                }
-                if (room.lastTickNanos == 0) { room.lastTickNanos = nowNanos; continue; }
-                long rawMillis = (nowNanos - room.lastTickNanos) / 1_000_000L;
-                if (rawMillis <= 0) continue;
-                long deltaMillis = Math.min(MAX_ADVANCE_MILLIS, rawMillis);
-                // 정상일 때는 1ms 미만 나머지를 남겨 둬서 게임 시계가 실제 시간보다 느려지지 않게 한다.
-                // 너무 오래 멈췄다 깨어난 경우에만 남은 시간을 버린다.
-                room.lastTickNanos = rawMillis > MAX_ADVANCE_MILLIS
-                        ? nowNanos : room.lastTickNanos + deltaMillis * 1_000_000L;
-                try {
-                    long stepsBefore = room.battle.getGravityStepCount();
-                    BattleResult tick = room.battle.advance(deltaMillis);
-                    boolean moved = room.battle.getGravityStepCount() != stepsBefore
-                            || !tick.getEvents().isEmpty();
-                    if (moved || nowNanos - room.lastBroadcastNanos >= HEARTBEAT_NANOS) {
-                        room.lastBroadcastNanos = nowNanos;
-                        broadcastSnapshot(room);
-                    }
-                    broadcastPickups(room, tick);
-                    finishIfNeeded(room);
-                } catch (RuntimeException failure) {
-                    invalidate(room, "SERVER_TICK_FAILED");
-                }
-            }
+            for (Room room : new ArrayList<Room>(rooms.values())) advanceRoom(room, nowNanos);
         }
-        if (++tickCounter % PING_EVERY_TICKS == 0) {
-            long now = System.nanoTime();
-            for (Peer peer : users.values()) {
-                if (now - peer.lastPongNanos > TimeUnit.SECONDS.toNanos(90)) peer.disconnect();
-                else peer.channel.writeAndFlush(new PingWebSocketFrame());
-            }
-        }
+        if (++tickCounter % PING_EVERY_TICKS == 0) pingPeers();
         long nowSeconds = System.currentTimeMillis() / 1000L;
         for (Peer peer : users.values()) {
             if (peer.expiresAtEpochSecond <= nowSeconds) peer.disconnect();
+        }
+    }
+
+    /** 진행 중인 방 하나를 실제 경과 시간만큼 진행하고 필요할 때만 사본을 보낸다. */
+    private void advanceRoom(Room room, long nowNanos) {
+        if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.RUNNING) {
+            room.lastTickNanos = 0; // 일시정지·종료 후 재개할 때 쌓인 시간이 한꺼번에 흐르지 않게 한다.
+            return;
+        }
+        if (room.lastTickNanos == 0) { room.lastTickNanos = nowNanos; return; }
+        long rawMillis = (nowNanos - room.lastTickNanos) / 1_000_000L;
+        if (rawMillis <= 0) return;
+        long deltaMillis = Math.min(MAX_ADVANCE_MILLIS, rawMillis);
+        // 정상일 때는 1ms 미만 나머지를 남겨 둬서 게임 시계가 실제 시간보다 느려지지 않게 한다.
+        // 너무 오래 멈췄다 깨어난 경우에만 남은 시간을 버린다.
+        room.lastTickNanos = rawMillis > MAX_ADVANCE_MILLIS
+                ? nowNanos : room.lastTickNanos + deltaMillis * 1_000_000L;
+        try {
+            long stepsBefore = room.battle.getGravityStepCount();
+            BattleResult tick = room.battle.advance(deltaMillis);
+            boolean moved = room.battle.getGravityStepCount() != stepsBefore
+                    || !tick.getEvents().isEmpty();
+            if (moved || nowNanos - room.lastBroadcastNanos >= HEARTBEAT_NANOS) {
+                room.lastBroadcastNanos = nowNanos;
+                broadcastSnapshot(room);
+            }
+            broadcastPickups(room, tick);
+            finishIfNeeded(room);
+        } catch (RuntimeException failure) {
+            invalidate(room, "SERVER_TICK_FAILED");
+        }
+    }
+
+    private void pingPeers() {
+        long now = System.nanoTime();
+        for (Peer peer : users.values()) {
+            if (now - peer.lastPongNanos > TimeUnit.SECONDS.toNanos(90)) peer.disconnect();
+            else peer.channel.writeAndFlush(new PingWebSocketFrame());
         }
     }
 
@@ -621,35 +696,39 @@ public final class RenderGameServer implements AutoCloseable {
             return;
         }
         try {
-            authExecutor.execute(() -> {
-                AuthIdentity verified = null;
-                String failure = null;
-                try { verified = verifier.verify(request.getAccessToken()); }
-                catch (AuthException invalid) { failure = "AUTH_REFRESH_FAILED"; }
-                catch (IOException unavailable) { failure = "AUTH_SERVICE_UNAVAILABLE"; }
-                catch (RuntimeException unavailable) { failure = "AUTH_SERVICE_UNAVAILABLE"; }
-                final AuthIdentity fresh = verified;
-                final String reason = failure;
-                try {
-                    roomsExecutor.execute(() -> {
-                        try {
-                            if (peer.disconnected.get()) return;
-                            if (reason != null || fresh == null || !peer.id.equals(fresh.getUserId())
-                                    || fresh.getExpiresAtEpochSecond() <= System.currentTimeMillis() / 1000L) {
-                                outcome(peer, request.getRequestId(), false,
-                                        reason == null ? "AUTH_REFRESH_FAILED" : reason);
-                            } else {
-                                peer.expiresAtEpochSecond = fresh.getExpiresAtEpochSecond();
-                                outcome(peer, request.getRequestId(), true, null);
-                            }
-                        } finally { peer.refreshInProgress.set(false); }
-                    });
-                } catch (RejectedExecutionException stopped) { peer.refreshInProgress.set(false); }
-            });
+            authExecutor.execute(() -> verifyRefresh(peer, request));
         } catch (RejectedExecutionException full) {
             peer.refreshInProgress.set(false);
-            outcome(peer, request.getRequestId(), false, "AUTH_SERVICE_UNAVAILABLE");
+            outcome(peer, request.getRequestId(), false, AUTH_SERVICE_UNAVAILABLE);
         }
+    }
+
+    /** 인증 스레드에서 새 토큰을 확인하고, 만료 시각 갱신은 방 큐에서 반영한다. */
+    private void verifyRefresh(Peer peer, WireRequest request) {
+        AuthIdentity verified = null;
+        String failure = null;
+        try { verified = verifier.verify(request.getAccessToken()); }
+        catch (AuthException invalid) { failure = "AUTH_REFRESH_FAILED"; }
+        catch (IOException unavailable) { failure = AUTH_SERVICE_UNAVAILABLE; }
+        catch (RuntimeException unavailable) { failure = AUTH_SERVICE_UNAVAILABLE; }
+        final AuthIdentity fresh = verified;
+        final String reason = failure;
+        try {
+            roomsExecutor.execute(() -> applyRefresh(peer, request, fresh, reason));
+        } catch (RejectedExecutionException stopped) { peer.refreshInProgress.set(false); }
+    }
+
+    private void applyRefresh(Peer peer, WireRequest request, AuthIdentity fresh, String reason) {
+        try {
+            if (peer.disconnected.get()) return;
+            // 같은 계정의 유효한 새 토큰만 연결 만료 시각을 늘린다.
+            if (reason != null || fresh == null || !peer.id.equals(fresh.getUserId()) || isExpired(fresh)) {
+                outcome(peer, request.getRequestId(), false, reason == null ? "AUTH_REFRESH_FAILED" : reason);
+            } else {
+                peer.expiresAtEpochSecond = fresh.getExpiresAtEpochSecond();
+                outcome(peer, request.getRequestId(), true, null);
+            }
+        } finally { peer.refreshInProgress.set(false); }
     }
 
     private void handleRoom(Peer peer, long requestId, RoomCommand command) {
@@ -658,7 +737,7 @@ public final class RenderGameServer implements AutoCloseable {
             case CREATE_ROOM: createRoom(peer, requestId, command); break;
             case JOIN_ROOM: joinRoom(peer, requestId, command.getRoomId()); break;
             case GET_ROOM_STATE:
-                if (peer.room == null) outcome(peer, requestId, false, "NOT_IN_ROOM");
+                if (peer.room == null) outcome(peer, requestId, false, NOT_IN_ROOM);
                 else { outcome(peer, requestId, true, null); sendRoomState(peer); }
                 break;
             case SET_READY: setReady(peer, requestId, command.getReady()); break;
@@ -685,7 +764,7 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void createRoom(Peer peer, long requestId, RoomCommand command) {
-        if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
+        if (!admissionOpen || draining) { outcome(peer, requestId, false, ADMISSION_CLOSED); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
         if (command.getMaxParticipants() == null || command.getMaxParticipants().intValue() != 2) {
             outcome(peer, requestId, false, "ROOM_SIZE_NOT_SUPPORTED"); return;
@@ -703,7 +782,7 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void joinRoom(Peer peer, long requestId, String roomId) {
-        if (!admissionOpen || draining) { outcome(peer, requestId, false, "ADMISSION_CLOSED"); return; }
+        if (!admissionOpen || draining) { outcome(peer, requestId, false, ADMISSION_CLOSED); return; }
         if (peer.room != null) { outcome(peer, requestId, false, "ALREADY_IN_ROOM"); return; }
         Room room = rooms.get(roomId == null ? null : roomId.trim().toUpperCase(java.util.Locale.ROOT));
         if (room == null) { outcome(peer, requestId, false, "ROOM_NOT_FOUND"); return; }
@@ -726,7 +805,7 @@ public final class RenderGameServer implements AutoCloseable {
 
     private void setReady(Peer peer, long requestId, Boolean ready) {
         Room room = peer.room;
-        if (room == null) { outcome(peer, requestId, false, "NOT_IN_ROOM"); return; }
+        if (room == null) { outcome(peer, requestId, false, NOT_IN_ROOM); return; }
         if (ready == null) { outcome(peer, requestId, false, "INVALID_READY"); return; }
         if (room.starting || room.saveState == SaveState.PENDING || room.saveState == SaveState.FAILED) {
             outcome(peer, requestId, false, "RESULT_UNRESOLVED"); return;
@@ -743,7 +822,7 @@ public final class RenderGameServer implements AutoCloseable {
 
     private void requestRematch(Peer peer, long requestId) {
         Room room = peer.room;
-        if (room == null) { outcome(peer, requestId, false, "NOT_IN_ROOM"); return; }
+        if (room == null) { outcome(peer, requestId, false, NOT_IN_ROOM); return; }
         if (room.battle == null || room.battle.getState().getStatus() != BattleState.Status.FINISHED) {
             outcome(peer, requestId, false, "MATCH_NOT_FINISHED"); return;
         }
@@ -784,33 +863,51 @@ public final class RenderGameServer implements AutoCloseable {
         MatchRecord record = null;
         try { record = store.beginMatch(matchId, runId, RULES_VERSION, firstId, secondId); }
         catch (Exception uncertain) {
-            try {
-                record = store.getMatch(matchId);
-            } catch (Exception stillUncertain) { }
+            record = lookupMatch(matchId);
         }
         final MatchRecord saved = record;
         try {
-            roomsExecutor.execute(() -> {
-                if (room.startEpoch != epoch || !matchId.equals(room.matchId) || !room.starting) {
-                    if (saved != null && saved.getStatus() == MatchRecord.Status.RUNNING) compensateStart(matchId);
-                    else if (saved == null) reconcileAbandonedStart(matchId, 0);
-                    else unresolvedMatches.remove(matchId);
-                    return;
-                }
-                if (saved == null && attempt < 5) {
-                    roomsExecutor.schedule(() -> {
-                        try { persistenceExecutor.execute(() -> registerMatch(room, pair, epoch, matchId,
-                                firstId, secondId, attempt + 1)); }
-                        catch (RejectedExecutionException ignored) { }
-                    }, Math.min(10, 1 << attempt), TimeUnit.SECONDS);
-                } else if (saved == null) {
-                    // A null lookup cannot prove an in-flight RPC will never commit later.
-                    room.starting = false;
-                    room.saveState = SaveState.FAILED;
-                    for (Peer peer : pair) peer.send(NetworkUpdate.error("MATCH_REGISTRATION_UNCERTAIN"));
-                } else started(room, pair, epoch, matchId, saved);
-            });
-        } catch (RejectedExecutionException ignored) { }
+            roomsExecutor.execute(() -> afterRegister(room, pair, epoch, matchId, firstId, secondId, attempt, saved));
+        } catch (RejectedExecutionException ignored) { /* 서버 종료 중이면 다음 임대 소유자가 정산한다. */ }
+    }
+
+    /** 방 큐에서 등록 결과를 반영한다. 그사이 방이 바뀌었으면 등록된 경기를 되돌린다. */
+    private void afterRegister(Room room, List<Peer> pair, int epoch, String matchId,
+                               String firstId, String secondId, int attempt, MatchRecord saved) {
+        if (room.startEpoch != epoch || !matchId.equals(room.matchId) || !room.starting) {
+            if (saved != null && saved.getStatus() == MatchRecord.Status.RUNNING) compensateStart(matchId);
+            else if (saved == null) reconcileAbandonedStart(matchId, 0);
+            else unresolvedMatches.remove(matchId);
+            return;
+        }
+        if (saved != null) {
+            started(room, pair, epoch, matchId, saved);
+        } else if (attempt < 5) {
+            roomsExecutor.schedule(() -> {
+                try { persistenceExecutor.execute(() -> registerMatch(room, pair, epoch, matchId,
+                        firstId, secondId, attempt + 1)); }
+                catch (RejectedExecutionException ignored) { /* 재시도 큐가 가득 차면 시작을 포기한다. */ }
+            }, retryDelaySeconds(attempt), TimeUnit.SECONDS);
+        } else {
+            // A null lookup cannot prove an in-flight RPC will never commit later.
+            failUncertainStart(room, pair);
+        }
+    }
+
+    /** 저장 호출 결과가 불확실할 때 실제 저장 상태를 다시 읽는다. 읽기도 실패하면 null이다. */
+    private MatchRecord lookupMatch(String matchId) {
+        try { return store.getMatch(matchId); }
+        catch (Exception stillUncertain) { return null; }
+    }
+
+    private static long retryDelaySeconds(int attempt) {
+        return Math.min(10, 1 << attempt);
+    }
+
+    private void failUncertainStart(Room room, List<Peer> pair) {
+        room.starting = false;
+        room.saveState = SaveState.FAILED;
+        for (Peer peer : pair) peer.send(NetworkUpdate.error("MATCH_REGISTRATION_UNCERTAIN"));
     }
 
     private void reconcileAbandonedStart(String matchId, int attempt) {
@@ -835,24 +932,11 @@ public final class RenderGameServer implements AutoCloseable {
 
     private void started(Room room, List<Peer> pair, int epoch, String matchId, MatchRecord record) {
         if (record == null) {
-            if (room.startEpoch == epoch) {
-                room.starting = false;
-                room.saveState = SaveState.FAILED;
-                for (Peer peer : pair) peer.send(NetworkUpdate.error("MATCH_REGISTRATION_UNCERTAIN"));
-            }
+            if (room.startEpoch == epoch) failUncertainStart(room, pair);
             return;
         }
-        boolean valid = record.getStatus() == MatchRecord.Status.RUNNING && room.startEpoch == epoch
-                && room.starting && matchId.equals(room.matchId) && allPresent(room, pair)
-                && admissionOpen && !draining;
-        if (!valid) {
-            if (record.getStatus() == MatchRecord.Status.RUNNING) compensateStart(matchId);
-            else unresolvedMatches.remove(matchId);
-            if (room.startEpoch == epoch) {
-                room.starting = false;
-                room.matchId = null;
-                for (Peer peer : pair) if (!peer.disconnected.get()) peer.send(NetworkUpdate.error("MATCH_START_CANCELLED"));
-            }
+        if (!canStart(room, pair, epoch, matchId, record)) {
+            cancelStart(room, pair, epoch, matchId, record);
             return;
         }
         List<ParticipantSpec> specs = Arrays.asList(new ParticipantSpec(pair.get(0).id,
@@ -881,6 +965,24 @@ public final class RenderGameServer implements AutoCloseable {
         broadcastSnapshot(room);
     }
 
+    /** 등록이 끝난 사이 방·참가자·접수 상태가 그대로일 때만 전투를 연다. */
+    private boolean canStart(Room room, List<Peer> pair, int epoch, String matchId, MatchRecord record) {
+        return record.getStatus() == MatchRecord.Status.RUNNING && room.startEpoch == epoch
+                && room.starting && matchId.equals(room.matchId) && allPresent(room, pair)
+                && admissionOpen && !draining;
+    }
+
+    private void cancelStart(Room room, List<Peer> pair, int epoch, String matchId, MatchRecord record) {
+        if (record.getStatus() == MatchRecord.Status.RUNNING) compensateStart(matchId);
+        else unresolvedMatches.remove(matchId);
+        if (room.startEpoch != epoch) return;
+        room.starting = false;
+        room.matchId = null;
+        for (Peer peer : pair) {
+            if (!peer.disconnected.get()) peer.send(NetworkUpdate.error("MATCH_START_CANCELLED"));
+        }
+    }
+
     private static String safeName(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value;
     }
@@ -897,9 +999,9 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void handleIntent(Peer peer, WireRequest request) {
-        if (!leaseOwned) { outcome(peer, request.getRequestId(), false, "ADMISSION_CLOSED"); return; }
+        if (!leaseOwned) { outcome(peer, request.getRequestId(), false, ADMISSION_CLOSED); return; }
         Room room = peer.room;
-        if (room == null) { outcome(peer, request.getRequestId(), false, "NOT_IN_ROOM"); return; }
+        if (room == null) { outcome(peer, request.getRequestId(), false, NOT_IN_ROOM); return; }
         if (room.matchId == null || !room.matchId.equals(request.getMatchId())) {
             outcome(peer, request.getRequestId(), false, "STALE_MATCH"); return;
         }
@@ -921,7 +1023,7 @@ public final class RenderGameServer implements AutoCloseable {
 
     private void handleSnapshot(Peer peer, WireRequest request) {
         Room room = peer.room;
-        if (room == null) { outcome(peer, request.getRequestId(), false, "NOT_IN_ROOM"); return; }
+        if (room == null) { outcome(peer, request.getRequestId(), false, NOT_IN_ROOM); return; }
         if (room.matchId == null || !room.matchId.equals(request.getMatchId())) {
             outcome(peer, request.getRequestId(), false, "STALE_MATCH"); return;
         }
@@ -954,36 +1056,45 @@ public final class RenderGameServer implements AutoCloseable {
                 MatchRecord saved = null;
                 try { saved = store.finishMatch(matchId, runId, winner, reason); }
                 catch (Exception uncertain) {
-                    try { saved = store.getMatch(matchId); } catch (Exception unknown) { }
+                    saved = lookupMatch(matchId);
                 }
                 final MatchRecord record = saved;
-                roomsExecutor.execute(() -> {
-                    if (!matchId.equals(room.matchId) || room.saveState != SaveState.PENDING) return;
-                    if (record != null && record.getStatus() == MatchRecord.Status.FINALIZED
-                            && winner.equals(record.getWinnerUserId())) {
-                        room.saveState = SaveState.SAVED;
-                        unresolvedMatches.remove(matchId);
-                        broadcastSave(room, "SAVED");
-                    } else if (record != null && record.getStatus() == MatchRecord.Status.VOID) {
-                        room.saveState = SaveState.VOID;
-                        unresolvedMatches.remove(matchId);
-                        broadcastSave(room, "VOIDED");
-                        broadcastTerminalError(room, "MATCH_VOIDED");
-                    } else if (attempt < 5) {
-                        roomsExecutor.schedule(() -> settleFinal(room, attempt + 1),
-                                Math.min(10, 1 << attempt), TimeUnit.SECONDS);
-                    } else {
-                        room.saveState = SaveState.FAILED;
-                        broadcastSave(room, "SAVE_FAILED");
-                        broadcastTerminalError(room, "MATCH_RESULT_UNRESOLVED");
-                    }
-                });
+                roomsExecutor.execute(() -> applyFinalResult(room, matchId, winner, attempt, record));
             });
         } catch (RejectedExecutionException full) {
-            room.saveState = SaveState.FAILED;
-            broadcastSave(room, "SAVE_FAILED");
-            broadcastTerminalError(room, "MATCH_RESULT_UNRESOLVED");
+            markSaveFailed(room);
         }
+    }
+
+    private void applyFinalResult(Room room, String matchId, String winner, int attempt, MatchRecord record) {
+        if (!matchId.equals(room.matchId) || room.saveState != SaveState.PENDING) return;
+        if (record != null && record.getStatus() == MatchRecord.Status.FINALIZED
+                && winner.equals(record.getWinnerUserId())) {
+            room.saveState = SaveState.SAVED;
+            unresolvedMatches.remove(matchId);
+            broadcastSave(room, "SAVED");
+        } else if (record != null && record.getStatus() == MatchRecord.Status.VOID) {
+            markVoided(room);
+            unresolvedMatches.remove(matchId);
+        } else if (attempt < 5) {
+            roomsExecutor.schedule(() -> settleFinal(room, attempt + 1),
+                    retryDelaySeconds(attempt), TimeUnit.SECONDS);
+        } else {
+            markSaveFailed(room);
+        }
+    }
+
+    /** 결과 저장을 확정하지 못했음을 방 참가자에게 알린다. */
+    private void markSaveFailed(Room room) {
+        room.saveState = SaveState.FAILED;
+        broadcastSave(room, SAVE_FAILED);
+        broadcastTerminalError(room, MATCH_RESULT_UNRESOLVED);
+    }
+
+    private void markVoided(Room room) {
+        room.saveState = SaveState.VOID;
+        broadcastSave(room, "VOIDED");
+        broadcastTerminalError(room, "MATCH_VOIDED");
     }
 
     private void invalidate(Room room, String reason) {
@@ -993,9 +1104,7 @@ public final class RenderGameServer implements AutoCloseable {
         String matchId = room.matchId;
         try { persistenceExecutor.execute(() -> settleVoid(matchId, reason, 0)); }
         catch (RejectedExecutionException full) {
-            room.saveState = SaveState.FAILED;
-            broadcastSave(room, "SAVE_FAILED");
-            broadcastTerminalError(room, "MATCH_RESULT_UNRESOLVED");
+            markSaveFailed(room);
         }
         room.battle = null;
         MatchAttempt pending = unresolvedMatches.get(matchId);
@@ -1006,34 +1115,32 @@ public final class RenderGameServer implements AutoCloseable {
         MatchRecord saved = null;
         try { saved = store.voidMatch(matchId, runId, reason); }
         catch (Exception uncertain) {
-            try { saved = store.getMatch(matchId); } catch (Exception unknown) { }
+            saved = lookupMatch(matchId);
         }
         final MatchRecord record = saved;
         try {
-            roomsExecutor.execute(() -> {
-                Room room = findCurrentRoom(matchId);
-                if (record != null && record.getStatus() == MatchRecord.Status.VOID) {
-                    unresolvedMatches.remove(matchId);
-                    if (room != null) {
-                        room.saveState = SaveState.VOID;
-                        broadcastSave(room, "VOIDED");
-                        broadcastTerminalError(room, "MATCH_VOIDED");
-                    }
-                } else if (record != null && record.getStatus() == MatchRecord.Status.FINALIZED) {
-                    unresolvedMatches.remove(matchId);
-                } else if (record == null || record.getStatus() == MatchRecord.Status.RUNNING) {
-                    if (attempt < 5) roomsExecutor.schedule(() -> {
-                        try { persistenceExecutor.execute(() -> settleVoid(matchId, reason, attempt + 1)); }
-                        catch (RejectedExecutionException ignored) { }
-                    }, Math.min(10, 1 << attempt), TimeUnit.SECONDS);
-                    else if (room != null) {
-                        room.saveState = SaveState.FAILED;
-                        broadcastSave(room, "SAVE_FAILED");
-                        broadcastTerminalError(room, "MATCH_RESULT_UNRESOLVED");
-                    }
-                }
-            });
-        } catch (RejectedExecutionException ignored) { }
+            roomsExecutor.execute(() -> applyVoidResult(matchId, reason, attempt, record));
+        } catch (RejectedExecutionException ignored) { /* 서버 종료 중이면 다음 임대 소유자가 정산한다. */ }
+    }
+
+    private void applyVoidResult(String matchId, String reason, int attempt, MatchRecord record) {
+        Room room = findCurrentRoom(matchId);
+        MatchRecord.Status status = record == null ? null : record.getStatus();
+        if (status == MatchRecord.Status.VOID) {
+            unresolvedMatches.remove(matchId);
+            if (room != null) markVoided(room);
+        } else if (status == MatchRecord.Status.FINALIZED) {
+            unresolvedMatches.remove(matchId);
+        } else if (status == null || status == MatchRecord.Status.RUNNING) {
+            if (attempt < 5) {
+                roomsExecutor.schedule(() -> {
+                    try { persistenceExecutor.execute(() -> settleVoid(matchId, reason, attempt + 1)); }
+                    catch (RejectedExecutionException ignored) { /* 재시도 큐가 가득 차면 다음 정산으로 넘긴다. */ }
+                }, retryDelaySeconds(attempt), TimeUnit.SECONDS);
+            } else if (room != null) {
+                markSaveFailed(room);
+            }
+        }
     }
 
     private Room findCurrentRoom(String matchId) {
@@ -1052,7 +1159,7 @@ public final class RenderGameServer implements AutoCloseable {
     }
 
     private void leaveRoom(Peer peer, long requestId) {
-        if (peer.room == null) { outcome(peer, requestId, false, "NOT_IN_ROOM"); return; }
+        if (peer.room == null) { outcome(peer, requestId, false, NOT_IN_ROOM); return; }
         outcome(peer, requestId, true, null);
         Room room = peer.room;
         peer.send(NetworkUpdate.roomState(new RoomState(room.id, room.version + 1,
@@ -1267,41 +1374,62 @@ public final class RenderGameServer implements AutoCloseable {
         Channel serverChannel = listener;
         if (serverChannel != null) serverChannel.close();
         for (Channel channel : sockets.keySet()) channel.close();
+        List<String> pendingIds = queueShutdownSettlements();
+        roomsExecutor.shutdown();
+        authExecutor.shutdown();
+        persistenceExecutor.shutdown();
+        awaitPersistence(deadline, pendingIds);
+        if (boss != null) boss.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+        if (workers != null) workers.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+        stopped.countDown();
+    }
+
+    /** 방 큐에서 미정산 경기를 모아 저장 큐에 넣고, 넣은 경기 ID를 돌려준다. */
+    private List<String> queueShutdownSettlements() {
         List<String> pendingIds = new ArrayList<String>();
         try {
             java.util.concurrent.Future<List<CloseSettlement>> pending = roomsExecutor.submit(() -> {
                 List<CloseSettlement> settlements = new ArrayList<CloseSettlement>();
                 for (MatchAttempt attempt : unresolvedMatches.values()) {
                     settlements.add(new CloseSettlement(attempt.matchId, attempt.winnerId,
-                            attempt.reason == null ? "SERVER_STOPPED" : attempt.reason));
+                            attempt.reason == null ? SERVER_STOPPED : attempt.reason));
                 }
                 return settlements;
             });
             for (CloseSettlement settlement : pending.get(1, TimeUnit.SECONDS)) {
                 pendingIds.add(settlement.matchId);
-                try { persistenceExecutor.execute(() -> {
-                    try {
-                        if (settlement.winnerId == null) {
-                            store.voidMatch(settlement.matchId, runId, "SERVER_STOPPED");
-                        } else {
-                            store.finishMatch(settlement.matchId, runId, settlement.winnerId, settlement.reason);
-                        }
-                    } catch (Exception failure) {
-                        // The next lease owner reconciles persistent RUNNING rows.
-                        LOG.log(Level.WARNING, "Shutdown settlement pending for match "
-                                + settlement.matchId, failure);
-                    }
-                }); }
-                catch (RejectedExecutionException full) {
-                    LOG.warning("Shutdown settlement queue full for match " + settlement.matchId);
-                }
+                queueShutdownSettlement(settlement);
             }
         } catch (Exception unavailable) {
             LOG.log(Level.WARNING, "Could not enumerate shutdown settlements; lease takeover must reconcile", unavailable);
         }
-        roomsExecutor.shutdown();
-        authExecutor.shutdown();
-        persistenceExecutor.shutdown();
+        return pendingIds;
+    }
+
+    private void queueShutdownSettlement(CloseSettlement settlement) {
+        try {
+            persistenceExecutor.execute(() -> settleOnShutdown(settlement));
+        } catch (RejectedExecutionException full) {
+            LOG.warning("Shutdown settlement queue full for match " + settlement.matchId);
+        }
+    }
+
+    /** 승자가 정해진 경기는 결과를 확정하고, 그렇지 않은 경기는 서버 정지로 무효 처리한다. */
+    private void settleOnShutdown(CloseSettlement settlement) {
+        try {
+            if (settlement.winnerId == null) {
+                store.voidMatch(settlement.matchId, runId, SERVER_STOPPED);
+            } else {
+                store.finishMatch(settlement.matchId, runId, settlement.winnerId, settlement.reason);
+            }
+        } catch (Exception failure) {
+            // The next lease owner reconciles persistent RUNNING rows.
+            LOG.log(Level.WARNING, "Shutdown settlement pending for match "
+                    + settlement.matchId, failure);
+        }
+    }
+
+    private void awaitPersistence(long deadline, List<String> pendingIds) {
         try {
             long remaining = Math.max(0L, deadline - System.nanoTime());
             if (!persistenceExecutor.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
@@ -1311,9 +1439,6 @@ public final class RenderGameServer implements AutoCloseable {
             }
         }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
-        if (boss != null) boss.shutdownGracefully(0, 1, TimeUnit.SECONDS);
-        if (workers != null) workers.shutdownGracefully(0, 1, TimeUnit.SECONDS);
-        stopped.countDown();
     }
 
     private static Thread daemon(Runnable task, String name) {
@@ -1326,12 +1451,7 @@ public final class RenderGameServer implements AutoCloseable {
         if (args.length != 0) throw new IllegalArgumentException("Usage: RenderGameServer");
         String configured = System.getenv("PORT");
         int port = configured == null || configured.trim().isEmpty() ? 10000 : Integer.parseInt(configured);
-        String backend = System.getenv("TETRIS_BACKEND");
-        if (backend == null || backend.trim().isEmpty()) backend = "supabase";
-        backend = backend.trim().toLowerCase(java.util.Locale.ROOT);
-        if (!"firebase".equals(backend) && !"supabase".equals(backend)) {
-            throw new IllegalArgumentException("TETRIS_BACKEND must be firebase or supabase");
-        }
+        String backend = backendFromEnvironment();
         int maxWebSocketConnections = environmentInt("TETRIS_MAX_WS_CONNECTIONS",
                 DEFAULT_MAX_WS_CONNECTIONS);
         int maxPendingAuth = environmentInt("TETRIS_MAX_PENDING_AUTH", DEFAULT_MAX_PENDING_AUTH);
@@ -1341,7 +1461,7 @@ public final class RenderGameServer implements AutoCloseable {
         try {
             TokenVerifier verifier;
             RankedMatchStore store;
-            if ("firebase".equals(backend)) {
+            if (BACKEND_FIREBASE.equals(backend)) {
                 firebase = FirebaseServerContext.fromEnvironment();
                 verifier = new FirebaseTokenVerifier(firebase.getAuth(), firebase.getFirestore());
                 store = new FirestoreRankedMatchStore(firebase.getFirestore(), firebase.getAuth());
@@ -1352,23 +1472,7 @@ public final class RenderGameServer implements AutoCloseable {
             }
             RenderGameServer server = new RenderGameServer(verifier, store, adminToken, port,
                     maxWebSocketConnections, maxPendingAuth);
-            FirebaseServerContext context = firebase;
-            AtomicBoolean cleaned = new AtomicBoolean();
-            Runnable cleanup = () -> {
-                server.close();
-                if (context != null && cleaned.compareAndSet(false, true)) {
-                    try { context.close(); }
-                    catch (Exception failure) { LOG.log(Level.WARNING, "Firebase shutdown failed", failure); }
-                }
-            };
-            Runtime.getRuntime().addShutdownHook(new Thread(cleanup, "ranked-server-shutdown"));
-            try {
-                server.start();
-                System.out.println("Ranked PvP HTTP/WebSocket server listening on 0.0.0.0:" + server.getPort()
-                        + " backend=" + backend + " runId=" + server.getRunId()
-                        + " admission=" + server.isAdmissionOpen());
-                server.stopped.await();
-            } finally { cleanup.run(); }
+            runUntilStopped(server, firebase, backend);
         } catch (Exception startupFailure) {
             if (firebase != null) {
                 try { firebase.close(); }
@@ -1376,6 +1480,38 @@ public final class RenderGameServer implements AutoCloseable {
             }
             throw startupFailure;
         }
+    }
+
+    /** 기본값은 이전 Supabase 환경이며 firebase 또는 supabase만 허용한다. */
+    private static String backendFromEnvironment() {
+        String backend = System.getenv("TETRIS_BACKEND");
+        if (backend == null || backend.trim().isEmpty()) backend = BACKEND_SUPABASE;
+        backend = backend.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!BACKEND_FIREBASE.equals(backend) && !BACKEND_SUPABASE.equals(backend)) {
+            throw new IllegalArgumentException("TETRIS_BACKEND must be firebase or supabase");
+        }
+        return backend;
+    }
+
+    /** 종료 신호나 정상 종료 어느 쪽이든 서버와 Firebase 연결을 한 번만 정리한다. */
+    private static void runUntilStopped(RenderGameServer server, FirebaseServerContext context, String backend)
+            throws InterruptedException {
+        AtomicBoolean cleaned = new AtomicBoolean();
+        Runnable cleanup = () -> {
+            server.close();
+            if (context != null && cleaned.compareAndSet(false, true)) {
+                try { context.close(); }
+                catch (Exception failure) { LOG.log(Level.WARNING, "Firebase shutdown failed", failure); }
+            }
+        };
+        Runtime.getRuntime().addShutdownHook(new Thread(cleanup, "ranked-server-shutdown"));
+        try {
+            server.start();
+            System.out.println("Ranked PvP HTTP/WebSocket server listening on 0.0.0.0:" + server.getPort()
+                    + " backend=" + backend + " runId=" + server.getRunId()
+                    + " admission=" + server.isAdmissionOpen());
+            server.stopped.await();
+        } finally { cleanup.run(); }
     }
 
     private static int environmentInt(String name, int defaultValue) {

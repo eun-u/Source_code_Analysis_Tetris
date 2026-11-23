@@ -9,6 +9,8 @@ import kr.ac.jbnu.se.tetris.battle.BattleState;
 
 /** 요청 결과와 방, 경기 상태를 구분한 네트워크 수신 메시지 */
 public final class NetworkUpdate {
+    private static final String ROOM_ID_LABEL = "Room ID";
+    private static final String MATCH_ID_LABEL = "Match ID";
     public enum Type {
         CONNECTED, CONNECTION_FAILED, ROOM_STATE, MATCH_STARTED,
         SNAPSHOT, EVENTS, REQUEST_OUTCOME, RANKED_SAVE_STATUS, ERROR, CLOSED
@@ -59,22 +61,22 @@ public final class NetworkUpdate {
     public static NetworkUpdate matchStarted(String roomId, long roomVersion,
                                              String matchId, String localParticipantId) {
         if (roomVersion < 0) throw new IllegalArgumentException("Room version is required");
-        return of(Type.MATCH_STARTED, null, required(roomId, "Room ID"), roomVersion,
-                required(matchId, "Match ID"), required(localParticipantId, "Local participant ID"),
+        return of(Type.MATCH_STARTED, null, required(roomId, ROOM_ID_LABEL), roomVersion,
+                required(matchId, MATCH_ID_LABEL), required(localParticipantId, "Local participant ID"),
                 null, null, null);
     }
 
     public static NetworkUpdate snapshot(String roomId, String matchId, BattleState state) {
         if (state == null) throw new IllegalArgumentException("Battle state is required");
-        return of(Type.SNAPSHOT, null, required(roomId, "Room ID"), -1,
-                required(matchId, "Match ID"), null, state, null, null);
+        return of(Type.SNAPSHOT, null, required(roomId, ROOM_ID_LABEL), -1,
+                required(matchId, MATCH_ID_LABEL), null, state, null, null);
     }
 
     public static NetworkUpdate events(String roomId, String matchId, List<BattleEvent> events) {
         if (events == null) throw new IllegalArgumentException("Battle events are required");
         for (BattleEvent event : events) if (event == null) throw new IllegalArgumentException("Null battle event");
-        return new NetworkUpdate(Type.EVENTS, null, required(roomId, "Room ID"), -1,
-                required(matchId, "Match ID"), null, null, events, null, null);
+        return new NetworkUpdate(Type.EVENTS, null, required(roomId, ROOM_ID_LABEL), -1,
+                required(matchId, MATCH_ID_LABEL), null, null, events, null, null);
     }
 
     public static NetworkUpdate requestOutcome(RequestOutcome outcome) {
@@ -90,8 +92,8 @@ public final class NetworkUpdate {
 
     /** Ranked result persistence state: SAVE_PENDING, SAVED, SAVE_FAILED or VOIDED. */
     public static NetworkUpdate rankedSaveStatus(String roomId, String matchId, String statusCode) {
-        return of(Type.RANKED_SAVE_STATUS, null, required(roomId, "Room ID"), -1,
-                required(matchId, "Match ID"), null, null, null,
+        return of(Type.RANKED_SAVE_STATUS, null, required(roomId, ROOM_ID_LABEL), -1,
+                required(matchId, MATCH_ID_LABEL), null, null, null,
                 required(statusCode, "Ranked save status"));
     }
 

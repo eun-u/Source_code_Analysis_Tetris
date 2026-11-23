@@ -33,49 +33,66 @@ public final class PlayerProfile {
 
     public synchronized void observe(GameState before, GameAction.Type action, List<GameEvent> events) {
         if (before == null || events == null) throw new IllegalArgumentException("State and events are required");
-        boolean placed = false;
-        boolean acceptedEvent = false;
-        boolean tetrisThisPiece = false, comboThisPiece = false, attackThisPiece = false;
+        PieceOutcome outcome = new PieceOutcome();
         for (GameEvent event : events) {
-            if (event == null || !before.getActorId().equals(event.getActorId())) continue;
-            if (event.getType() != GameEvent.Type.ACTION_REJECTED) acceptedEvent = true;
-            switch (event.getType()) {
-                case GAME_STARTED: pendingHold = false; break;
-                case PIECE_PLACED: placements++; placed = true; break;
-                case LINE_CLEAR:
-                    lineClears += event.getLineCount();
-                    if (event.getLineCount() == 4) { tetrisClears++; tetrisThisPiece = true; }
-                    if (event.getLineCount() >= 2) { attacks++; attackThisPiece = true; }
-                    break;
-                case COMBO: combos++; comboThisPiece = true; break;
-                case PIECE_HELD: holds++; pendingHold = true; break;
-                case T_SPIN: tSpins++; break;
-                default: break;
-            }
+            if (event != null && before.getActorId().equals(event.getActorId())) recordEvent(event, outcome);
         }
-        if (placed) {
-            if (action == GameAction.Type.HARD_DROP) hardDrops++;
-            BoardState board = before.getBoard();
-            int height = aggregateHeight(board);
-            int holeCount = holes(board);
-            totalHeight += height;
-            totalHoles += holeCount;
-            double alpha = hasRecentPlacement ? RECENT_ALPHA : 1.0;
-            recentTetris += alpha * ((tetrisThisPiece ? 1 : 0) - recentTetris);
-            recentCombo += alpha * ((comboThisPiece ? 1 : 0) - recentCombo);
-            recentHold += alpha * ((pendingHold ? 1 : 0) - recentHold);
-            recentHardDrop += alpha * ((action == GameAction.Type.HARD_DROP ? 1 : 0) - recentHardDrop);
-            recentAttack += alpha * ((attackThisPiece ? 1 : 0) - recentAttack);
-            recentHeight += alpha * (height - recentHeight);
-            recentHoles += alpha * (holeCount - recentHoles);
-            hasRecentPlacement = true;
-            pendingHold = false;
-        }
+        if (outcome.placed) recordPlacement(before.getBoard(), action, outcome);
         // 실제 중력 틱 기준의 위험 지속 시간 계산 및 입력 횟수와 분리
-        if (action == GameAction.Type.GRAVITY_TICK && acceptedEvent
+        if (action == GameAction.Type.GRAVITY_TICK && outcome.acceptedEvent
                 && before.getStatus() == GameState.Status.RUNNING
                 && maximumHeight(before.getBoard()) >= 16) dangerTicks++;
     }
+
+    /** 한 번의 입력이 만든 이벤트 중 현재 블록 성향 계산에 필요한 표시 */
+    private static final class PieceOutcome {
+        boolean placed;
+        boolean acceptedEvent;
+        boolean tetris;
+        boolean combo;
+        boolean attack;
+    }
+
+    private void recordEvent(GameEvent event, PieceOutcome outcome) {
+        if (event.getType() != GameEvent.Type.ACTION_REJECTED) outcome.acceptedEvent = true;
+        switch (event.getType()) {
+            case GAME_STARTED: pendingHold = false; break;
+            case PIECE_PLACED: placements++; outcome.placed = true; break;
+            case LINE_CLEAR: recordLineClear(event.getLineCount(), outcome); break;
+            case COMBO: combos++; outcome.combo = true; break;
+            case PIECE_HELD: holds++; pendingHold = true; break;
+            case T_SPIN: tSpins++; break;
+            default: break;
+        }
+    }
+
+    private void recordLineClear(int lineCount, PieceOutcome outcome) {
+        lineClears += lineCount;
+        if (lineCount == 4) { tetrisClears++; outcome.tetris = true; }
+        if (lineCount >= 2) { attacks++; outcome.attack = true; }
+    }
+
+    /** 블록 고정 직전 보드로 누적 통계와 최근 성향 이동 평균을 갱신한다. */
+    private void recordPlacement(BoardState board, GameAction.Type action, PieceOutcome outcome) {
+        boolean hardDrop = action == GameAction.Type.HARD_DROP;
+        if (hardDrop) hardDrops++;
+        int height = aggregateHeight(board);
+        int holeCount = holes(board);
+        totalHeight += height;
+        totalHoles += holeCount;
+        double alpha = hasRecentPlacement ? RECENT_ALPHA : 1.0;
+        recentTetris += alpha * (indicator(outcome.tetris) - recentTetris);
+        recentCombo += alpha * (indicator(outcome.combo) - recentCombo);
+        recentHold += alpha * (indicator(pendingHold) - recentHold);
+        recentHardDrop += alpha * (indicator(hardDrop) - recentHardDrop);
+        recentAttack += alpha * (indicator(outcome.attack) - recentAttack);
+        recentHeight += alpha * (height - recentHeight);
+        recentHoles += alpha * (holeCount - recentHoles);
+        hasRecentPlacement = true;
+        pendingHold = false;
+    }
+
+    private static int indicator(boolean value) { return value ? 1 : 0; }
 
     public synchronized Snapshot snapshot() {
         return new Snapshot(placements, lineClears, tetrisClears, combos, holds,

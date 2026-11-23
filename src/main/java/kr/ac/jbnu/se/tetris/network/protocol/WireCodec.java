@@ -1,5 +1,7 @@
 package kr.ac.jbnu.se.tetris.network.protocol;
 
+import static kr.ac.jbnu.se.tetris.network.protocol.WireFields.*;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
@@ -19,7 +21,7 @@ import kr.ac.jbnu.se.tetris.network.RoomState;
 /** 4바이트 길이와 UTF-8 JSON 버전 1의 엄격한 통신 경계 */
 public final class WireCodec {
     public static final int MAX_FRAME_BYTES = 1024 * 1024;
-    private static final int VERSION = 1;
+    private static final int PROTOCOL_VERSION = 1;
 
     private WireCodec() { }
 
@@ -63,21 +65,21 @@ public final class WireCodec {
     public static void writeRequest(OutputStream output, WireRequest request) throws IOException {
         if (request == null) throw new IOException("Wire request is required");
         Map<String, Object> value = base("request");
-        value.put("requestId", request.getRequestId());
-        value.put("kind", request.getKind().name());
+        value.put(REQUEST_ID, request.getRequestId());
+        value.put(KIND, request.getKind().name());
         switch (request.getKind()) {
             case ROOM:
-                value.put("room", encodeRoomCommand(request.getRoomCommand()));
+                value.put(ROOM, encodeRoomCommand(request.getRoomCommand()));
                 break;
             case INTENT:
-                value.put("matchId", id(request.getMatchId()));
-                value.put("intent", encodeIntent(request.getIntent()));
+                value.put(MATCH_ID, id(request.getMatchId()));
+                value.put(INTENT, encodeIntent(request.getIntent()));
                 break;
             case SNAPSHOT:
-                value.put("matchId", id(request.getMatchId()));
+                value.put(MATCH_ID, id(request.getMatchId()));
                 break;
             case AUTH_REFRESH:
-                value.put("accessToken", text(request.getAccessToken(), 8192));
+                value.put(ACCESS_TOKEN, text(request.getAccessToken(), 8192));
                 break;
             default:
                 throw new IOException("Unknown request kind");
@@ -91,25 +93,25 @@ public final class WireCodec {
         try {
             Map<String, Object> value = object(raw);
             envelope(value, "request");
-            WireRequest.Kind kind = enumeration(WireRequest.Kind.class, value.get("kind"));
-            long requestId = positive(value.get("requestId"));
+            WireRequest.Kind kind = enumeration(WireRequest.Kind.class, value.get(KIND));
+            long requestId = positive(value.get(REQUEST_ID));
             switch (kind) {
                 case ROOM:
-                    keys(value, new String[] { "version", "message", "requestId", "kind", "room" },
+                    keys(value, new String[] { VERSION, MESSAGE, REQUEST_ID, KIND, ROOM },
                             new String[0]);
-                    return WireRequest.room(requestId, decodeRoomCommand(value.get("room")));
+                    return WireRequest.room(requestId, decodeRoomCommand(value.get(ROOM)));
                 case INTENT:
-                    keys(value, new String[] { "version", "message", "requestId", "kind", "matchId", "intent" },
+                    keys(value, new String[] { VERSION, MESSAGE, REQUEST_ID, KIND, MATCH_ID, INTENT },
                             new String[0]);
-                    return WireRequest.intent(requestId, id(value.get("matchId")), decodeIntent(value.get("intent")));
+                    return WireRequest.intent(requestId, id(value.get(MATCH_ID)), decodeIntent(value.get(INTENT)));
                 case SNAPSHOT:
-                    keys(value, new String[] { "version", "message", "requestId", "kind", "matchId" },
+                    keys(value, new String[] { VERSION, MESSAGE, REQUEST_ID, KIND, MATCH_ID },
                             new String[0]);
-                    return WireRequest.snapshot(requestId, id(value.get("matchId")));
+                    return WireRequest.snapshot(requestId, id(value.get(MATCH_ID)));
                 case AUTH_REFRESH:
-                    keys(value, new String[] { "version", "message", "requestId", "kind", "accessToken" },
+                    keys(value, new String[] { VERSION, MESSAGE, REQUEST_ID, KIND, ACCESS_TOKEN },
                             new String[0]);
-                    return WireRequest.authRefresh(requestId, text(value.get("accessToken"), 8192));
+                    return WireRequest.authRefresh(requestId, text(value.get(ACCESS_TOKEN), 8192));
                 default:
                     throw new IOException("Unknown request kind");
             }
@@ -121,41 +123,41 @@ public final class WireCodec {
     public static void writeUpdate(OutputStream output, NetworkUpdate update) throws IOException {
         if (update == null) throw new IOException("Network update is required");
         Map<String, Object> value = base("update");
-        value.put("type", update.getType().name());
+        value.put(TYPE, update.getType().name());
         switch (update.getType()) {
             case CONNECTED:
                 break;
             case CONNECTION_FAILED:
             case ERROR:
             case CLOSED:
-                value.put("reasonCode", text(update.getReasonCode(), 256));
+                value.put(REASON_CODE, text(update.getReasonCode(), 256));
                 break;
             case ROOM_STATE:
-                value.put("room", encodeRoomState(update.getRoomState()));
+                value.put(ROOM, encodeRoomState(update.getRoomState()));
                 break;
             case MATCH_STARTED:
-                value.put("roomId", id(update.getRoomId()));
-                value.put("roomVersion", update.getRoomVersion());
-                value.put("matchId", id(update.getMatchId()));
-                value.put("localParticipantId", id(update.getLocalParticipantId()));
+                value.put(ROOM_ID, id(update.getRoomId()));
+                value.put(ROOM_VERSION, update.getRoomVersion());
+                value.put(MATCH_ID, id(update.getMatchId()));
+                value.put(LOCAL_PARTICIPANT_ID, id(update.getLocalParticipantId()));
                 break;
             case SNAPSHOT:
-                value.put("roomId", id(update.getRoomId()));
-                value.put("matchId", id(update.getMatchId()));
-                value.put("battle", WireSnapshots.encode(update.getBattleState()));
+                value.put(ROOM_ID, id(update.getRoomId()));
+                value.put(MATCH_ID, id(update.getMatchId()));
+                value.put(BATTLE, WireSnapshots.encode(update.getBattleState()));
                 break;
             case REQUEST_OUTCOME:
-                value.put("outcome", encodeOutcome(update.getRequestOutcome()));
+                value.put(OUTCOME, encodeOutcome(update.getRequestOutcome()));
                 break;
             case RANKED_SAVE_STATUS:
-                value.put("roomId", id(update.getRoomId()));
-                value.put("matchId", id(update.getMatchId()));
-                value.put("reasonCode", text(update.getReasonCode(), 256));
+                value.put(ROOM_ID, id(update.getRoomId()));
+                value.put(MATCH_ID, id(update.getMatchId()));
+                value.put(REASON_CODE, text(update.getReasonCode(), 256));
                 break;
             case EVENTS:
-                value.put("roomId", id(update.getRoomId()));
-                value.put("matchId", id(update.getMatchId()));
-                value.put("events", WireItemEvents.encode(update.getEvents()));
+                value.put(ROOM_ID, id(update.getRoomId()));
+                value.put(MATCH_ID, id(update.getMatchId()));
+                value.put(EVENTS, WireItemEvents.encode(update.getEvents()));
                 break;
             default:
                 throw new IOException("Unknown network update type");
@@ -169,45 +171,45 @@ public final class WireCodec {
         try {
             Map<String, Object> value = object(raw);
             envelope(value, "update");
-            NetworkUpdate.Type type = enumeration(NetworkUpdate.Type.class, value.get("type"));
+            NetworkUpdate.Type type = enumeration(NetworkUpdate.Type.class, value.get(TYPE));
             switch (type) {
                 case CONNECTED:
-                    keys(value, new String[] { "version", "message", "type" }, new String[0]);
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE }, new String[0]);
                     return NetworkUpdate.connected();
                 case CONNECTION_FAILED:
                 case ERROR:
                 case CLOSED:
-                    keys(value, new String[] { "version", "message", "type", "reasonCode" }, new String[0]);
-                    String reason = text(value.get("reasonCode"), 256);
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, REASON_CODE }, new String[0]);
+                    String reason = text(value.get(REASON_CODE), 256);
                     return type == NetworkUpdate.Type.CONNECTION_FAILED ? NetworkUpdate.connectionFailed(reason)
                             : type == NetworkUpdate.Type.ERROR ? NetworkUpdate.error(reason)
                             : NetworkUpdate.closed(reason);
                 case ROOM_STATE:
-                    keys(value, new String[] { "version", "message", "type", "room" }, new String[0]);
-                    return NetworkUpdate.roomState(decodeRoomState(value.get("room")));
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, ROOM }, new String[0]);
+                    return NetworkUpdate.roomState(decodeRoomState(value.get(ROOM)));
                 case MATCH_STARTED:
-                    keys(value, new String[] { "version", "message", "type", "roomId", "roomVersion",
-                            "matchId", "localParticipantId" }, new String[0]);
-                    return NetworkUpdate.matchStarted(id(value.get("roomId")), nonnegative(value.get("roomVersion")),
-                            id(value.get("matchId")), id(value.get("localParticipantId")));
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, ROOM_ID, ROOM_VERSION,
+                            MATCH_ID, LOCAL_PARTICIPANT_ID }, new String[0]);
+                    return NetworkUpdate.matchStarted(id(value.get(ROOM_ID)), nonnegative(value.get(ROOM_VERSION)),
+                            id(value.get(MATCH_ID)), id(value.get(LOCAL_PARTICIPANT_ID)));
                 case SNAPSHOT:
-                    keys(value, new String[] { "version", "message", "type", "roomId", "matchId", "battle" },
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, ROOM_ID, MATCH_ID, BATTLE },
                             new String[0]);
-                    return NetworkUpdate.snapshot(id(value.get("roomId")), id(value.get("matchId")),
-                            WireSnapshots.decode(value.get("battle")));
+                    return NetworkUpdate.snapshot(id(value.get(ROOM_ID)), id(value.get(MATCH_ID)),
+                            WireSnapshots.decode(value.get(BATTLE)));
                 case REQUEST_OUTCOME:
-                    keys(value, new String[] { "version", "message", "type", "outcome" }, new String[0]);
-                    return NetworkUpdate.requestOutcome(decodeOutcome(value.get("outcome")));
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, OUTCOME }, new String[0]);
+                    return NetworkUpdate.requestOutcome(decodeOutcome(value.get(OUTCOME)));
                 case RANKED_SAVE_STATUS:
-                    keys(value, new String[] { "version", "message", "type", "roomId", "matchId", "reasonCode" },
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, ROOM_ID, MATCH_ID, REASON_CODE },
                             new String[0]);
-                    return NetworkUpdate.rankedSaveStatus(id(value.get("roomId")), id(value.get("matchId")),
-                            text(value.get("reasonCode"), 256));
+                    return NetworkUpdate.rankedSaveStatus(id(value.get(ROOM_ID)), id(value.get(MATCH_ID)),
+                            text(value.get(REASON_CODE), 256));
                 case EVENTS:
-                    keys(value, new String[] { "version", "message", "type", "roomId", "matchId", "events" },
+                    keys(value, new String[] { VERSION, MESSAGE, TYPE, ROOM_ID, MATCH_ID, EVENTS },
                             new String[0]);
-                    return NetworkUpdate.events(id(value.get("roomId")), id(value.get("matchId")),
-                            WireItemEvents.decode(value.get("events")));
+                    return NetworkUpdate.events(id(value.get(ROOM_ID)), id(value.get(MATCH_ID)),
+                            WireItemEvents.decode(value.get(EVENTS)));
                 default:
                     throw new IOException("Unknown network update type");
             }
@@ -218,13 +220,13 @@ public final class WireCodec {
 
     private static Map<String, Object> base(String message) {
         Map<String, Object> value = new LinkedHashMap<String, Object>();
-        value.put("version", VERSION);
-        value.put("message", message);
+        value.put(VERSION, PROTOCOL_VERSION);
+        value.put(MESSAGE, message);
         return value;
     }
 
     private static void envelope(Map<String, Object> value, String message) throws IOException {
-        if (integer(value.get("version")) != VERSION || !message.equals(value.get("message"))) {
+        if (integer(value.get(VERSION)) != PROTOCOL_VERSION || !message.equals(value.get(MESSAGE))) {
             throw new IOException("Unsupported wire envelope or protocol version");
         }
     }
@@ -232,16 +234,16 @@ public final class WireCodec {
     private static Map<String, Object> encodeRoomCommand(RoomCommand command) throws IOException {
         if (command == null) throw new IOException("Room command is required");
         Map<String, Object> value = new LinkedHashMap<String, Object>();
-        value.put("type", command.getType().name());
+        value.put(TYPE, command.getType().name());
         switch (command.getType()) {
             case CREATE_ROOM:
-                value.put("maxParticipants", command.getMaxParticipants());
+                value.put(MAX_PARTICIPANTS, command.getMaxParticipants());
                 break;
             case JOIN_ROOM:
-                value.put("roomId", id(command.getRoomId()));
+                value.put(ROOM_ID, id(command.getRoomId()));
                 break;
             case SET_READY:
-                value.put("ready", command.getReady());
+                value.put(READY, command.getReady());
                 break;
             case LEAVE_ROOM:
             case REQUEST_REMATCH:
@@ -255,21 +257,21 @@ public final class WireCodec {
 
     private static RoomCommand decodeRoomCommand(Object raw) throws IOException {
         Map<String, Object> value = object(raw);
-        RoomCommand.Type type = enumeration(RoomCommand.Type.class, value.get("type"));
+        RoomCommand.Type type = enumeration(RoomCommand.Type.class, value.get(TYPE));
         switch (type) {
             case CREATE_ROOM:
-                keys(value, new String[] { "type", "maxParticipants" }, new String[0]);
-                return RoomCommand.createRoom(integer(value.get("maxParticipants")));
+                keys(value, new String[] { TYPE, MAX_PARTICIPANTS }, new String[0]);
+                return RoomCommand.createRoom(integer(value.get(MAX_PARTICIPANTS)));
             case JOIN_ROOM:
-                keys(value, new String[] { "type", "roomId" }, new String[0]);
-                return RoomCommand.joinRoom(id(value.get("roomId")));
+                keys(value, new String[] { TYPE, ROOM_ID }, new String[0]);
+                return RoomCommand.joinRoom(id(value.get(ROOM_ID)));
             case SET_READY:
-                keys(value, new String[] { "type", "ready" }, new String[0]);
-                return RoomCommand.setReady(bool(value.get("ready")));
+                keys(value, new String[] { TYPE, READY }, new String[0]);
+                return RoomCommand.setReady(bool(value.get(READY)));
             case LEAVE_ROOM:
             case REQUEST_REMATCH:
             case GET_ROOM_STATE:
-                keys(value, new String[] { "type" }, new String[0]);
+                keys(value, new String[] { TYPE }, new String[0]);
                 return type == RoomCommand.Type.LEAVE_ROOM ? RoomCommand.leaveRoom()
                         : type == RoomCommand.Type.REQUEST_REMATCH ? RoomCommand.requestRematch()
                         : RoomCommand.getRoomState();
@@ -281,93 +283,93 @@ public final class WireCodec {
     private static Map<String, Object> encodeIntent(PlayerIntent intent) throws IOException {
         if (intent == null) throw new IOException("Player intent is required");
         Map<String, Object> value = new LinkedHashMap<String, Object>();
-        value.put("type", intent.getType().name());
+        value.put(TYPE, intent.getType().name());
         if (intent.getItemUse() != null) {
             GameAction.ItemUse item = intent.getItemUse();
             Map<String, Object> payload = new LinkedHashMap<String, Object>();
-            payload.put("itemId", id(item.getItemId()));
-            payload.put("targetActorId", id(item.getTargetActorId()));
+            payload.put(ITEM_ID, id(item.getItemId()));
+            payload.put(TARGET_ACTOR_ID, id(item.getTargetActorId()));
             if (item.getTargetCell() != null) {
                 Map<String, Object> cell = new LinkedHashMap<String, Object>();
                 cell.put("x", item.getTargetCell().getX());
                 cell.put("y", item.getTargetCell().getY());
-                payload.put("targetCell", cell);
+                payload.put(TARGET_CELL, cell);
             }
-            value.put("itemUse", payload);
+            value.put(ITEM_USE, payload);
         }
         return value;
     }
 
     private static PlayerIntent decodeIntent(Object raw) throws IOException {
         Map<String, Object> value = object(raw);
-        GameAction.Type type = enumeration(GameAction.Type.class, value.get("type"));
+        GameAction.Type type = enumeration(GameAction.Type.class, value.get(TYPE));
         if (type != GameAction.Type.USE_ITEM) {
-            keys(value, new String[] { "type" }, new String[0]);
+            keys(value, new String[] { TYPE }, new String[0]);
             return new PlayerIntent(type);
         }
-        keys(value, new String[] { "type", "itemUse" }, new String[0]);
-        Map<String, Object> payload = object(value.get("itemUse"));
-        keys(payload, new String[] { "itemId", "targetActorId" }, new String[] { "targetCell" });
+        keys(value, new String[] { TYPE, ITEM_USE }, new String[0]);
+        Map<String, Object> payload = object(value.get(ITEM_USE));
+        keys(payload, new String[] { ITEM_ID, TARGET_ACTOR_ID }, new String[] { TARGET_CELL });
         GameAction.TargetCell cell = null;
-        if (payload.containsKey("targetCell")) {
-            Map<String, Object> target = object(payload.get("targetCell"));
+        if (payload.containsKey(TARGET_CELL)) {
+            Map<String, Object> target = object(payload.get(TARGET_CELL));
             keys(target, new String[] { "x", "y" }, new String[0]);
             cell = new GameAction.TargetCell(integer(target.get("x")), integer(target.get("y")));
         }
-        return new PlayerIntent(type, new GameAction.ItemUse(id(payload.get("itemId")),
-                id(payload.get("targetActorId")), cell));
+        return new PlayerIntent(type, new GameAction.ItemUse(id(payload.get(ITEM_ID)),
+                id(payload.get(TARGET_ACTOR_ID)), cell));
     }
 
     private static Map<String, Object> encodeRoomState(RoomState state) throws IOException {
         if (state == null) throw new IOException("Room state is required");
         Map<String, Object> value = new LinkedHashMap<String, Object>();
-        value.put("roomId", id(state.getRoomId()));
-        value.put("roomVersion", state.getRoomVersion());
-        value.put("phase", state.getPhase().name());
-        value.put("localParticipantId", id(state.getLocalParticipantId()));
+        value.put(ROOM_ID, id(state.getRoomId()));
+        value.put(ROOM_VERSION, state.getRoomVersion());
+        value.put(PHASE, state.getPhase().name());
+        value.put(LOCAL_PARTICIPANT_ID, id(state.getLocalParticipantId()));
         Map<String, Object> ready = new LinkedHashMap<String, Object>();
         for (Map.Entry<String, Boolean> entry : state.getReadyByParticipantId().entrySet()) {
             ready.put(id(entry.getKey()), entry.getValue());
         }
-        value.put("ready", ready);
+        value.put(READY, ready);
         return value;
     }
 
     private static RoomState decodeRoomState(Object raw) throws IOException {
         Map<String, Object> value = object(raw);
-        keys(value, new String[] { "roomId", "roomVersion", "phase", "localParticipantId", "ready" },
+        keys(value, new String[] { ROOM_ID, ROOM_VERSION, PHASE, LOCAL_PARTICIPANT_ID, READY },
                 new String[0]);
-        Map<String, Object> rawReady = object(value.get("ready"));
+        Map<String, Object> rawReady = object(value.get(READY));
         Map<String, Boolean> ready = new LinkedHashMap<String, Boolean>();
         for (Map.Entry<String, Object> entry : rawReady.entrySet()) {
             ready.put(id(entry.getKey()), bool(entry.getValue()));
         }
-        return new RoomState(id(value.get("roomId")), nonnegative(value.get("roomVersion")),
-                enumeration(RoomState.Phase.class, value.get("phase")),
-                id(value.get("localParticipantId")), ready);
+        return new RoomState(id(value.get(ROOM_ID)), nonnegative(value.get(ROOM_VERSION)),
+                enumeration(RoomState.Phase.class, value.get(PHASE)),
+                id(value.get(LOCAL_PARTICIPANT_ID)), ready);
     }
 
     private static Map<String, Object> encodeOutcome(RequestOutcome outcome) throws IOException {
         if (outcome == null) throw new IOException("Request outcome is required");
         Map<String, Object> value = new LinkedHashMap<String, Object>();
-        value.put("requestId", outcome.getRequestId());
-        value.put("accepted", outcome.isAccepted());
-        if (outcome.getReasonCode() != null) value.put("reasonCode", text(outcome.getReasonCode(), 256));
-        if (outcome.getRoomId() != null) value.put("roomId", id(outcome.getRoomId()));
-        if (outcome.getMatchId() != null) value.put("matchId", id(outcome.getMatchId()));
-        if (outcome.getBattleVersion() != null) value.put("battleVersion", outcome.getBattleVersion());
+        value.put(REQUEST_ID, outcome.getRequestId());
+        value.put(ACCEPTED, outcome.isAccepted());
+        if (outcome.getReasonCode() != null) value.put(REASON_CODE, text(outcome.getReasonCode(), 256));
+        if (outcome.getRoomId() != null) value.put(ROOM_ID, id(outcome.getRoomId()));
+        if (outcome.getMatchId() != null) value.put(MATCH_ID, id(outcome.getMatchId()));
+        if (outcome.getBattleVersion() != null) value.put(BATTLE_VERSION, outcome.getBattleVersion());
         return value;
     }
 
     private static RequestOutcome decodeOutcome(Object raw) throws IOException {
         Map<String, Object> value = object(raw);
-        keys(value, new String[] { "requestId", "accepted" },
-                new String[] { "reasonCode", "roomId", "matchId", "battleVersion" });
-        Long battleVersion = value.containsKey("battleVersion")
-                ? Long.valueOf(nonnegative(value.get("battleVersion"))) : null;
-        return new RequestOutcome(positive(value.get("requestId")), bool(value.get("accepted")),
-                optionalText(value, "reasonCode", 256), optionalId(value, "roomId"),
-                optionalId(value, "matchId"), battleVersion);
+        keys(value, new String[] { REQUEST_ID, ACCEPTED },
+                new String[] { REASON_CODE, ROOM_ID, MATCH_ID, BATTLE_VERSION });
+        Long battleVersion = value.containsKey(BATTLE_VERSION)
+                ? Long.valueOf(nonnegative(value.get(BATTLE_VERSION))) : null;
+        return new RequestOutcome(positive(value.get(REQUEST_ID)), bool(value.get(ACCEPTED)),
+                optionalText(value, REASON_CODE, 256), optionalId(value, ROOM_ID),
+                optionalId(value, MATCH_ID), battleVersion);
     }
 
     private static void writeFrame(OutputStream output, Object value) throws IOException {
@@ -420,13 +422,21 @@ public final class WireCodec {
     }
 
     static void keys(Map<String, Object> value, String[] required, String[] optional) throws IOException {
-        for (String key : required) if (!value.containsKey(key)) throw new IOException("Missing field: " + key);
-        for (String key : value.keySet()) {
-            boolean known = false;
-            for (String expected : required) if (key.equals(expected)) known = true;
-            for (String expected : optional) if (key.equals(expected)) known = true;
-            if (!known) throw new IOException("Unknown wire field: " + key);
+        for (String key : required) {
+            if (!value.containsKey(key)) throw new IOException("Missing field: " + key);
         }
+        for (String key : value.keySet()) {
+            if (!contains(required, key) && !contains(optional, key)) {
+                throw new IOException("Unknown wire field: " + key);
+            }
+        }
+    }
+
+    private static boolean contains(String[] names, String key) {
+        for (String name : names) {
+            if (key.equals(name)) return true;
+        }
+        return false;
     }
 
     static String text(Object raw, int maxChars) throws IOException {

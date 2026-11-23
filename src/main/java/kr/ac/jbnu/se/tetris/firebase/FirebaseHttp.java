@@ -14,6 +14,8 @@ import kr.ac.jbnu.se.tetris.auth.AuthException;
 /** Bounded Auth REST transport for the desktop; requests run outside the Swing EDT. */
 public final class FirebaseHttp {
     private static final int MAX_RESPONSE_BYTES = 1024 * 1024;
+    private static final String ERROR = "error";
+    private static final String MESSAGE = "message";
     private final FirebaseConfig config;
 
     public FirebaseHttp(FirebaseConfig config) {
@@ -51,26 +53,27 @@ public final class FirebaseHttp {
             int status = connection.getResponseCode();
             InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
             byte[] response = stream == null ? new byte[0] : readBounded(stream);
-            JsonObject body;
-            try { body = JsonParser.parseString(new String(response, StandardCharsets.UTF_8)).getAsJsonObject(); }
-            catch (RuntimeException invalid) {
-                if (status >= 400) throw new IOException("Firebase HTTP " + status, invalid);
-                throw new IOException("Invalid Firebase Auth response", invalid);
-            }
-            if (status < 200 || status >= 300) {
-                if (status >= 400 && status < 500) {
-                    String code = "HTTP_" + status;
-                    if (body.has("error") && body.get("error").isJsonObject()) {
-                        JsonObject detail = body.getAsJsonObject("error");
-                        if (detail.has("message") && detail.get("message").isJsonPrimitive())
-                            code = detail.get("message").getAsString();
-                    }
-                    throw new AuthException(code, status);
-                }
-                throw new IOException("Firebase HTTP " + status);
-            }
+            JsonObject body = parseBody(response, status);
+            if (status >= 400 && status < 500) throw new AuthException(errorCode(body, status), status);
+            if (status < 200 || status >= 300) throw new IOException("Firebase HTTP " + status);
             return body;
         } finally { connection.disconnect(); }
+    }
+
+    private static JsonObject parseBody(byte[] response, int status) throws IOException {
+        try { return JsonParser.parseString(new String(response, StandardCharsets.UTF_8)).getAsJsonObject(); }
+        catch (RuntimeException invalid) {
+            if (status >= 400) throw new IOException("Firebase HTTP " + status, invalid);
+            throw new IOException("Invalid Firebase Auth response", invalid);
+        }
+    }
+
+    /** 4xx 응답의 {"error":{"message":"CODE"}}를 화면 오류 코드로 쓰고, 없으면 HTTP 상태를 쓴다. */
+    private static String errorCode(JsonObject body, int status) {
+        if (!body.has(ERROR) || !body.get(ERROR).isJsonObject()) return "HTTP_" + status;
+        JsonObject detail = body.getAsJsonObject(ERROR);
+        if (!detail.has(MESSAGE) || !detail.get(MESSAGE).isJsonPrimitive()) return "HTTP_" + status;
+        return detail.get(MESSAGE).getAsString();
     }
 
     private static byte[] readBounded(InputStream stream) throws IOException {

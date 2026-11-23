@@ -1,5 +1,7 @@
 package kr.ac.jbnu.se.tetris.migration;
 
+import static kr.ac.jbnu.se.tetris.firebase.server.FirestoreSchema.*;
+
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
@@ -34,6 +36,10 @@ import kr.ac.jbnu.se.tetris.firebase.server.FirebaseServerContext;
 
 /** One-time, resumable migration. Dry-run is the default; no source database is changed. */
 public final class FirebaseMigration {
+    // Firebase Auth 사용자 지정 클레임 이름. Firestore 필드 이름과 같아 보여도 서로 다른 저장소의 키다.
+    private static final String CLAIM_CAMPUS_QUEST = "campusQuest";
+    private static final String CLAIM_MIGRATION_DIGEST = "migrationDigest";
+
     private FirebaseMigration() { }
 
     public static void main(String[] args) {
@@ -72,50 +78,63 @@ public final class FirebaseMigration {
     }
 
     static void apply(FirebaseMigrationPlan plan, FirebaseAuth auth, Firestore firestore) throws IOException {
-        DocumentReference marker = firestore.collection("migration_state").document("supabase_v1");
-        DocumentReference control = firestore.collection("ranked_control").document("singleton");
+        DocumentReference marker = firestore.collection(MIGRATION_STATE).document(MIGRATION_DOCUMENT);
+        DocumentReference control = firestore.collection(RANKED_CONTROL).document(CONTROL_DOCUMENT);
         DocumentSnapshot prior = await(marker.get());
         boolean resume = prior.exists();
         if (resume) {
-            if (!plan.getSha256().equals(prior.getString("sha256")))
-                throw new IOException("Target has a different Supabase migration digest");
-            String status = prior.getString("status");
-            if (!("IN_PROGRESS".equals(status) || "COMPLETE".equals(status)))
-                throw new IOException("Migration marker has an unknown state");
+            assertResumable(plan, prior);
         } else {
-            // A new target must be empty. Imports never overwrite live player or Auth data.
-            for (String name : new String[] {"ranked_control", "ranked_runs", "ranked_matches",
-                    "ranked_players", "ranked_identities", "ranked_usernames", "migration_state"}) {
-                if (!await(firestore.collection(name).limit(1).get()).isEmpty())
-                    throw new IOException("Target ranked data is not empty");
-            }
-            try {
-                if (auth.listUsers(null, 1).getValues().iterator().hasNext())
-                    throw new IOException("Target Firebase Auth is not empty");
-            } catch (FirebaseAuthException error) { throw new IOException("Unable to inspect target Auth", error); }
-            Map<String, Object> initial = markerFields(plan, "IN_PROGRESS");
-            create(marker, initial);
+            assertEmptyTarget(auth, firestore);
+            create(marker, markerFields(plan, MARKER_IN_PROGRESS));
         }
-        Map<String, Object> closed = fields("ownerRunId", null, "leaseUntilMillis", null,
-                "enabled", false, "migrationDigest", plan.getSha256());
+        Map<String, Object> closed = fields(OWNER_RUN_ID, null, LEASE_UNTIL_MILLIS, null,
+                ENABLED, false, MIGRATION_DIGEST, plan.getSha256());
         if (resume) validateExisting(plan, auth, firestore, closed);
         createOrCheck(control, closed);
         importUsers(plan, auth);
-        for (Map.Entry<String, Map<String, Object>> row : plan.getPlayers().entrySet())
-            createOrCheck(firestore.collection("ranked_players").document(
-                    FirebaseMigrationPlan.playerDocumentId(row.getKey())), row.getValue());
-        for (Map.Entry<String, Map<String, Object>> row : plan.getIdentities().entrySet())
-            createOrCheck(firestore.collection("ranked_identities").document(row.getKey()), row.getValue());
-        for (Map.Entry<String, Map<String, Object>> row : plan.getUsernames().entrySet())
-            createOrCheck(firestore.collection("ranked_usernames").document(row.getKey()), row.getValue());
-        for (Map.Entry<String, Map<String, Object>> row : plan.getRuns().entrySet())
-            createOrCheck(firestore.collection("ranked_runs").document(row.getKey()), row.getValue());
-        for (Map.Entry<String, Map<String, Object>> row : plan.getMatches().entrySet())
-            createOrCheck(firestore.collection("ranked_matches").document(row.getKey()), row.getValue());
+        Map<String, Map<String, Object>> players = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> row : plan.getPlayers().entrySet()) {
+            players.put(FirebaseMigrationPlan.playerDocumentId(row.getKey()), row.getValue());
+        }
+        createOrCheckAll(firestore.collection(RANKED_PLAYERS), players);
+        createOrCheckAll(firestore.collection(RANKED_IDENTITIES), plan.getIdentities());
+        createOrCheckAll(firestore.collection(RANKED_USERNAMES), plan.getUsernames());
+        createOrCheckAll(firestore.collection(RANKED_RUNS), plan.getRuns());
+        createOrCheckAll(firestore.collection(RANKED_MATCHES), plan.getMatches());
         // Verify the gate again before completion. Another process must not have opened ranked admission.
         if (!same(closed, await(control.get()).getData()))
             throw new IOException("Ranked admission changed during migration");
-        await(marker.set(markerFields(plan, "COMPLETE")));
+        await(marker.set(markerFields(plan, MARKER_COMPLETE)));
+    }
+
+    /** 재실행은 같은 내보내기 파일로 시작한 진행 중이거나 끝난 이관에만 허용한다. */
+    private static void assertResumable(FirebaseMigrationPlan plan, DocumentSnapshot prior) throws IOException {
+        if (!plan.getSha256().equals(prior.getString("sha256")))
+            throw new IOException("Target has a different Supabase migration digest");
+        String status = prior.getString(STATUS);
+        if (!(MARKER_IN_PROGRESS.equals(status) || MARKER_COMPLETE.equals(status)))
+            throw new IOException("Migration marker has an unknown state");
+    }
+
+    // A new target must be empty. Imports never overwrite live player or Auth data.
+    private static void assertEmptyTarget(FirebaseAuth auth, Firestore firestore) throws IOException {
+        for (String name : new String[] {RANKED_CONTROL, RANKED_RUNS, RANKED_MATCHES,
+                RANKED_PLAYERS, RANKED_IDENTITIES, RANKED_USERNAMES, MIGRATION_STATE}) {
+            if (!await(firestore.collection(name).limit(1).get()).isEmpty())
+                throw new IOException("Target ranked data is not empty");
+        }
+        try {
+            if (auth.listUsers(null, 1).getValues().iterator().hasNext())
+                throw new IOException("Target Firebase Auth is not empty");
+        } catch (FirebaseAuthException error) { throw new IOException("Unable to inspect target Auth", error); }
+    }
+
+    private static void createOrCheckAll(CollectionReference collection, Map<String, Map<String, Object>> rows)
+            throws IOException {
+        for (Map.Entry<String, Map<String, Object>> row : rows.entrySet()) {
+            createOrCheck(collection.document(row.getKey()), row.getValue());
+        }
     }
 
     private static void validateExisting(FirebaseMigrationPlan plan, FirebaseAuth auth, Firestore firestore,
@@ -132,16 +151,16 @@ public final class FirebaseMigration {
         Map<String, Map<String, Object>> players = new HashMap<>();
         for (Map.Entry<String, Map<String, Object>> entry : plan.getPlayers().entrySet())
             players.put(FirebaseMigrationPlan.playerDocumentId(entry.getKey()), entry.getValue());
-        validateCollection(firestore.collection("ranked_players"), players);
-        validateCollection(firestore.collection("ranked_identities"), plan.getIdentities());
-        validateCollection(firestore.collection("ranked_usernames"), plan.getUsernames());
-        validateCollection(firestore.collection("ranked_matches"), plan.getMatches());
-        validateCollection(firestore.collection("ranked_runs"), plan.getRuns());
+        validateCollection(firestore.collection(RANKED_PLAYERS), players);
+        validateCollection(firestore.collection(RANKED_IDENTITIES), plan.getIdentities());
+        validateCollection(firestore.collection(RANKED_USERNAMES), plan.getUsernames());
+        validateCollection(firestore.collection(RANKED_MATCHES), plan.getMatches());
+        validateCollection(firestore.collection(RANKED_RUNS), plan.getRuns());
         Map<String, Map<String, Object>> controlExpected = new HashMap<>();
-        controlExpected.put("singleton", closed);
-        validateCollection(firestore.collection("ranked_control"), controlExpected);
-        for (QueryDocumentSnapshot document : await(firestore.collection("migration_state").get()).getDocuments())
-            if (!"supabase_v1".equals(document.getId()))
+        controlExpected.put(CONTROL_DOCUMENT, closed);
+        validateCollection(firestore.collection(RANKED_CONTROL), controlExpected);
+        for (QueryDocumentSnapshot document : await(firestore.collection(MIGRATION_STATE).get()).getDocuments())
+            if (!MIGRATION_DOCUMENT.equals(document.getId()))
                 throw new IOException("Unrelated migration marker exists in target");
     }
 
@@ -157,40 +176,48 @@ public final class FirebaseMigration {
     private static void importUsers(FirebaseMigrationPlan plan, FirebaseAuth auth) throws IOException {
         List<ImportUserRecord> pending = new ArrayList<>();
         for (FirebaseMigrationPlan.User user : plan.getUsers()) {
-            UserRecord existing;
-            try { existing = auth.getUser(user.getUid()); }
-            catch (FirebaseAuthException error) {
-                if (error.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) existing = null;
-                else throw new IOException("Unable to inspect target user", error);
-            }
+            UserRecord existing = findUser(auth, user.getUid());
             if (existing != null) {
                 if (!sameUser(plan, user, existing))
                     throw new IOException("Target Auth user conflicts with this migration");
                 continue;
             }
-            ImportUserRecord.Builder record = ImportUserRecord.builder().setUid(user.getUid())
-                    .setEmail(user.getEmail()).setEmailVerified(user.isEmailVerified())
-                    .setDisabled(user.isDisabled()).putCustomClaim("campusQuest", true)
-                    .putCustomClaim("migrationDigest", plan.getSha256());
-            String displayName = (String) plan.getPlayers().get(user.getUid()).get("displayName");
-            record.setDisplayName(displayName);
-            if (user.getBcryptHash() != null)
-                record.setPasswordHash(user.getBcryptHash().getBytes(StandardCharsets.UTF_8));
-            pending.add(record.build());
+            pending.add(importRecord(plan, user));
             if (pending.size() == 1000) { importBatch(auth, pending); pending.clear(); }
         }
         if (!pending.isEmpty()) importBatch(auth, pending);
+    }
+
+    /** 대상 Auth에 없는 사용자는 null로 돌려주고, 그 밖의 조회 실패는 이관을 멈춘다. */
+    private static UserRecord findUser(FirebaseAuth auth, String uid) throws IOException {
+        try { return auth.getUser(uid); }
+        catch (FirebaseAuthException error) {
+            if (error.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) return null;
+            throw new IOException("Unable to inspect target user", error);
+        }
+    }
+
+    private static ImportUserRecord importRecord(FirebaseMigrationPlan plan, FirebaseMigrationPlan.User user) {
+        ImportUserRecord.Builder record = ImportUserRecord.builder().setUid(user.getUid())
+                .setEmail(user.getEmail()).setEmailVerified(user.isEmailVerified())
+                .setDisabled(user.isDisabled()).putCustomClaim(CLAIM_CAMPUS_QUEST, true)
+                .putCustomClaim(CLAIM_MIGRATION_DIGEST, plan.getSha256());
+        String displayName = (String) plan.getPlayers().get(user.getUid()).get(DISPLAY_NAME);
+        record.setDisplayName(displayName);
+        if (user.getBcryptHash() != null)
+            record.setPasswordHash(user.getBcryptHash().getBytes(StandardCharsets.UTF_8));
+        return record.build();
     }
 
     private static boolean sameUser(FirebaseMigrationPlan plan, FirebaseMigrationPlan.User user,
                                     UserRecord existing) {
         Map<String, Object> claims = existing.getCustomClaims();
         return user.getEmail().equalsIgnoreCase(existing.getEmail())
-                && Objects.equals(plan.getPlayers().get(user.getUid()).get("displayName"), existing.getDisplayName())
+                && Objects.equals(plan.getPlayers().get(user.getUid()).get(DISPLAY_NAME), existing.getDisplayName())
                 && user.isEmailVerified() == existing.isEmailVerified()
                 && user.isDisabled() == existing.isDisabled()
-                && claims != null && Boolean.TRUE.equals(claims.get("campusQuest"))
-                && plan.getSha256().equals(claims.get("migrationDigest"));
+                && claims != null && Boolean.TRUE.equals(claims.get(CLAIM_CAMPUS_QUEST))
+                && plan.getSha256().equals(claims.get(CLAIM_MIGRATION_DIGEST));
     }
 
     private static boolean samePassword(FirebaseMigrationPlan.User user, ExportedUserRecord existing) {
@@ -212,7 +239,7 @@ public final class FirebaseMigration {
     }
 
     private static Map<String, Object> markerFields(FirebaseMigrationPlan plan, String status) {
-        return fields("sha256", plan.getSha256(), "status", status,
+        return fields("sha256", plan.getSha256(), STATUS, status,
                 "exportedAtMillis", plan.getExportedAtMillis(), "userCount", plan.getUsers().size(),
                 "playerCount", plan.getPlayers().size(), "matchCount", plan.getMatches().size(),
                 "runCount", plan.getRuns().size());

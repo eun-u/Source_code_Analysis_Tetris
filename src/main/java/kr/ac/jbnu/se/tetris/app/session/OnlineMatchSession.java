@@ -19,6 +19,7 @@ import kr.ac.jbnu.se.tetris.network.WebSocketNetworkClient;
 
 /** 서버 확정 상태만 화면으로 전달하는 온라인 대전 어댑터 */
 public final class OnlineMatchSession implements MatchSession {
+    private static final String MATCH_REPLACED = "MATCH_REPLACED";
     private final String sessionId;
     private final NetworkClient network;
     private final NetworkSubscription networkSubscription;
@@ -171,7 +172,7 @@ public final class OnlineMatchSession implements MatchSession {
             battleState = null;
             phase = SessionPhase.WAITING;
             lastEventId = 0;
-            failPending("MATCH_REPLACED");
+            failPending(MATCH_REPLACED);
         } else if (phase == SessionPhase.CONNECTING) {
             phase = SessionPhase.WAITING;
         }
@@ -190,7 +191,7 @@ public final class OnlineMatchSession implements MatchSession {
         battleState = null;
         lastEventId = 0;
         phase = SessionPhase.WAITING;
-        failPending("MATCH_REPLACED");
+        failPending(MATCH_REPLACED);
         emit(Collections.<BattleEvent>emptyList(), null);
     }
 
@@ -228,7 +229,7 @@ public final class OnlineMatchSession implements MatchSession {
             return;
         }
         String reason = incoming.getMatchId() != null && matchId != null
-                && !matchId.equals(incoming.getMatchId()) ? "MATCH_REPLACED" : incoming.getReasonCode();
+                && !matchId.equals(incoming.getMatchId()) ? MATCH_REPLACED : incoming.getReasonCode();
         boolean accepted = reason == null && incoming.isAccepted();
         if (!accepted && reason == null) reason = "REQUEST_REJECTED";
         CommandOutcome outcome = new CommandOutcome(localId.longValue(), accepted, reason,
