@@ -168,10 +168,7 @@ public final class BattleManager {
         if (status != BattleState.Status.RUNNING) return reject("Battle requires RUNNING", actorId);
         if (p.eliminated) return reject("Actor is eliminated", actorId);
         if (type == GameAction.Type.USE_ITEM) return reject("INVALID_PAYLOAD", actorId);
-        if (type == null || type == GameAction.Type.START || type == GameAction.Type.PAUSE
-                || type == GameAction.Type.RESUME || type == GameAction.Type.GRAVITY_TICK
-                || type == GameAction.Type.RECEIVE_GARBAGE)
-            return reject("Action is managed by BattleManager", actorId);
+        if (isManagedAction(type)) return reject("Action is managed by BattleManager", actorId);
         List<BattleEvent> events = new ArrayList<BattleEvent>();
         ActionResult action = p.controller.submit(type);
         processCore(p, action, events);
@@ -179,6 +176,12 @@ public final class BattleManager {
         if (!action.isAccepted()) return rejectWithEvents(action.getReason(), actorId, events);
         version++; finishIfOneRemains(events);
         return result(true, null, events);
+    }
+
+    private static boolean isManagedAction(GameAction.Type type) {
+        return type == null || type == GameAction.Type.START || type == GameAction.Type.PAUSE
+                || type == GameAction.Type.RESUME || type == GameAction.Type.GRAVITY_TICK
+                || type == GameAction.Type.RECEIVE_GARBAGE;
     }
 
     public synchronized BattleResult submitItem(String actorId, GameAction.ItemUse use) {
