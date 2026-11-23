@@ -1286,50 +1286,12 @@ public class BattlePanel extends JPanel implements Scrollable {
         playStateChangeEffects(local, enemy);
         previousLocal = local; previousEnemy = enemy;
         updateBoardsAndHeader(local, enemy);
-        updateStatsAndPreviews(local.getGameState());
+        GameState game = local.getGameState();
+        updateStatsAndPreviews(game);
         updateFeverDisplay(local);
         updateWarpAndGarbage(local);
-        List<String> items = local.getItems();
-        List<Integer> charges = local.getItemCharges();
-        for (int i = 0; i < slots.length; i++) {
-            boolean locked = i >= local.getItemSlots();
-            boolean available = !locked && i < items.size() && items.get(i) != null;
-            String item = available ? items.get(i) : null;
-            int count = available && i < charges.size() ? charges.get(i) : 1;
-            boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
-            boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
-            slots[i].setText((i + 1) + " " + (locked ? "잠김" : item == null ? "빈 슬롯"
-                    : ItemSpec.categoryOf(item) + " " + itemShortName(item)
-                    + (count > 1 ? "×" + count : "")));
-            automaticSlots[i] = automatic;
-            slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
-                    : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
-            slots[i].setToolTipText(locked ? "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다."
-                    : item == null ? "비어 있는 슬롯"
-                    : itemName(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · "
-                    + (automatic ? "조건이 맞으면 자동 사용"
-                    : waitingForEarlierSlot ? "같은 아이템의 앞 슬롯부터 사용"
-                    : "클릭 또는 " + (i + 1) + " 키"));
-            slots[i].setEnabled(item != null
-                    && !waitingForEarlierSlot
-                    && state.getStatus() == BattleState.Status.RUNNING);
-            // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
-            ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
-            pveSlots[i].setIcon(icon);
-            pveSlots[i].setDisabledIcon(icon);
-            pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
-            pveSlots[i].setText("");
-            pveSlots[i].setToolTipText(slots[i].getToolTipText());
-            pveSlots[i].setEnabled(slots[i].isEnabled());
-        }
-        clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
-                state.getElapsedMillis() / 1000 % 60));
-        if (System.currentTimeMillis() >= feedbackUntil) {
-            status.setForeground(UniversityPixelTheme.TEXT);
-            status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
-                    : "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기");
-            layoutStatusBanner();
-        }
+        updateItemSlots(state, local);
+        updateClockAndBanner(state);
     }
 
     private static ParticipantState findEnemy(BattleState state, String localId) {
@@ -1338,6 +1300,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         return null;
     }
 
+    /** 이전 상태와 비교해 회복·온라인 효과·피버 시작 연출을 재생한다. */
     private void playStateChangeEffects(ParticipantState local, ParticipantState enemy) {
         if (previousLocal != null && local.getHp() > previousLocal.getHp()) sound(AudioService.Event.HEAL);
         if (previousEnemy != null && enemy.getHp() > previousEnemy.getHp()) sound(AudioService.Event.HEAL);
@@ -1400,6 +1363,65 @@ public class BattlePanel extends JPanel implements Scrollable {
         pending.setForeground(incoming == 0 ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.CORAL);
     }
 
+    private void updateItemSlots(BattleState state, ParticipantState local) {
+        for (int i = 0; i < slots.length; i++) updateItemSlot(i, state, local);
+    }
+
+    private void updateItemSlot(int i, BattleState state, ParticipantState local) {
+        List<String> items = local.getItems();
+        List<Integer> charges = local.getItemCharges();
+        boolean locked = i >= local.getItemSlots();
+        boolean available = !locked && i < items.size() && items.get(i) != null;
+        String item = available ? items.get(i) : null;
+        int count = available && i < charges.size() ? charges.get(i) : 1;
+        boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
+        boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
+        slots[i].setText(slotText(i, locked, item, count));
+        automaticSlots[i] = automatic;
+        slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
+                : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
+        slots[i].setToolTipText(slotTooltip(i, locked, item, count, automatic, waitingForEarlierSlot));
+        slots[i].setEnabled(item != null
+                && !waitingForEarlierSlot
+                && state.getStatus() == BattleState.Status.RUNNING);
+        // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
+        ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
+        pveSlots[i].setIcon(icon);
+        pveSlots[i].setDisabledIcon(icon);
+        pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
+        pveSlots[i].setText("");
+        pveSlots[i].setToolTipText(slots[i].getToolTipText());
+        pveSlots[i].setEnabled(slots[i].isEnabled());
+    }
+
+    private static String slotText(int index, boolean locked, String item, int count) {
+        if (locked) return (index + 1) + " 잠김";
+        if (item == null) return (index + 1) + " 빈 슬롯";
+        return (index + 1) + " " + ItemSpec.categoryOf(item) + " " + itemShortName(item)
+                + (count > 1 ? "×" + count : "");
+    }
+
+    private static String slotTooltip(int index, boolean locked, String item, int count,
+                                      boolean automatic, boolean waitingForEarlierSlot) {
+        if (locked) return "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다.";
+        if (item == null) return "비어 있는 슬롯";
+        String usage;
+        if (automatic) usage = "조건이 맞으면 자동 사용";
+        else if (waitingForEarlierSlot) usage = "같은 아이템의 앞 슬롯부터 사용";
+        else usage = "클릭 또는 " + (index + 1) + " 키";
+        return itemName(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · " + usage;
+    }
+
+    private void updateClockAndBanner(BattleState state) {
+        clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
+                state.getElapsedMillis() / 1000 % 60));
+        if (System.currentTimeMillis() >= feedbackUntil) {
+            status.setForeground(UniversityPixelTheme.TEXT);
+            status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
+                    : "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기");
+            layoutStatusBanner();
+        }
+    }
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
         if (previous == null) return;
         int lines = current.getGameState().getLinesCleared() - previous.getGameState().getLinesCleared();
