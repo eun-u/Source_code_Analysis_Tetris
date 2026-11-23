@@ -1281,30 +1281,11 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (state == null || localId == null) return;
         ParticipantState local = state.getParticipant(localId);
         if (local == null) return;
-        ParticipantState enemy = null;
-        for (ParticipantState participant : state.getParticipants().values())
-            if (!localId.equals(participant.getId())) { enemy = participant; break; }
+        ParticipantState enemy = findEnemy(state, localId);
         if (enemy == null) return;
-        if (previousLocal != null && local.getHp() > previousLocal.getHp()) sound(AudioService.Event.HEAL);
-        if (previousEnemy != null && enemy.getHp() > previousEnemy.getHp()) sound(AudioService.Event.HEAL);
-        if (online) {
-            onlineEffects(previousLocal, local, playerBoard, false);
-            onlineEffects(previousEnemy, enemy, enemyBoard, true);
-        }
-        if (previousLocal != null && !previousLocal.isFeverActive() && local.isFeverActive()) {
-            arena.showEffect(PixelArena.Effect.FEVER, 0); sound(AudioService.Event.FEVER);
-        }
+        playStateChangeEffects(local, enemy);
         previousLocal = local; previousEnemy = enemy;
-        playerName.setText(local.getName());
-        enemyName.setText(enemy.getName());
-        playerBoard.setState(local.getGameState());
-        enemyBoard.setState(enemy.getGameState());
-        GameState enemyGame = enemy.getGameState();
-        enemyStatus.setText("<html>LINES " + enemyGame.getLinesCleared()
-                + "<br>COMBO " + Math.max(0, enemyGame.getCombo()) + "</html>");
-        arena.update(local.getName(), local.getHp(), local.getMaxHp(),
-                enemy.getName(), enemy.getHp(), enemy.getMaxHp());
-        arena.setFever(local.isFeverActive());
+        updateBoardsAndHeader(local, enemy);
         GameState game = local.getGameState();
         stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
         holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
@@ -1374,6 +1355,38 @@ public class BattlePanel extends JPanel implements Scrollable {
             layoutStatusBanner();
         }
     }
+
+    private static ParticipantState findEnemy(BattleState state, String localId) {
+        for (ParticipantState participant : state.getParticipants().values())
+            if (!localId.equals(participant.getId())) return participant;
+        return null;
+    }
+
+    private void playStateChangeEffects(ParticipantState local, ParticipantState enemy) {
+        if (previousLocal != null && local.getHp() > previousLocal.getHp()) sound(AudioService.Event.HEAL);
+        if (previousEnemy != null && enemy.getHp() > previousEnemy.getHp()) sound(AudioService.Event.HEAL);
+        if (online) {
+            onlineEffects(previousLocal, local, playerBoard, false);
+            onlineEffects(previousEnemy, enemy, enemyBoard, true);
+        }
+        if (previousLocal != null && !previousLocal.isFeverActive() && local.isFeverActive()) {
+            arena.showEffect(PixelArena.Effect.FEVER, 0); sound(AudioService.Event.FEVER);
+        }
+    }
+
+    private void updateBoardsAndHeader(ParticipantState local, ParticipantState enemy) {
+        playerName.setText(local.getName());
+        enemyName.setText(enemy.getName());
+        playerBoard.setState(local.getGameState());
+        enemyBoard.setState(enemy.getGameState());
+        GameState enemyGame = enemy.getGameState();
+        enemyStatus.setText("<html>LINES " + enemyGame.getLinesCleared()
+                + "<br>COMBO " + Math.max(0, enemyGame.getCombo()) + "</html>");
+        arena.update(local.getName(), local.getHp(), local.getMaxHp(),
+                enemy.getName(), enemy.getHp(), enemy.getMaxHp());
+        arena.setFever(local.isFeverActive());
+    }
+
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
         if (previous == null) return;
         int lines = current.getGameState().getLinesCleared() - previous.getGameState().getLinesCleared();
