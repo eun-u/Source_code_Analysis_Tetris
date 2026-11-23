@@ -76,9 +76,34 @@ public final class GameEvent {
     GameEvent(Type type, long eventId, long stateVersion, long tick, String actorId,
               Piece piece, int x, int y, int lineCount, String reason, int combo, boolean tSpin,
               boolean perfectClear, List<String> collectedItems, List<ItemExtraction> itemExtractions) {
+        validateIdentity(type, eventId, stateVersion, tick, actorId);
+        validatePayload(type, piece, lineCount, reason);
+        validateItems(type, perfectClear, collectedItems, itemExtractions);
+        this.type = type;
+        this.eventId = eventId;
+        this.stateVersion = stateVersion;
+        this.tick = tick;
+        this.actorId = actorId;
+        this.piece = piece;
+        this.x = x;
+        this.y = y;
+        this.lineCount = lineCount;
+        this.reason = reason;
+        this.combo = combo;
+        this.tSpin = tSpin;
+        this.perfectClear = perfectClear;
+        this.collectedItems = Collections.unmodifiableList(new ArrayList<String>(collectedItems));
+        this.itemExtractions = Collections.unmodifiableList(new ArrayList<ItemExtraction>(itemExtractions));
+    }
+
+    private static void validateIdentity(Type type, long eventId, long stateVersion, long tick, String actorId) {
         if (type == null || actorId == null || eventId <= 0 || stateVersion < 0 || tick < 0) {
             throw new IllegalArgumentException("Invalid event identity");
         }
+    }
+
+    /** 이벤트 종류별 필수 값(블록, 줄 수, 사유) 확인 */
+    private static void validatePayload(Type type, Piece piece, int lineCount, String reason) {
         switch (type) {
             case PIECE_SPAWNED:
             case PIECE_MOVED:
@@ -101,6 +126,11 @@ public final class GameEvent {
             default:
                 break;
         }
+    }
+
+    /** 퍼펙트 클리어, 수집 아이템, 추출 정보는 LINE_CLEAR에서만 허용하며 서로 일치해야 한다. */
+    private static void validateItems(Type type, boolean perfectClear, List<String> collectedItems,
+                                      List<ItemExtraction> itemExtractions) {
         if (perfectClear && type != Type.LINE_CLEAR) {
             throw new IllegalArgumentException("Only LINE_CLEAR can be a perfect clear");
         }
@@ -110,29 +140,13 @@ public final class GameEvent {
         if (itemExtractions == null || (type != Type.LINE_CLEAR && !itemExtractions.isEmpty())) {
             throw new IllegalArgumentException("Only LINE_CLEAR can extract items");
         }
-        if (!itemExtractions.isEmpty()) {
-            if (collectedItems.size() != itemExtractions.size())
-                throw new IllegalArgumentException("Extracted item count mismatch");
-            for (int i = 0; i < itemExtractions.size(); i++)
-                if (itemExtractions.get(i) == null
-                        || !collectedItems.get(i).equals(itemExtractions.get(i).getItemId()))
-                    throw new IllegalArgumentException("Extracted item mismatch");
-        }
-        this.type = type;
-        this.eventId = eventId;
-        this.stateVersion = stateVersion;
-        this.tick = tick;
-        this.actorId = actorId;
-        this.piece = piece;
-        this.x = x;
-        this.y = y;
-        this.lineCount = lineCount;
-        this.reason = reason;
-        this.combo = combo;
-        this.tSpin = tSpin;
-        this.perfectClear = perfectClear;
-        this.collectedItems = Collections.unmodifiableList(new ArrayList<String>(collectedItems));
-        this.itemExtractions = Collections.unmodifiableList(new ArrayList<ItemExtraction>(itemExtractions));
+        if (itemExtractions.isEmpty()) return;
+        if (collectedItems.size() != itemExtractions.size())
+            throw new IllegalArgumentException("Extracted item count mismatch");
+        for (int i = 0; i < itemExtractions.size(); i++)
+            if (itemExtractions.get(i) == null
+                    || !collectedItems.get(i).equals(itemExtractions.get(i).getItemId()))
+                throw new IllegalArgumentException("Extracted item mismatch");
     }
 
     public Type getType() { return type; }
