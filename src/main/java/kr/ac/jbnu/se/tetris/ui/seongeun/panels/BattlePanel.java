@@ -986,43 +986,61 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (!online) recordBattleNotices(accepted, localId);
     }
 
-    /** 이벤트 한 건의 연출·효과음·피드백 처리 */
+    /** 이벤트 종류별 연출·효과음·피드백 처리 메서드를 호출한다. */
     private void applyEvent(BattleEvent event, String localId) {
         boolean local = localId != null && localId.equals(event.getActorId());
         Board board = local ? playerBoard : enemyBoard;
         if (event.getType() == BattleEvent.Type.DAMAGE) {
-            if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
-            else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
-            arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
-                    event.getAmount(), local);
-            soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
-            setFeedback((local ? "공격 적중  " : "피격  ") + event.getAmount() + " DAMAGE");
+            showDamageEvent(event, local);
         } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
             board.showGarbage(event.getAmount());
         } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
-            boolean mined = local && showOreFlight(event);
-            if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
-            if (local) {
-                sound(AudioService.Event.ITEM_ACQUIRE);
-                setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + itemName(event.getReason()));
-            }
+            showItemAcquired(event, local);
         } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
-            boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
-            arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
-            if (local) setFeedback("아이템 사용 · " + itemName(event.getReason()));
+            showItemUsed(event, localId);
         } else if (event.getType() == BattleEvent.Type.ITEM_REMOVED) {
             if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + itemName(event.getReason()));
         } else if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null) {
-            GameEvent core = event.getCoreEvent();
-            if (core.getType() == GameEvent.Type.PIECE_PLACED) {
-                board.showPlacement(core.getPiece(), core.getX(), core.getY());
-                arena.showPlacement(!local);
-                if (local) sound(AudioService.Event.DROP);
-            } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
-                board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
-                arena.showClear(core.getLineCount(), core.getCombo(), core.isPerfectClear(), !local);
-                if (local) sound(AudioService.Event.LINE_CLEAR);
-            } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
+            showCoreEvent(event.getCoreEvent(), board, local);
+        }
+    }
+
+    private void showDamageEvent(BattleEvent event, boolean local) {
+        if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
+        else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
+        arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
+                event.getAmount(), local);
+        soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+        setFeedback((local ? "공격 적중  " : "피격  ") + event.getAmount() + " DAMAGE");
+    }
+
+    private void showItemAcquired(BattleEvent event, boolean local) {
+        boolean mined = local && showOreFlight(event);
+        if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
+        if (local) {
+            sound(AudioService.Event.ITEM_ACQUIRE);
+            setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + itemName(event.getReason()));
+        }
+    }
+
+    private void showItemUsed(BattleEvent event, String localId) {
+        boolean local = localId != null && localId.equals(event.getActorId());
+        boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
+        arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
+        if (local) setFeedback("아이템 사용 · " + itemName(event.getReason()));
+    }
+
+    private void showCoreEvent(GameEvent core, Board board, boolean local) {
+        if (core.getType() == GameEvent.Type.PIECE_PLACED) {
+            board.showPlacement(core.getPiece(), core.getX(), core.getY());
+            arena.showPlacement(!local);
+            if (local) sound(AudioService.Event.DROP);
+        } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
+            board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
+            arena.showClear(core.getLineCount(), core.getCombo(), core.isPerfectClear(), !local);
+            if (local) sound(AudioService.Event.LINE_CLEAR);
+        } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) {
+            sound(AudioService.Event.ROTATE);
         }
     }
 
