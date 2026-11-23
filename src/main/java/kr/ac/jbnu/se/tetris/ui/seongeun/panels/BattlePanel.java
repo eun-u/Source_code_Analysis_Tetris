@@ -77,6 +77,12 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final Color FACADE_LIGHT = new Color(0xE5E2D7);
     private static final int GAP = 8, METER = 12;
     private static final int PVE_LEFT_PILLAR = 24, PVE_RIGHT_PILLAR = 12;
+    private static final String GARBAGE_BOMB_TEXT = "가비지 폭탄";
+    private static final String SPEAKER_PLAYER = "PLAYER";
+    private static final String SPEAKER_MONSTER = "MONSTER";
+    private static final String FEVER_TEXT = "FEVER";
+    private static final String QUIT_BATTLE_TEXT = "전투 포기 [ESC]";
+    private static final String QUIT_BATTLE_TOOLTIP = "현재 전투를 포기하고 로비로 돌아갑니다.";
     private static final BufferedImage UNIVERSITY_BATTLE_BG = readBackdrop(
             "/ui/campus-rpg/university-battle-bg.png");
     private static final BufferedImage UNIVERSITY_BG = readBackdrop("/ui/campus-rpg/university-bg.png");
@@ -282,7 +288,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     // Short-lived combat facts are separate from character speech and never enter its queue.
     private final BattleLog battleLog = new BattleLog();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
-    private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
+    private final JLabel playerName = label(SPEAKER_PLAYER), enemyName = label(SPEAKER_MONSTER);
     private final JLabel playerStatus = label("LINES 0"), enemyStatus = label("LINES 0");
     private final JLabel hold = label("HOLD"), next = label("NEXT");
     private final MiniPiecePreview holdPreview = new MiniPiecePreview("HOLD");
@@ -302,7 +308,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JButton[] slots = new JButton[4];
     private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
-    private final JButton backButton = CartoonBattleTopHud.quitButton("전투 포기 [ESC]");
+    private final JButton backButton = CartoonBattleTopHud.quitButton(QUIT_BATTLE_TEXT);
     private final PixelMeter feverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JPanel topBar = new CartoonBattleTopHud(levelChip, title, clock, (PixelButton) backButton);
     private final JPanel leftColumn = column();
@@ -336,16 +342,17 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final MiniPiecePreview[] pveNextPreviews = {
         new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
     };
-    private final JLabel pveFeverLabel = whiteFeverLabel("FEVER");
+    private final JLabel pveFeverLabel = whiteFeverLabel(FEVER_TEXT);
     private final JLabel pveFeverPercent = whiteFeverLabel("0%");
     private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
-    private IntConsumer itemAction;
+    private transient IntConsumer itemAction;
     private long feedbackUntil;
-    private AudioService audio;
+    private transient AudioService audio;
     private long lastEventId;
-    private ParticipantState previousLocal, previousEnemy;
+    private transient ParticipantState previousLocal;
+    private transient ParticipantState previousEnemy;
     private boolean online;
     private String chapter = "university";
     private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
@@ -385,7 +392,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         clock.setFont(UniversityPixelTheme.font(17, Font.BOLD));
         clock.setForeground(UniversityPixelTheme.TEXT);
         ((PixelButton) backButton).primary();
-        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+        backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         add(topBar);
 
         buildLeftColumn();
@@ -474,7 +481,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFooter.setOpaque(false);
         pveFeverPanel.setOpaque(false);
         pveFeverPanel.setBorder(null);
-        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setText(FEVER_TEXT);
         pveFeverLabel.setForeground(Color.WHITE);
         pveFeverLabel.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         pveFeverPercent.setForeground(Color.WHITE);
@@ -910,8 +917,8 @@ public class BattlePanel extends JPanel implements Scrollable {
             arena.setChapter("university");
         } else {
             ((PixelButton) backButton).primary();
-            backButton.setText("전투 포기 [ESC]");
-            backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+            backButton.setText(QUIT_BATTLE_TEXT);
+            backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         }
         arena.setOnline(online);
         revalidate();
@@ -923,8 +930,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         playerBoard.setLineClearCalloutEnabled(false);
         this.chapter = chapter;
         ((PixelButton) backButton).primary();
-        backButton.setText("전투 포기 [ESC]");
-        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+        backButton.setText(QUIT_BATTLE_TEXT);
+        backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         UniversityPixelTheme.setChip(levelChip, "LV " + level,
                 pattern == MonsterTier.BOSS ? UniversityPixelTheme.CORAL : UniversityPixelTheme.GOLD);
         String course = "graduation".equals(chapter) ? "졸업 과정" : "employment".equals(chapter) ? "취업 과정" : "대학교 과정";
@@ -1130,7 +1137,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                 attack.damage = event.getAmount();
                 item = null;
             } else if (type == BattleEvent.Type.GARBAGE_SENT) {
-                if (item != null && "가비지 폭탄".equals(item.action)
+                if (item != null && GARBAGE_BOMB_TEXT.equals(item.action)
                         && item.sameParticipants(event) && item.garbage == null) {
                     item.garbage = event.getAmount();
                     item = null;
@@ -1148,7 +1155,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                         && attack.sameParticipants(event) && attack.damage == null
                         && attack.garbage != null) {
                     // BattleManager submits the bomb's garbage event before ITEM_USED.
-                    attack.action = "가비지 폭탄";
+                    attack.action = GARBAGE_BOMB_TEXT;
                     attack = null;
                     item = null;
                 } else {
@@ -1156,7 +1163,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                     item = new ActionNotice(side, subject, actor, event.getTargetId(), action);
                     output.add(item);
                     attack = null;
-                    if (!"가비지 폭탄".equals(action) && !"무효화".equals(action)) item = null;
+                    if (!GARBAGE_BOMB_TEXT.equals(action) && !"무효화".equals(action)) item = null;
                 }
             } else if (type == BattleEvent.Type.ITEM_REMOVED) {
                 if (item != null && "무효화".equals(item.action) && item.sameParticipants(event)) {
@@ -1187,7 +1194,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static String itemAction(String id) {
         if (ItemIds.HEAL.equals(id)) return "회복 사용";
         if (ItemIds.SHIELD.equals(id)) return "보호막 발동";
-        if (ItemIds.GARBAGE_BOMB.equals(id)) return "가비지 폭탄";
+        if (ItemIds.GARBAGE_BOMB.equals(id)) return GARBAGE_BOMB_TEXT;
         if (ItemIds.NULLIFY.equals(id)) return "무효화";
         return itemName(id) + " 사용";
     }
@@ -1199,7 +1206,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private String actorLabel(boolean local) {
         if (local) return "나";
         String name = enemyName.getText();
-        return name == null || name.trim().isEmpty() || "MONSTER".equals(name)
+        return name == null || name.trim().isEmpty() || SPEAKER_MONSTER.equals(name)
                 ? "일반 몬스터" : name;
     }
 
@@ -1218,9 +1225,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     /** Story dialogue is presented near its actual speaker, not in the status ticker. */
     public void showStoryDialogue(String speaker, String text) {
         if (online || speaker == null || text == null || text.trim().isEmpty()) return;
-        if ("플레이어".equals(speaker) || "PLAYER".equalsIgnoreCase(speaker))
+        if ("플레이어".equals(speaker) || SPEAKER_PLAYER.equalsIgnoreCase(speaker))
             dialogue.enqueue(BattleDialogue.Speaker.PLAYER, text);
-        else if ("몬스터".equals(speaker) || "MONSTER".equalsIgnoreCase(speaker))
+        else if ("몬스터".equals(speaker) || SPEAKER_MONSTER.equalsIgnoreCase(speaker))
             dialogue.enqueue(BattleDialogue.Speaker.MONSTER, text);
         else setFeedback(speaker + ": " + text); // Narration remains in the status ticker.
     }
@@ -1233,7 +1240,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             if (delimiter > 0) {
                 String speaker = text.substring(0, delimiter).trim();
                 if ("플레이어".equals(speaker) || "몬스터".equals(speaker)
-                        || "PLAYER".equalsIgnoreCase(speaker) || "MONSTER".equalsIgnoreCase(speaker)) {
+                        || SPEAKER_PLAYER.equalsIgnoreCase(speaker) || SPEAKER_MONSTER.equalsIgnoreCase(speaker)) {
                     showStoryDialogue(speaker, text.substring(delimiter + 1).trim());
                     return;
                 }
@@ -1291,7 +1298,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                 : "FEVER " + local.getFever() + "%");
         feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
-        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setText(FEVER_TEXT);
         pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
         pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
@@ -1391,7 +1398,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static String itemName(String id) {
         switch (id) {
             case ItemIds.DAMAGE_BOOST: return "공격 증폭";
-            case ItemIds.GARBAGE_BOMB: return "가비지 폭탄";
+            case ItemIds.GARBAGE_BOMB: return GARBAGE_BOMB_TEXT;
             case ItemIds.HEAL: return "회복";
             case ItemIds.SHIELD: return "보호막";
             case ItemIds.LINE_CLEANER: return "줄 정리";
