@@ -11,22 +11,14 @@ public final class BossWeightPolicy implements WeightPolicy {
         if (context == null || profile == null) {
             throw new IllegalArgumentException("Context and profile are required");
         }
-        int phase = hpPhase(context.getSelfHp(), context.getSelfMaxHp());
-        // 같은 경기의 이전 국면은 유지하며 HP 회복과 경계 왕복에 의한 역전환 방지
-        for (int previous = phase + 1; previous <= SURVIVE; previous++) {
-            if (state(context, previous).equals(context.getPolicyState())) phase = previous;
-        }
-        PlayerProfile.Snapshot observed = context.getObservation();
-        double attack = observed.getPlacements() < MIN_OBSERVATIONS ? 0.0
-                : clamp(observed.getRecentAttackRate() * 2.0
-                + observed.getRecentTetrisRate() * 2.0);
+        int phase = resolvePhase(context);
+        double attack = attackLevel(context.getObservation());
         HeuristicWeights base = profile.getBaseWeights();
         double limit = profile.getMaxWeightDeltaRatio();
         // 준비 국면은 네 줄 보상 중심, 압박 국면은 줄 삭제, 생존 국면은 보드 위험 회피 강화
-        double line = phase == PREPARE ? 0.2 * attack
-                : phase == PRESSURE ? 0.6 + 0.2 * attack : 0.8 + 0.2 * attack;
-        double fourLine = phase == PREPARE ? 0.0 : phase == PRESSURE ? -0.25 : -0.6;
-        double safety = phase == PREPARE ? 0.0 : phase == PRESSURE ? 0.3 : 1.0;
+        double line = lineTerm(phase, attack);
+        double fourLine = fourLineTerm(phase);
+        double safety = safetyTerm(phase);
         double shape = phase == SURVIVE ? 0.5 : 0.0;
         HeuristicWeights weights = new HeuristicWeights(
                 base.getLine() * (1.0 + limit * line),
@@ -38,6 +30,36 @@ public final class BossWeightPolicy implements WeightPolicy {
                 base.getWells() * (1.0 + limit * shape));
         return new PolicyDecision(profile.getPolicyId(), weights, state(context, phase),
                 context.getDecisionId(), context.getGameState().getVersion());
+    }
+
+    private static int resolvePhase(AIContext context) {
+        int phase = hpPhase(context.getSelfHp(), context.getSelfMaxHp());
+        // 같은 경기의 이전 국면은 유지하며 HP 회복과 경계 왕복에 의한 역전환 방지
+        for (int previous = phase + 1; previous <= SURVIVE; previous++) {
+            if (state(context, previous).equals(context.getPolicyState())) phase = previous;
+        }
+        return phase;
+    }
+
+    private static double attackLevel(PlayerProfile.Snapshot observed) {
+        if (observed.getPlacements() < MIN_OBSERVATIONS) return 0.0;
+        return clamp(observed.getRecentAttackRate() * 2.0 + observed.getRecentTetrisRate() * 2.0);
+    }
+
+    private static double lineTerm(int phase, double attack) {
+        if (phase == PREPARE) return 0.2 * attack;
+        if (phase == PRESSURE) return 0.6 + 0.2 * attack;
+        return 0.8 + 0.2 * attack;
+    }
+
+    private static double fourLineTerm(int phase) {
+        if (phase == PREPARE) return 0.0;
+        return phase == PRESSURE ? -0.25 : -0.6;
+    }
+
+    private static double safetyTerm(int phase) {
+        if (phase == PREPARE) return 0.0;
+        return phase == PRESSURE ? 0.3 : 1.0;
     }
 
     private static int hpPhase(int hp, int maximum) {
