@@ -1139,14 +1139,36 @@ public class BattlePanel extends JPanel implements Scrollable {
         private ActionNotice item;
 
         void add(BattleEvent event, String localId) {
-        String actor = event.getActorId();
-        boolean local = localId != null && localId.equals(actor);
-        BattleLog.Side side = logSide(local);
-        String subject = actorLabel(local);
-        BattleEvent.Type type = event.getType();
+            boolean local = localId != null && localId.equals(event.getActorId());
+            BattleLog.Side side = logSide(local);
+            String subject = actorLabel(local);
+            BattleEvent.Type type = event.getType();
+            GameEvent core = event.getCoreEvent();
+            if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
+                addClear(event, core, side, subject);
+            } else if (type == BattleEvent.Type.DAMAGE) {
+                addDamage(event, side, subject);
+            } else if (type == BattleEvent.Type.GARBAGE_SENT) {
+                addGarbageSent(event, side, subject);
+            } else if (type == BattleEvent.Type.ITEM_USED) {
+                addItemUsed(event, side, subject);
+            } else if (type == BattleEvent.Type.ITEM_REMOVED) {
+                addItemRemoved(event, local, side, subject);
+            } else if (type == BattleEvent.Type.ITEM_ACQUIRED) {
+                addItemAcquired(event, local, side, subject);
+            } else if (type == BattleEvent.Type.CORE_EVENT) {
+                // Placement starts a separate engine action; never group its attacks with the last one.
+                resetPending();
+            }
+        }
 
-        GameEvent core = event.getCoreEvent();
-        if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
+        private void resetPending() {
+            attack = null;
+            item = null;
+        }
+
+        private void addClear(BattleEvent event, GameEvent core, BattleLog.Side side, String subject) {
+            String actor = event.getActorId();
             String coreActor = actor == null ? core.getActorId() : actor;
             String key = coreActor + ":" + core.getEventId();
             ClearNotice notice = clearByCore.get(key);
@@ -1155,69 +1177,70 @@ public class BattlePanel extends JPanel implements Scrollable {
                 clearByCore.put(key, notice);
                 output.add(notice);
             }
-            if (type == BattleEvent.Type.DAMAGE) notice.damage = event.getAmount();
-            if (type == BattleEvent.Type.GARBAGE_SENT) notice.garbage = event.getAmount();
-            return;
+            if (event.getType() == BattleEvent.Type.DAMAGE) notice.damage = event.getAmount();
+            if (event.getType() == BattleEvent.Type.GARBAGE_SENT) notice.garbage = event.getAmount();
         }
-        if (type == BattleEvent.Type.DAMAGE) {
+
+        private void startAttack(BattleEvent event, BattleLog.Side side, String subject) {
+            attack = new ActionNotice(side, subject, event.getActorId(), event.getTargetId(), "공격");
+            output.add(attack);
+        }
+
+        private void addDamage(BattleEvent event, BattleLog.Side side, String subject) {
             // A direct attack may have no backing Tetris line clear (synthetic/wire event).
             if (attack == null || !attack.sameParticipants(event) || attack.damage != null) {
-                attack = new ActionNotice(side, subject, actor, event.getTargetId(), "공격");
-                output.add(attack);
+                startAttack(event, side, subject);
             }
             attack.damage = event.getAmount();
             item = null;
-        } else if (type == BattleEvent.Type.GARBAGE_SENT) {
+        }
+
+        private void addGarbageSent(BattleEvent event, BattleLog.Side side, String subject) {
             if (item != null && GARBAGE_BOMB_TEXT.equals(item.action)
                     && item.sameParticipants(event) && item.garbage == null) {
                 item.garbage = event.getAmount();
-                item = null;
-                attack = null;
-            } else {
-                if (attack == null || !attack.sameParticipants(event) || attack.garbage != null) {
-                    attack = new ActionNotice(side, subject, actor, event.getTargetId(), "공격");
-                    output.add(attack);
-                }
-                attack.garbage = event.getAmount();
+                resetPending();
+                return;
             }
-        } else if (type == BattleEvent.Type.ITEM_USED) {
+            if (attack == null || !attack.sameParticipants(event) || attack.garbage != null) {
+                startAttack(event, side, subject);
+            }
+            attack.garbage = event.getAmount();
+        }
+
+        private void addItemUsed(BattleEvent event, BattleLog.Side side, String subject) {
             String id = event.getReason();
             if (ItemIds.GARBAGE_BOMB.equals(id) && attack != null
                     && attack.sameParticipants(event) && attack.damage == null
                     && attack.garbage != null) {
                 // BattleManager submits the bomb's garbage event before ITEM_USED.
                 attack.action = GARBAGE_BOMB_TEXT;
-                attack = null;
-                item = null;
-            } else {
-                String action = itemAction(id);
-                item = new ActionNotice(side, subject, actor, event.getTargetId(), action);
-                output.add(item);
-                attack = null;
-                if (!GARBAGE_BOMB_TEXT.equals(action) && !"무효화".equals(action)) item = null;
+                resetPending();
+                return;
             }
-        } else if (type == BattleEvent.Type.ITEM_REMOVED) {
+            String action = itemAction(id);
+            item = new ActionNotice(side, subject, event.getActorId(), event.getTargetId(), action);
+            output.add(item);
+            attack = null;
+            if (!GARBAGE_BOMB_TEXT.equals(action) && !"무효화".equals(action)) item = null;
+        }
+
+        private void addItemRemoved(BattleEvent event, boolean local, BattleLog.Side side, String subject) {
             if (item != null && "무효화".equals(item.action) && item.sameParticipants(event)) {
                 item.removedItem = event.getReason();
                 item.removedFrom = local ? "상대" : "내";
             } else {
-                ActionNotice removed = new ActionNotice(side, subject, actor, event.getTargetId(),
-                        itemName(event.getReason()) + " 제거");
-                output.add(removed);
+                output.add(new ActionNotice(side, subject, event.getActorId(), event.getTargetId(),
+                        itemName(event.getReason()) + " 제거"));
             }
-            item = null;
-            attack = null;
-        } else if (type == BattleEvent.Type.ITEM_ACQUIRED) {
-            // Player pickups already have an ore-flight / inventory effect.
-            if (!local) output.add(new ActionNotice(side, subject, actor, event.getTargetId(),
-                    "아이템 획득 · " + itemName(event.getReason())));
-            attack = null;
-            item = null;
-        } else if (type == BattleEvent.Type.CORE_EVENT) {
-            // Placement starts a separate engine action; never group its attacks with the last one.
-            attack = null;
-            item = null;
+            resetPending();
         }
+
+        private void addItemAcquired(BattleEvent event, boolean local, BattleLog.Side side, String subject) {
+            // Player pickups already have an ore-flight / inventory effect.
+            if (!local) output.add(new ActionNotice(side, subject, event.getActorId(), event.getTargetId(),
+                    "아이템 획득 · " + itemName(event.getReason())));
+            resetPending();
         }
     }
 
