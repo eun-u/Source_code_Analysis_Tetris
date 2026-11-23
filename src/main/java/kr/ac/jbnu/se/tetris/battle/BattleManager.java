@@ -73,13 +73,27 @@ public final class BattleManager {
 
     private static void validate(List<ParticipantSpec> specs, Map<String, PieceGenerator> generators,
             BattleSettings settings) {
-        boolean invalidRoster = specs == null || specs.size() < 2 || specs.size() > 4
+        if (isInvalidRoster(specs, generators) || isInvalidTuning(settings))
+            throw new IllegalArgumentException("Invalid battle settings");
+    }
+
+    private static boolean isInvalidRoster(List<ParticipantSpec> specs, Map<String, PieceGenerator> generators) {
+        return specs == null || specs.size() < 2 || specs.size() > 4
                 || (generators != null && generators.size() != specs.size());
-        boolean invalidTuning = settings.playerGravityMillis < 100 || settings.monsterGravityMillis < 100
-                || !Double.isFinite(settings.monsterAttackBuff) || settings.monsterAttackBuff < 0
+    }
+
+    private static boolean isInvalidTuning(BattleSettings settings) {
+        return isInvalidGravity(settings) || isInvalidMonsterBoost(settings);
+    }
+
+    private static boolean isInvalidGravity(BattleSettings settings) {
+        return settings.playerGravityMillis < 100 || settings.monsterGravityMillis < 100;
+    }
+
+    private static boolean isInvalidMonsterBoost(BattleSettings settings) {
+        return !Double.isFinite(settings.monsterAttackBuff) || settings.monsterAttackBuff < 0
                 || settings.monsterExtraGarbage < 0 || settings.monsterExtraGarbage > 4
                 || settings.monsterItemLevel < -1 || settings.monsterItemLevel > 5;
-        if (invalidRoster || invalidTuning) throw new IllegalArgumentException("Invalid battle settings");
     }
 
     private void addParticipant(ParticipantSpec supplied, int index, long seed,
