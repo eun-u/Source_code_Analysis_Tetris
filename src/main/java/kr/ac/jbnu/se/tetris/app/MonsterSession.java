@@ -25,6 +25,7 @@ import kr.ac.jbnu.se.tetris.controller.AIController;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** AI 계산은 worker에서, 완성된 계획은 호출자(앱 EDT)의 같은 전투 큐에서 실행 */
 public final class MonsterSession implements PlaySession {
@@ -203,12 +204,12 @@ public final class MonsterSession implements PlaySession {
         ParticipantState player = state.getParticipant(localParticipantId);
         for (String item : self.getItems()) {
             String target = opponentParticipantId;
-            if ("heal".equals(item) && self.getHp() == self.getMaxHp()) continue;
-            if ("fever_charge".equals(item) && self.isFeverActive()) continue;
-            if ("time_warp".equals(item) && self.getTimeWarpRemainingMillis() > 0) continue;
-            if ("nullify".equals(item) && player.getItems().isEmpty()) continue;
-            if ("garbage_bomb".equals(item) || "nullify".equals(item)) target = localParticipantId;
-            if ("damage_boost".equals(item) || "shield".equals(item)) continue;
+            if (ItemIds.HEAL.equals(item) && self.getHp() == self.getMaxHp()) continue;
+            if (ItemIds.FEVER_CHARGE.equals(item) && self.isFeverActive()) continue;
+            if (ItemIds.TIME_WARP.equals(item) && self.getTimeWarpRemainingMillis() > 0) continue;
+            if (ItemIds.NULLIFY.equals(item) && player.getItems().isEmpty()) continue;
+            if (ItemIds.GARBAGE_BOMB.equals(item) || ItemIds.NULLIFY.equals(item)) target = localParticipantId;
+            if (ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item)) continue;
             BattleResult used = battle.submitItem(opponentParticipantId,
                     new GameAction.ItemUse(item, target));
             if (used.isAccepted()) { lastBattleResult = used; break; }
