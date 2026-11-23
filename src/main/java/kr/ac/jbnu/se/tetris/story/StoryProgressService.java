@@ -123,33 +123,48 @@ public final class StoryProgressService {
         if (activeRun == null || !activeRun.getRunId().equals(runId)) return ResultDisposition.STALE;
         BattleState state = result.getState();
         if (state.getStatus() != BattleState.Status.FINISHED) return ResultDisposition.IN_PROGRESS;
+        requireMatchingParticipants(state);
+        String winnerId = state.getWinnerId();
+        requireKnownWinner(winnerId);
+        boolean won = activeRun.getLocalParticipantId().equals(winnerId);
+        if (activeRun.isFinished()) {
+            return isSameTerminal(state, winnerId) ? ResultDisposition.DUPLICATE : ResultDisposition.CONFLICT;
+        }
+        if (!result.isAccepted() && winnerId == null) {
+            return ResultDisposition.IN_PROGRESS;
+        }
+        applyResult(state, winnerId, won);
+        return won ? ResultDisposition.APPLIED_WIN : ResultDisposition.APPLIED_LOSS;
+    }
+
+    private void requireMatchingParticipants(BattleState state) {
         if (state.getParticipants().size() != 2
                 || !state.getParticipants().containsKey(activeRun.getLocalParticipantId())
                 || !state.getParticipants().containsKey(activeRun.getMonsterParticipantId())) {
             throw new IllegalArgumentException("Battle participants do not match story run");
         }
-        String winnerId = state.getWinnerId();
+    }
+
+    private void requireKnownWinner(String winnerId) {
         if (winnerId != null && !winnerId.equals(activeRun.getLocalParticipantId())
                 && !winnerId.equals(activeRun.getMonsterParticipantId())) {
             throw new IllegalArgumentException("Battle winner does not match story run");
         }
-        boolean won = activeRun.getLocalParticipantId().equals(winnerId);
-        if (activeRun.isFinished()) {
-            return state.getVersion() == terminalVersion
-                    && same(winnerId, terminalWinnerId)
-                    && same(state.getReason(), terminalReason)
-                    ? ResultDisposition.DUPLICATE : ResultDisposition.CONFLICT;
-        }
-        if (!result.isAccepted() && winnerId == null) {
-            return ResultDisposition.IN_PROGRESS;
-        }
+    }
+
+    private boolean isSameTerminal(BattleState state, String winnerId) {
+        return state.getVersion() == terminalVersion
+                && same(winnerId, terminalWinnerId)
+                && same(state.getReason(), terminalReason);
+    }
+
+    private void applyResult(BattleState state, String winnerId, boolean won) {
         activeProgress.completeEncounter(won);
         activeRun = activeRun.resolved(won);
         terminalVersion = state.getVersion();
         terminalWinnerId = winnerId;
         terminalReason = state.getReason();
         if (won) completedEncounterIds.add(activeRun.getEncounterId());
-        return won ? ResultDisposition.APPLIED_WIN : ResultDisposition.APPLIED_LOSS;
     }
 
     private EncounterRun begin(String stageId, MonsterSpec monster, String runId,
