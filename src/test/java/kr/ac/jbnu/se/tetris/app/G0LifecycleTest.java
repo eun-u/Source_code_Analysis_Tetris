@@ -26,10 +26,9 @@ public final class G0LifecycleTest {
     }
     private static void preservesRemainingDelay() throws Exception {
         AtomicLong now = new AtomicLong(1_000_000_000L);
-        MonsterSession session = new MonsterSession(1, "테스트 몬스터", 100, 1700,
+        try (MonsterSession session = new MonsterSession(1, "테스트 몬스터", 100, 1700,
                 new HeuristicStrategy(), new PlayerProfile(), new PlacementLog(), "clock-match",
-                "student-x", "opponent-y", now::get);
-        try {
+                "student-x", "opponent-y", now::get)) {
             long deadline = System.nanoTime() + 5_000_000_000L;
             do { session.pulse(now.get()); Thread.sleep(1); }
             while (session.getLastPlan() == null && System.nanoTime() < deadline);
@@ -43,7 +42,7 @@ public final class G0LifecycleTest {
             check(!session.isThinking() && session.getLastPlan() == first, "no early AI request after resume");
             now.incrementAndGet(); session.pulse(now.get());
             check(session.isThinking(), "AI request after remaining delay");
-        } finally { session.close(); }
+        }
     }
     private static void callbackOrderAndClose() throws Exception {
         LocalMatchSession[] session = new LocalMatchSession[1];

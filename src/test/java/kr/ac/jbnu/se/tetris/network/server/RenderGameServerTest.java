@@ -819,8 +819,7 @@ public final class RenderGameServerTest {
      */
     @SuppressWarnings("unchecked")
     private static void roomCodesAreShortAndAvoidExistingRooms(TokenVerifier verifier) throws Exception {
-        RenderGameServer server = new RenderGameServer(verifier, new TestStore(), ADMIN, 0);
-        try {
+        try (RenderGameServer server = new RenderGameServer(verifier, new TestStore(), ADMIN, 0)) {
             java.lang.reflect.Method generator = RenderGameServer.class.getDeclaredMethod("newRoomCode");
             generator.setAccessible(true);
             java.lang.reflect.Field roomsField = RenderGameServer.class.getDeclaredField("rooms");
@@ -841,8 +840,6 @@ public final class RenderGameServerTest {
             if (usedChars.size() != 31)
                 throw new AssertionError("Room code alphabet not fully used: " + usedChars.size());
             System.out.println("roomCodesAreShortAndAvoidExistingRooms: 20000 unique codes, 31 characters used");
-        } finally {
-            server.close();
         }
     }
 

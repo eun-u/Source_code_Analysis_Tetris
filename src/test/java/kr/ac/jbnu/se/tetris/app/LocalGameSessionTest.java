@@ -48,8 +48,7 @@ public final class LocalGameSessionTest {
     }
 
     private static void infiniteInputLifecycleAndTopOut() {
-        LocalGameSession session = new LocalGameSession(LocalGameSession.Mode.INFINITE, 42);
-        try {
+        try (LocalGameSession session = new LocalGameSession(LocalGameSession.Mode.INFINITE, 42)) {
             check(session.getMode() == LocalGameSession.Mode.INFINITE, "mode is retained");
             check(session.getBattleState() == null && !session.isThinking(), "no battle or AI state");
             check(!session.isCompleted() && !session.isFinished(), "infinite starts active");
@@ -102,8 +101,6 @@ public final class LocalGameSessionTest {
             session.submit(GameAction.Type.HARD_DROP);
             check(session.getPlayerState().getVersion() == terminal,
                     "top out remains terminal");
-        } finally {
-            session.close();
         }
 
         LocalGameSession closed = new LocalGameSession(LocalGameSession.Mode.INFINITE, 7);
@@ -119,9 +116,8 @@ public final class LocalGameSessionTest {
     }
 
     private static void sprintClearsFortyRealLines() {
-        LocalGameSession session = new LocalGameSession(LocalGameSession.Mode.SPRINT, 1);
-        HeuristicStrategy player = new HeuristicStrategy(HeuristicWeights.SAFE);
-        try {
+        try (LocalGameSession session = new LocalGameSession(LocalGameSession.Mode.SPRINT, 1)) {
+            HeuristicStrategy player = new HeuristicStrategy(HeuristicWeights.SAFE);
             check(session.getInstruction().equals("0/40줄"), "sprint progress begins at zero");
             for (int placements = 0; placements < 500 && !session.isFinished(); placements++) {
                 if (session.getPlayerState().isAwaitingSpawn()) session.tick();
@@ -151,8 +147,6 @@ public final class LocalGameSessionTest {
             session.resume();
             check(session.getPlayerState().getVersion() == terminal,
                     "sprint completion blocks all further board changes");
-        } finally {
-            session.close();
         }
     }
 

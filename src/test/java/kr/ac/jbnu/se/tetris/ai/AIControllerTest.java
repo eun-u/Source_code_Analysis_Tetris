@@ -23,28 +23,31 @@ public final class AIControllerTest {
         GameEngine engine = engine();
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
-        AIController controller = new AIController(new AIStrategy() {
+        try (AIController controller = new AIController(new AIStrategy() {
             public AIPlan plan(GameState state) {
                 entered.countDown();
                 awaitIgnoringInterrupt(release);
                 throw new IllegalArgumentException("stale strategy failed");
             }
-        });
-        try {
-            check(controller.request(engine.getState()), "Stale failure request accepted");
-            check(entered.await(2, TimeUnit.SECONDS), "Failing worker entered");
-            check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(),
-                    "Version advanced before failure");
-            release.countDown();
-            waitFinished(controller);
-            boolean surfaced = false;
-            try { controller.poll(engine.getState()); }
-            catch (IllegalStateException expected) {
-                surfaced = expected.getCause() instanceof IllegalArgumentException
-                        && "stale strategy failed".equals(expected.getCause().getMessage());
+        })) {
+            try {
+                check(controller.request(engine.getState()), "Stale failure request accepted");
+                check(entered.await(2, TimeUnit.SECONDS), "Failing worker entered");
+                check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(),
+                        "Version advanced before failure");
+                release.countDown();
+                waitFinished(controller);
+                boolean surfaced = false;
+                try { controller.poll(engine.getState()); }
+                catch (IllegalStateException expected) {
+                    surfaced = expected.getCause() instanceof IllegalArgumentException
+                            && "stale strategy failed".equals(expected.getCause().getMessage());
+                }
+                check(surfaced, "Stale worker failure is not hidden");
+            } finally {
+                release.countDown();
             }
-            check(surfaced, "Stale worker failure is not hidden");
-        } finally { release.countDown(); controller.close(); }
+        }
     }
 
     private static void noBlockingAndStaleDiscard() throws Exception {
@@ -54,33 +57,36 @@ public final class AIControllerTest {
         final CountDownLatch release = new CountDownLatch(1);
         final AtomicBoolean daemon = new AtomicBoolean();
         final Thread caller = Thread.currentThread();
-        AIController controller = new AIController(new AIStrategy() {
+        try (AIController controller = new AIController(new AIStrategy() {
             public AIPlan plan(GameState snapshot) {
                 daemon.set(Thread.currentThread().isDaemon() && Thread.currentThread() != caller);
                 entered.countDown();
                 awaitIgnoringInterrupt(release);
                 return hardDrop(snapshot);
             }
-        });
-        try {
-            long before = System.nanoTime();
-            check(controller.request(state), "Request accepted");
-            check(System.nanoTime() - before < TimeUnit.MILLISECONDS.toNanos(250), "Request is nonblocking");
-            check(entered.await(2, TimeUnit.SECONDS), "Worker started");
-            check(daemon.get(), "Planning uses a daemon worker");
-            check(controller.isThinking() && controller.poll(state) == null, "Pending result");
-            check(!controller.request(state), "No duplicate pending work");
-            check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(), "Move");
-            release.countDown();
-            waitFinished(controller);
-            check(controller.poll(engine.getState()) == null, "Old version discarded");
-            check(controller.request(engine.getState()), "New version can be requested");
-            waitFinished(controller);
-            AIPlan delivered = controller.poll(engine.getState());
-            check(delivered != null && delivered.getSourceVersion() == engine.getState().getVersion(),
-                    "Current version delivered");
-            check(!controller.request(engine.getState()), "Same delivered version cannot loop");
-        } finally { release.countDown(); controller.close(); }
+        })) {
+            try {
+                long before = System.nanoTime();
+                check(controller.request(state), "Request accepted");
+                check(System.nanoTime() - before < TimeUnit.MILLISECONDS.toNanos(250), "Request is nonblocking");
+                check(entered.await(2, TimeUnit.SECONDS), "Worker started");
+                check(daemon.get(), "Planning uses a daemon worker");
+                check(controller.isThinking() && controller.poll(state) == null, "Pending result");
+                check(!controller.request(state), "No duplicate pending work");
+                check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(), "Move");
+                release.countDown();
+                waitFinished(controller);
+                check(controller.poll(engine.getState()) == null, "Old version discarded");
+                check(controller.request(engine.getState()), "New version can be requested");
+                waitFinished(controller);
+                AIPlan delivered = controller.poll(engine.getState());
+                check(delivered != null && delivered.getSourceVersion() == engine.getState().getVersion(),
+                        "Current version delivered");
+                check(!controller.request(engine.getState()), "Same delivered version cannot loop");
+            } finally {
+                release.countDown();
+            }
+        }
     }
 
     private static void cancellationAndErrors() throws Exception {
@@ -88,7 +94,7 @@ public final class AIControllerTest {
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
         final int[] calls = { 0 };
-        AIController controller = new AIController(new AIStrategy() {
+        try (AIController controller = new AIController(new AIStrategy() {
             public AIPlan plan(GameState state) {
                 synchronized (calls) { calls[0]++; }
                 if (state.getVersion() == 1) {
@@ -97,25 +103,27 @@ public final class AIControllerTest {
                 }
                 return hardDrop(state);
             }
-        });
-        try {
-            check(controller.request(engine.getState()), "Initial request");
-            check(entered.await(2, TimeUnit.SECONDS), "First worker entered");
-            controller.cancelPending();
-            check(!controller.isThinking(), "Cancel clears pending marker");
-            check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(), "Move");
-            check(controller.request(engine.getState()), "New work queued behind cancellation");
-            release.countDown();
-            waitFinished(controller);
-            AIPlan plan = controller.poll(engine.getState());
-            check(plan != null && plan.getSourceVersion() == engine.getState().getVersion(),
-                    "Late canceled completion did not replace new plan");
-        } finally { release.countDown(); controller.close(); }
+        })) {
+            try {
+                check(controller.request(engine.getState()), "Initial request");
+                check(entered.await(2, TimeUnit.SECONDS), "First worker entered");
+                controller.cancelPending();
+                check(!controller.isThinking(), "Cancel clears pending marker");
+                check(engine.dispatch(new GameAction(GameAction.Type.MOVE_LEFT, "local", 1)).isAccepted(), "Move");
+                check(controller.request(engine.getState()), "New work queued behind cancellation");
+                release.countDown();
+                waitFinished(controller);
+                AIPlan plan = controller.poll(engine.getState());
+                check(plan != null && plan.getSourceVersion() == engine.getState().getVersion(),
+                        "Late canceled completion did not replace new plan");
+            } finally {
+                release.countDown();
+            }
+        }
 
-        AIController failing = new AIController(new AIStrategy() {
+        try (AIController failing = new AIController(new AIStrategy() {
             public AIPlan plan(GameState state) { throw new IllegalArgumentException("broken strategy"); }
-        });
-        try {
+        })) {
             check(failing.request(engine.getState()), "Failure request accepted");
             waitFinished(failing);
             boolean surfaced = false;
@@ -124,7 +132,7 @@ public final class AIControllerTest {
                 surfaced = expected.getCause() instanceof IllegalArgumentException;
             }
             check(surfaced, "Worker exception propagated");
-        } finally { failing.close(); }
+        }
     }
 
     private static GameEngine engine() {

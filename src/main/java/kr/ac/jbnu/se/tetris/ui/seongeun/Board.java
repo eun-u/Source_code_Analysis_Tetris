@@ -161,64 +161,89 @@ public class Board extends JPanel {
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            // 가비지를 받으면 보드가 짧게 흔들려 맞았다는 것을 몸으로 느끼게 한다.
-            long now = System.currentTimeMillis();
-            long garbageAge = now - garbageAt, hitAge = now - hitAt;
-            if (garbageAt > 0 && garbageAge >= 0 && garbageAge < 280
-                    || hitAt > 0 && hitAge >= 0 && hitAge < 240) {
-                long age = garbageAt > hitAt ? garbageAge : hitAge;
-                int duration = garbageAt > hitAt ? 280 : 240;
-                int amp = Math.round(6 * (1 - age / (float) duration));
-                g.translate((int) Math.round(Math.sin(age / 12.0) * amp),
-                        (int) Math.round(Math.cos(age / 9.0) * amp / 2.0));
-            }
+            translateForImpact(g);
             int cell = Math.max(1, Math.min(getWidth() / COLUMNS, getHeight() / ROWS));
             int width = cell * COLUMNS, height = cell * ROWS;
             int left = (getWidth() - width) / 2, top = (getHeight() - height) / 2;
-            g.setColor(EMPTY);
-            g.fillRect(left, top, width, height);
-            g.setColor(GRID);
-            for (int x = 0; x <= COLUMNS; x++) g.drawLine(left + x * cell, top, left + x * cell, top + height);
-            for (int y = 0; y <= ROWS; y++) g.drawLine(left, top + y * cell, left + width, top + y * cell);
-            if (state != null && state.getBoard() != null) {
-                BoardState board = state.getBoard();
-                for (int y = 0; y < ROWS; y++) for (int x = 0; x < COLUMNS; x++) {
-                    PieceType type = board.getCell(x, y);
-                    if (type != PieceType.EMPTY)
-                        drawCell(g, left, top, cell, x, y, type, false, board.getItemId(x, y) != null);
-                }
-                Piece piece = state.getActivePiece();
-                if (piece != null) {
-                    for (int i = 0; i < 4; i++) {
-                        int x = state.getPieceX() + piece.x(i), y = state.getGhostY() - piece.y(i);
-                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS && board.getCell(x, y) == PieceType.EMPTY)
-                            drawCell(g, left, top, cell, x, y, piece.getType(), true, piece.hasOreAt(i));
-                    }
-                    for (int i = 0; i < 4; i++) {
-                        int x = state.getPieceX() + piece.x(i), y = state.getPieceY() - piece.y(i);
-                        if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS)
-                            drawCell(g, left, top, cell, x, y, piece.getType(), false, piece.hasOreAt(i));
-                    }
-                }
-            }
+            paintGrid(g, left, top, cell, width, height);
+            paintBlocks(g, left, top, cell);
             g.setColor(keyboardEnabled ? PLAYER_FRAME : ENEMY_FRAME);
             g.setStroke(new BasicStroke(keyboardEnabled ? 3f : 2f));
             g.drawRect(left, top, width, height);
             paintEffects(g, left, top, cell, width, height);
-            if (overlayText != null || state != null && (state.getStatus() == GameState.Status.PAUSED
-                    || state.getStatus() == GameState.Status.GAME_OVER)) {
-                g.setColor(new Color(8, 14, 27, 198));
-                g.fillRect(left, top, width, height);
-                g.setColor(Color.WHITE);
-                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(14, cell), Font.BOLD));
-                String label = overlayText != null ? overlayText
-                        : state.getStatus() == GameState.Status.PAUSED ? "PAUSED" : "GAME OVER";
-                g.drawString(label, left + (width - g.getFontMetrics().stringWidth(label)) / 2, top + height / 2);
-            }
+            paintOverlay(g, left, top, cell, width, height);
         } finally { g.dispose(); }
+    }
+    private void translateForImpact(Graphics2D g) {
+        // 가비지와 피격은 원래와 같은 시간·진폭으로 보드를 흔든다.
+        long now = System.currentTimeMillis();
+        long garbageAge = now - garbageAt, hitAge = now - hitAt;
+        if (garbageAt > 0 && garbageAge >= 0 && garbageAge < 280
+                || hitAt > 0 && hitAge >= 0 && hitAge < 240) {
+            long age = garbageAt > hitAt ? garbageAge : hitAge;
+            int duration = garbageAt > hitAt ? 280 : 240;
+            int amp = Math.round(6 * (1 - age / (float) duration));
+            g.translate((int) Math.round(Math.sin(age / 12.0) * amp),
+                    (int) Math.round(Math.cos(age / 9.0) * amp / 2.0));
+        }
+    }
+    private static void paintGrid(Graphics2D g, int left, int top, int cell, int width, int height) {
+        g.setColor(EMPTY);
+        g.fillRect(left, top, width, height);
+        g.setColor(GRID);
+        for (int x = 0; x <= COLUMNS; x++) g.drawLine(left + x * cell, top, left + x * cell, top + height);
+        for (int y = 0; y <= ROWS; y++) g.drawLine(left, top + y * cell, left + width, top + y * cell);
+    }
+    private void paintBlocks(Graphics2D g, int left, int top, int cell) {
+        if (state == null || state.getBoard() == null) return;
+        BoardState board = state.getBoard();
+        paintSettledBlocks(g, left, top, cell, board);
+        Piece piece = state.getActivePiece();
+        if (piece == null) return;
+        paintGhostPiece(g, left, top, cell, board, piece);
+        paintActivePiece(g, left, top, cell, piece);
+    }
+    private static void paintSettledBlocks(Graphics2D g, int left, int top, int cell, BoardState board) {
+        for (int y = 0; y < ROWS; y++) for (int x = 0; x < COLUMNS; x++) {
+            PieceType type = board.getCell(x, y);
+            if (type != PieceType.EMPTY)
+                drawCell(g, left, top, cell, x, y, type, false, board.getItemId(x, y) != null);
+        }
+    }
+    private void paintGhostPiece(Graphics2D g, int left, int top, int cell, BoardState board, Piece piece) {
+        for (int i = 0; i < 4; i++) {
+            int x = state.getPieceX() + piece.x(i), y = state.getGhostY() - piece.y(i);
+            if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS && board.getCell(x, y) == PieceType.EMPTY)
+                drawCell(g, left, top, cell, x, y, piece.getType(), true, piece.hasOreAt(i));
+        }
+    }
+    private void paintActivePiece(Graphics2D g, int left, int top, int cell, Piece piece) {
+        for (int i = 0; i < 4; i++) {
+            int x = state.getPieceX() + piece.x(i), y = state.getPieceY() - piece.y(i);
+            if (x >= 0 && x < COLUMNS && y >= 0 && y < ROWS)
+                drawCell(g, left, top, cell, x, y, piece.getType(), false, piece.hasOreAt(i));
+        }
+    }
+    private void paintOverlay(Graphics2D g, int left, int top, int cell, int width, int height) {
+        if (overlayText == null && (state == null || state.getStatus() != GameState.Status.PAUSED
+                && state.getStatus() != GameState.Status.GAME_OVER)) return;
+        g.setColor(new Color(8, 14, 27, 198));
+        g.fillRect(left, top, width, height);
+        g.setColor(Color.WHITE);
+        g.setFont(UniversityPixelTheme.font(Math.max(14, cell), Font.BOLD));
+        String label = overlayText != null ? overlayText
+                : state.getStatus() == GameState.Status.PAUSED ? "PAUSED" : "GAME OVER";
+        g.drawString(label, left + (width - g.getFontMetrics().stringWidth(label)) / 2, top + height / 2);
     }
     private void paintEffects(Graphics2D g, int left, int top, int cell, int width, int height) {
         long now = System.currentTimeMillis();
+        paintPlacementEffect(g, left, top, cell, now);
+        paintLineClearEffect(g, left, top, cell, width, height, now);
+        paintGarbageEffect(g, left, top, width, height, now);
+        paintAttackEffect(g, left, top, width, height, now);
+        paintHitEffect(g, left, top, width, height, now);
+    }
+    private void paintPlacementEffect(Graphics2D g, int left, int top, int cell, long now) {
         long landing = now - placementAt;
         if (effectPiece != null && landing >= 0 && landing < 240) {
             g.setColor(new Color(255, 247, 232, (int) (150 * (1 - landing / 240.0))));
@@ -229,6 +254,9 @@ public class Board extends JPanel {
                 g.drawRect(px - 2, py - 2, cell + 3, cell + 3);
             }
         }
+    }
+    private void paintLineClearEffect(Graphics2D g, int left, int top, int cell,
+                                      int width, int height, long now) {
         long clear = now - clearAt;
         if (clearAt > 0 && clear >= 0 && clear < 800) {
             double progress = clear / 800.0;
@@ -242,26 +270,37 @@ public class Board extends JPanel {
                         : new Color(255, 209, 102, (int) (220 * (1 - progress))));
                 g.fillRect(x, y, Math.max(2, cell / 6), Math.max(2, cell / 6));
             }
-            // 스토리 모드는 보드 중앙을 항상 노출하고 라인 삭제 빔/입자만 표시한다.
-            if (lineClearCalloutEnabled) {
-                g.setColor(new Color(11, 11, 46, 210));
-                g.fillRect(left + 4, top + height / 2 - 22, width - 8, 48);
-                g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
-                g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(11, Math.min(22, width / 12)), Font.BOLD));
-                String text = perfectClear ? "PERFECT CLEAR" : clearCount == 4 ? "TETRIS!" : clearCount + " LINE CLEAR";
-                g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, top + height / 2);
-                if (clearCombo > 0) {
-                    g.setFont(kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme.font(Math.max(10, Math.min(16, width / 15)), Font.BOLD));
-                    String combo = "COMBO " + clearCombo;
-                    g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, top + height / 2 + 20);
-                }
-            }
+            paintLineClearCallout(g, left, top + height / 2, width);
         }
+    }
+
+    private void paintLineClearCallout(Graphics2D g, int left, int centerY, int width) {
+        // 스토리 모드는 보드 중앙을 항상 노출하고 라인 삭제 빔/입자만 표시한다.
+        if (!lineClearCalloutEnabled) return;
+        g.setColor(new Color(11, 11, 46, 210));
+        g.fillRect(left + 4, centerY - 22, width - 8, 48);
+        g.setColor(perfectClear ? new Color(255, 209, 102) : new Color(78, 227, 154));
+        g.setFont(UniversityPixelTheme.font(Math.max(11, Math.min(22, width / 12)), Font.BOLD));
+        String text;
+        if (perfectClear) text = "PERFECT CLEAR";
+        else if (clearCount == 4) text = "TETRIS!";
+        else text = clearCount + " LINE CLEAR";
+        g.drawString(text, left + (width - g.getFontMetrics().stringWidth(text)) / 2, centerY);
+        if (clearCombo > 0) {
+            g.setFont(UniversityPixelTheme.font(Math.max(10, Math.min(16, width / 15)), Font.BOLD));
+            String combo = "COMBO " + clearCombo;
+            g.drawString(combo, left + (width - g.getFontMetrics().stringWidth(combo)) / 2, centerY + 20);
+        }
+    }
+
+    private void paintGarbageEffect(Graphics2D g, int left, int top, int width, int height, long now) {
         long garbage = now - garbageAt;
         if (garbageAt > 0 && garbage >= 0 && garbage < 500) {
             g.setColor(new Color(230, 142, 125, (int) (230 * (1 - garbage / 500.0))));
             g.setStroke(new BasicStroke(4)); g.drawRect(left, top, width, height);
         }
+    }
+    private void paintAttackEffect(Graphics2D g, int left, int top, int width, int height, long now) {
         long attack = now - attackAt;
         if (attackAt > 0 && attack >= 0 && attack < 520) {
             float fade = 1f - attack / 520f;
@@ -276,6 +315,8 @@ public class Board extends JPanel {
                 g.fillRect(edge + direction * distance - 2, y, 5, 2);
             }
         }
+    }
+    private void paintHitEffect(Graphics2D g, int left, int top, int width, int height, long now) {
         long hit = now - hitAt;
         if (hitAt > 0 && hit >= 0 && hit < 420) {
             float fade = 1f - hit / 420f;

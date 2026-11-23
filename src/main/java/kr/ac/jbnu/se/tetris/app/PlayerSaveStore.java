@@ -8,6 +8,7 @@ import java.util.*;
 /** 단일 PC 로컬 진행, 재화, 캐릭터를 원자적으로 저장한다. */
 public final class PlayerSaveStore {
     private static final String DEFAULT_CHARACTER = "student";
+    private static final String DEFAULT_BACKGROUND_ID = BackgroundSkin.DEFAULT.getId();
     private final Path file;
     private boolean loadedVersionOne;
     private static final List<String> LEGACY_ENCOUNTERS = Arrays.asList(
@@ -40,8 +41,8 @@ public final class PlayerSaveStore {
             Set<String> cleared = parse(properties.getProperty("cleared", ""));
             if ("1".equals(version)) cleared = migrateLegacyClears(cleared);
             // Version 2 save compatibility: old profiles have no skin keys.
-            Set<String> backgroundOwned = parse(properties.getProperty("background.owned", "default"));
-            String backgroundEquipped = properties.getProperty("background.equipped", "default").trim();
+            Set<String> backgroundOwned = parse(properties.getProperty("background.owned", DEFAULT_BACKGROUND_ID));
+            String backgroundEquipped = properties.getProperty("background.equipped", DEFAULT_BACKGROUND_ID).trim();
             Data data = new Data(coins, selected, owned, cleared, backgroundOwned, backgroundEquipped);
             if (!data.owned.contains(selected)) throw new IllegalArgumentException("Selected character is not owned");
             loadedVersionOne = "1".equals(version);
@@ -123,7 +124,7 @@ public final class PlayerSaveStore {
 
         /** Kept for compatibility with existing tests and game code. */
         public Data(int coins, String selected, Set<String> owned, Set<String> cleared) {
-            this(coins, selected, owned, cleared, Collections.singleton("default"), "default");
+            this(coins, selected, owned, cleared, Collections.singleton(DEFAULT_BACKGROUND_ID), DEFAULT_BACKGROUND_ID);
         }
 
         public Data(int coins, String selected, Set<String> owned, Set<String> cleared,
@@ -132,7 +133,7 @@ public final class PlayerSaveStore {
                     || backgroundOwned == null || backgroundEquipped == null
                     || !CHARACTERS.contains(selected) || !owned.contains(DEFAULT_CHARACTER)
                     || !CHARACTERS.containsAll(owned) || !owned.contains(selected)
-                    || !backgroundOwned.contains("default") || !backgroundOwned.contains(backgroundEquipped))
+                    || !backgroundOwned.contains(DEFAULT_BACKGROUND_ID) || !backgroundOwned.contains(backgroundEquipped))
                 throw new IllegalArgumentException("Invalid local profile");
             for (String skinId : backgroundOwned) BackgroundSkin.fromId(skinId);
             this.coins = coins;
