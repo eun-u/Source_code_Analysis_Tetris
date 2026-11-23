@@ -9,7 +9,7 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 
-/** 원본 아틀라스를 보존하며 전투별 영역을 런타임에 선택한다. */
+// 원본 아틀라스를 보존하며 전투별 영역을 런타임에 선택한다.
 public final class GameArt {
     private static final Map<String, BufferedImage> CACHE = new HashMap<String, BufferedImage>();
     private static final Map<String, BufferedImage> ATLASES = new HashMap<String, BufferedImage>();
@@ -18,6 +18,47 @@ public final class GameArt {
         return (level <= 3 ? "university" : level <= 6 ? "graduation" : "employment")
                 + ":" + ((level - 1) % 3);
     }
+
+    // 스테이지 이미지 키에 해당하는 개별 몬스터 이미지 이름을 반환한다.
+    private static String individualForKey(String key) {
+
+        switch (key) {
+
+            // 대학교 과정
+            case "university:0":
+                return "alcohol";
+
+            case "university:1":
+                return "course";
+
+            case "university:2":
+                return "professor";
+
+            // 졸업 과정
+            case "graduation:0":
+                return "retake";
+
+            case "graduation:1":
+                return "gpt";
+
+            case "graduation:2":
+                return "capstone";
+
+            // 취업 과정
+            case "employment:0":
+                return "codingtest";
+
+            case "employment:1":
+                return "interviewer";
+
+            case "employment:2":
+                return "company";
+
+            default:
+                return null;
+        }
+    }
+
     public static synchronized BufferedImage sprite(String key) {
         if (key == null) return null;
         if (CACHE.containsKey(key)) return CACHE.get(key);
@@ -27,14 +68,18 @@ public final class GameArt {
             if (parts.length != 2) return null;
             int index = Integer.parseInt(parts[1]);
             if (index < 0 || index > 2) return null;
-            String individual = "university:0".equals(key) ? "alcohol" : "university:1".equals(key)
-                    ? "course" : "university:2".equals(key) ? "professor" : "graduation:0".equals(key)
-                    ? "retake" : "graduation:1".equals(key) ? "gpt" : "graduation:2".equals(key) ? "capstone" : "employment:0".equals(key) ? "codingtest"
-                    : "employment:1".equals(key) ? "interviewer" : "employment:2".equals(key) ? "company" : null;
+
+            // 이미지 키에 해당하는 개별 몬스터 이미지 이름 조회
+            String individual = individualForKey(key);
+
             if (individual != null) {
-                java.net.URL clean = GameArt.class.getResource("/ui/puzzle-rpg/" + individual + ".png");
+            java.net.URL clean = GameArt.class.getResource(
+                    "/ui/puzzle-rpg/" + individual + ".png"
+            );
                 if (clean != null) {
-                    sprite = ImageIO.read(clean); CACHE.put(key, sprite); return sprite;
+                    sprite = ImageIO.read(clean);
+                    CACHE.put(key, sprite);
+                    return sprite;
                 }
             }
             java.net.URL url = GameArt.class.getResource("/ui/puzzle-rpg/" + parts[0] + ".png");

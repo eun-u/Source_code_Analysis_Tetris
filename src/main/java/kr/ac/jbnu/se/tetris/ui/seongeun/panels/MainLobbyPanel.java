@@ -71,6 +71,9 @@ public class MainLobbyPanel extends JPanel {
     private static final String SETTINGS_ICON_PATH = "/ui/campus-rpg/buttons/lobby_settings.png";
     private static final int SETTINGS_ICON_SIZE = 66;
     private static final String SIGNED_IN = "온라인 PvP 로그인 완료";
+    private static final String LOCAL_PLAY_STATUS = "로컬 플레이";
+    private static final String DEFAULT_PLAYER_NAME = "Player";
+
     private static final Color GOLD = UniversityPixelTheme.GOLD, MINT = UniversityPixelTheme.MINT;
 
     private final GameMenu menu = new GameMenu();
@@ -121,7 +124,7 @@ public class MainLobbyPanel extends JPanel {
                 else animation.stop();
             }
         });
-        setAccountStatus("로컬 플레이");
+        setAccountStatus(LOCAL_PLAY_STATUS);
     }
 
     /** Existing JButton text is preserved for headless UI tests; visually draw only the PNG. */
@@ -216,7 +219,7 @@ public class MainLobbyPanel extends JPanel {
                 g.fillRoundRect(4, 5, Math.max(1, w - 8), Math.max(1, h - 10), h - 10, h - 10);
                 g.setFont(UniversityPixelTheme.lobbyFont(Math.max(12, Math.min(17, h / 3)), Font.BOLD));
                 g.setColor(online ? Color.WHITE : UniversityPixelTheme.TEXT);
-                String label = online ? "온라인 플레이" : "로컬 플레이";
+                String label = online ? "온라인 플레이" : LOCAL_PLAY_STATUS;
                 FontMetrics fm = g.getFontMetrics();
                 g.drawString(label, (w - fm.stringWidth(label)) / 2, (h - fm.getHeight()) / 2 + fm.getAscent());
             } finally { g.dispose(); }
@@ -226,7 +229,7 @@ public class MainLobbyPanel extends JPanel {
     /** Connected top-right profile card. The header background is drawn by the lobby. */
     private static final class ProfileBadge extends JLabel {
         ProfileBadge() {
-            super("Player");
+            super(DEFAULT_PLAYER_NAME);
             setOpaque(false);
             setFont(UniversityPixelTheme.lobbyFont(18, Font.BOLD));
             setToolTipText("플레이어 정보");
@@ -262,7 +265,7 @@ public class MainLobbyPanel extends JPanel {
                 }
 
                 String display = getText();
-                if (display == null || display.trim().isEmpty()) display = "Player";
+                if (display == null || display.trim().isEmpty()) display = DEFAULT_PLAYER_NAME;
                 int textLeft = avX + avatarSize + 9;
                 int available = Math.max(0, w - textLeft - 5);
                 g.setFont(UniversityPixelTheme.lobbyFont(Math.max(13, Math.min(20, h / 3)), Font.BOLD));
@@ -571,15 +574,15 @@ public class MainLobbyPanel extends JPanel {
         }
     }
 
-    /** Dynamic stage information painted over the common wooden PNG. */
+    // Dynamic stage information painted over the common wooden PNG.
     private static final class NextBattleCard extends JComponent {
         String eyebrow = "NEXT BATTLE", title = "술", detail = "LV 1 · 일반 · 대학교 과정";
         String artKey = GameArt.keyForLevel(1);
         int cleared, total = 9;
         boolean boss;
-        private BufferedImage cachedSprite;
-        private Rectangle cachedSpriteBounds;
-        private String cachedKey;
+        private transient BufferedImage cachedSprite;
+        private transient Rectangle cachedSpriteBounds;
+        private transient String cachedKey;
         private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
                 kr.ac.jbnu.se.tetris.app.BackgroundSkin.DEFAULT;
 
@@ -617,67 +620,9 @@ public class MainLobbyPanel extends JPanel {
                 }
 
                 final int innerX = 80, innerWidth = 240;
-                // A single stage art is selected from the live chapter name.
-                String raw = detail == null ? "" : detail;
-                int separator = raw.lastIndexOf('·');
-                String chapter = separator < 0 ? raw : raw.substring(separator + 1).trim();
-                String levelTier = separator < 0 ? "" : raw.substring(0, separator).trim();
-                if (chapter.isEmpty()) chapter = "다음 스테이지";
 
-                g.setColor(new Color(0x35291F));
-                g.setFont(UniversityPixelTheme.lobbyFont(14, Font.BOLD));
-                g.drawString(fitText(g.getFontMetrics(), eyebrow, innerWidth), innerX, 99);
-                g.setFont(UniversityPixelTheme.lobbyFont(21, Font.BOLD));
-                g.drawString(fitText(g.getFontMetrics(), chapter, innerWidth), innerX, 129);
-
-                // A cover-fit preview fills the complete viewport. A differing image ratio
-                // is center-cropped rather than letterboxed or stretched.
-                final int previewX = innerX, previewY = 137, previewW = innerWidth, previewH = 114;
-                paintStagePreview(g, stagePreviewFor(chapter), previewX, previewY, previewW, previewH);
-
-                g.setColor(new Color(0x70543B));
-                g.setFont(UniversityPixelTheme.lobbyFont(11, Font.PLAIN));
-                g.drawString(fitText(g.getFontMetrics(), levelTier, innerWidth), innerX, 268);
-
-                // Keep ENEMY/BOSS and the real monster name on ONE line.
-                String role = boss ? "BOSS" : "ENEMY";
-                g.setFont(UniversityPixelTheme.lobbyFont(15, Font.BOLD));
-                FontMetrics roleFm = g.getFontMetrics();
-                int labelY = 289;
-                g.setColor(new Color(0x413025));
-                g.drawString(role, innerX, labelY);
-                int nameX = innerX + roleFm.stringWidth(role) + 10;
-                int nameSpace = Math.max(35, 211 - nameX);
-                String bossText = title == null ? "" : title;
-                int bossFontSize = 19;
-                Font bossFont = UniversityPixelTheme.lobbyFont(bossFontSize, Font.BOLD);
-                while (bossFontSize > 13 && g.getFontMetrics(bossFont).stringWidth(bossText) > nameSpace) {
-                    bossFont = UniversityPixelTheme.lobbyFont(--bossFontSize, Font.BOLD);
-                }
-                g.setFont(bossFont);
-                g.drawString(fitText(g.getFontMetrics(), bossText, nameSpace), nameX, labelY);
-
-                // Restore the project's REAL monster art. Its alpha-only margins are
-                // cropped once and the visible character is enlarged in the bottom-right.
-                if (cachedKey == null || !cachedKey.equals(artKey)) {
-                    cachedKey = artKey;
-                    cachedSprite = GameArt.sprite(artKey);
-                    cachedSpriteBounds = visibleBounds(cachedSprite);
-                }
-                if (cachedSprite != null && cachedSpriteBounds != null) {
-                    Rectangle crop = cachedSpriteBounds;
-                    final int boxX = 203, boxY = 218, boxW = 134;
-                    final int boxH = backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER ? 93 : 104;
-                    double scale = Math.min(boxW / (double) crop.width,
-                            boxH / (double) crop.height);
-                    int dw = Math.max(1, (int) Math.round(crop.width * scale));
-                    int dh = Math.max(1, (int) Math.round(crop.height * scale));
-                    int dx = boxX + (boxW - dw) / 2;
-                    int dy = boxY + boxH - dh;
-                    g.drawImage(cachedSprite, dx, dy, dx + dw, dy + dh,
-                            crop.x, crop.y, crop.x + crop.width,
-                            crop.y + crop.height, null);
-                }
+                // 스테이지 정보 및 몬스터 렌더링
+                paintBattleContent(g, innerX, innerWidth);
 
                 // Move progression UP to separate it from the wooden frame below.
                 g.setColor(new Color(0x413025));
@@ -700,7 +645,123 @@ public class MainLobbyPanel extends JPanel {
             } finally { g.dispose(); }
         }
 
-        /** Resolve the story chapter using actual stage labels, never the lobby wallpaper. */
+        // 다음 전투 카드의 스테이지 정보와 몬스터 이미지를 렌더링한다.
+        private void paintBattleContent(Graphics2D g, int innerX, int innerWidth) {
+
+            // 스테이지 정보 추출
+            String raw = detail == null ? "" : detail;
+            int separator = raw.lastIndexOf('·');
+
+            String chapter = separator < 0
+                    ? raw
+                    : raw.substring(separator + 1).trim();
+
+            String levelTier = separator < 0
+                    ? ""
+                    : raw.substring(0, separator).trim();
+
+            if (chapter.isEmpty()) {
+                chapter = "다음 스테이지";
+            }
+
+            // 스테이지 제목
+            g.setColor(new Color(0x35291F));
+            g.setFont(UniversityPixelTheme.lobbyFont(14, Font.BOLD));
+            g.drawString(fitText(g.getFontMetrics(), eyebrow, innerWidth), innerX, 99);
+
+            g.setFont(UniversityPixelTheme.lobbyFont(21, Font.BOLD));
+            g.drawString(fitText(g.getFontMetrics(), chapter, innerWidth), innerX, 129);
+
+            // 스테이지 미리보기 이미지
+            final int previewX = innerX;
+            final int previewY = 137;
+            final int previewW = innerWidth;
+            final int previewH = 114;
+
+            paintStagePreview(
+                    g,
+                    stagePreviewFor(chapter),
+                    previewX,
+                    previewY,
+                    previewW,
+                    previewH
+            );
+
+            // 스테이지 레벨 정보
+            g.setColor(new Color(0x70543B));
+            g.setFont(UniversityPixelTheme.lobbyFont(11, Font.PLAIN));
+            g.drawString(fitText(g.getFontMetrics(), levelTier, innerWidth), innerX, 268);
+
+            // 몬스터 유형과 이름
+            String role = boss ? "BOSS" : "ENEMY";
+
+            g.setFont(UniversityPixelTheme.lobbyFont(15, Font.BOLD));
+            FontMetrics roleFm = g.getFontMetrics();
+
+            int labelY = 289;
+
+            g.setColor(new Color(0x413025));
+            g.drawString(role, innerX, labelY);
+
+            int nameX = innerX + roleFm.stringWidth(role) + 10;
+            int nameSpace = Math.max(35, 211 - nameX);
+
+            String bossText = title == null ? "" : title;
+
+            int bossFontSize = 19;
+            Font bossFont = UniversityPixelTheme.lobbyFont(bossFontSize, Font.BOLD);
+
+            while (bossFontSize > 13
+                    && g.getFontMetrics(bossFont).stringWidth(bossText) > nameSpace) {
+                bossFont = UniversityPixelTheme.lobbyFont(--bossFontSize, Font.BOLD);
+            }
+
+            g.setFont(bossFont);
+            g.drawString(fitText(g.getFontMetrics(), bossText, nameSpace), nameX, labelY);
+
+            // 몬스터 이미지 캐시 갱신
+            if (cachedKey == null || !cachedKey.equals(artKey)) {
+                cachedKey = artKey;
+                cachedSprite = GameArt.sprite(artKey);
+                cachedSpriteBounds = visibleBounds(cachedSprite);
+            }
+
+            // 몬스터 이미지 렌더링
+            if (cachedSprite != null && cachedSpriteBounds != null) {
+
+                Rectangle crop = cachedSpriteBounds;
+
+                final int boxX = 203;
+                final int boxY = 218;
+                final int boxW = 134;
+
+                final int boxH =
+                        backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER
+                                ? 93 : 104;
+
+                double scale = Math.min(
+                        boxW / (double) crop.width,
+                        boxH / (double) crop.height
+                );
+
+                int dw = Math.max(1, (int) Math.round(crop.width * scale));
+                int dh = Math.max(1, (int) Math.round(crop.height * scale));
+
+                int dx = boxX + (boxW - dw) / 2;
+                int dy = boxY + boxH - dh;
+
+                g.drawImage(
+                        cachedSprite,
+                        dx, dy,
+                        dx + dw, dy + dh,
+                        crop.x, crop.y,
+                        crop.x + crop.width,
+                        crop.y + crop.height,
+                        null
+                );
+            }
+        }
+        // Resolve the story chapter using actual stage labels, never the lobby wallpaper.
         private BufferedImage stagePreviewFor(String chapter) {
             if (backgroundSkin == kr.ac.jbnu.se.tetris.app.BackgroundSkin.WINTER) {
                 String scene = chapter != null && chapter.contains("졸업") ? "graduation"
@@ -801,13 +862,13 @@ public class MainLobbyPanel extends JPanel {
         boolean signedIn = text != null && text.startsWith(SIGNED_IN);
         String nickname = signedIn ? text.substring(SIGNED_IN.length())
                 .replaceFirst("^\\s*[·:|]\\s*", "").trim() : "";
-        if (nickname.isEmpty()) nickname = "Player";
+        if (nickname.isEmpty()) nickname = DEFAULT_PLAYER_NAME;
         // Do not display local-play status again inside the profile: the PNG badge owns it.
         account.setText(nickname);
         account.setToolTipText(signedIn ? text : "게스트 플레이어 (Player)");
         account.setOpaque(false);
         playStatus.setOnline(signedIn);
-        playStatus.setToolTipText(signedIn ? "온라인 플레이" : "로컬 플레이");
+        playStatus.setToolTipText(signedIn ? "온라인 플레이" : LOCAL_PLAY_STATUS);
         // The reference has clean PNG buttons without badges spilling outside their edges.
         onlineButton.setBadge(null, UniversityPixelTheme.PANEL_LIGHT);
         serverButton.setBadge(null, UniversityPixelTheme.PANEL_LIGHT);

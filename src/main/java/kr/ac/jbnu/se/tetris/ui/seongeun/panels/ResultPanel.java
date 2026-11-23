@@ -1,15 +1,41 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridLayout;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.awt.event.ActionListener;
 import java.util.List;
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import kr.ac.jbnu.se.tetris.story.StoryDialogueCue;
-import kr.ac.jbnu.se.tetris.ui.seongeun.components.*;
 
-/** Reference-style result scene. The numbers and navigation callbacks remain live. */
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
+import javax.swing.SwingConstants;
+import javax.swing.Timer;
+import javax.swing.border.EmptyBorder;
+
+import kr.ac.jbnu.se.tetris.story.StoryDialogueCue;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.GameButton;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
+
+// Reference-style result scene. The numbers and navigation callbacks remain live.
 public class ResultPanel extends ScenePanel {
+    private static final String RESULT_VICTORY = "VICTORY";
+    private static final String RESULT_DEFEAT = "DEFEAT";
+
     private final JLabel resultLabel = new FancyTitle();
     private JLabel logo;
     private JPanel content;
@@ -159,7 +185,10 @@ public class ResultPanel extends ScenePanel {
     }
 
     private static final class FancyTitle extends JLabel {
-        FancyTitle(){super("VICTORY",SwingConstants.CENTER);setOpaque(false);}
+        FancyTitle() {
+            super(RESULT_VICTORY, SwingConstants.CENTER);
+            setOpaque(false);
+        }
         @Override protected void paintComponent(Graphics graphics){
             Graphics2D g=(Graphics2D)graphics.create();
             try{
@@ -176,8 +205,8 @@ public class ResultPanel extends ScenePanel {
                 g.draw(shape);
                 g.setColor(new Color(0xFFFFFF));g.setStroke(new BasicStroke(4f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
                 g.draw(shape);
-                Color top="DEFEAT".equals(title)?new Color(0xE4F1FF):new Color(0xEFFFF0);
-                Color bottom="DEFEAT".equals(title)?new Color(0x7895D1):new Color(0x00C4DD);
+                Color top = RESULT_DEFEAT.equals(title) ? new Color(0xE4F1FF) : new Color(0xEFFFF0);
+                Color bottom = RESULT_DEFEAT.equals(title) ? new Color(0x7895D1) : new Color(0x00C4DD);
                 g.setPaint(new GradientPaint(0,0,top,0,h,bottom));g.fill(shape);
             }finally{g.dispose();}
         }
@@ -204,9 +233,9 @@ public class ResultPanel extends ScenePanel {
         setResultDetails(result,playerName,String.valueOf(line),String.valueOf(combo),String.valueOf(damage),String.valueOf(reward));
     }
     public void setResultDetails(String result,String playerName,String line,String maxCombo,String damage,String reward){
-        victory="VICTORY".equals(result)||"COMPLETE".equals(result);
-        boolean loss="DEFEAT".equals(result)||"GAME OVER".equals(result)||"CONNECTION LOST".equals(result);
-        resultLabel.setText(victory?"VICTORY":loss?"DEFEAT":result);
+        victory = RESULT_VICTORY.equals(result) || "COMPLETE".equals(result);
+        boolean loss = RESULT_DEFEAT.equals(result) || "GAME OVER".equals(result) || "CONNECTION LOST".equals(result);
+        resultLabel.setText(victory ? RESULT_VICTORY : loss ? RESULT_DEFEAT : result);
         resultLabel.setForeground(victory?new Color(0x15C8CB):loss?new Color(0xA9BEDA):CampusArt.GOLD);
         flavor.setText(victory?"플레이어: 휴...이번 학기는 살았다...":loss?"플레이어: 아... 재수강은 피하고 싶었는데...":"플레이어: 다음 도전을 준비하자!");
         playerNameLabel.setText(playerName==null?"PLAYER":playerName);

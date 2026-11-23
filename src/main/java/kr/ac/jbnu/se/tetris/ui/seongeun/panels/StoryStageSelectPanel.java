@@ -1,6 +1,5 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.panels;
 import kr.ac.jbnu.se.tetris.app.BackgroundSkin;
-import kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets;
 
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -17,15 +16,18 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+
+import org.checkerframework.checker.units.qual.g;
+
 import kr.ac.jbnu.se.tetris.ai.DifficultyProfile;
 import kr.ac.jbnu.se.tetris.ai.DifficultyProfileCatalog;
 import kr.ac.jbnu.se.tetris.story.*;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.*;
 
-/**
- * 스토리 지도. 대학교·졸업·취업 세 지역을 잇는 길 위에 아홉 전투를 점으로 두고,
- * 플레이어 말이 현재 진행 위치에 서 있다. 점을 고르면 아래 상세 칸에서 정보를 보고 도전한다.
- * ← → 로 고르고 Enter로 시작할 수 있다.
+/*
+ - 스토리 지도. 대학교·졸업·취업 세 지역을 잇는 길 위에 아홉 전투를 점으로 두고,
+ - 플레이어 말이 현재 진행 위치에 서 있다. 점을 고르면 아래 상세 칸에서 정보를 보고 도전한다.
+ - ← → 로 고르고 Enter로 시작할 수 있다.
  */
 public class StoryStageSelectPanel extends JPanel {
     private static final float[][] NODES = {
@@ -41,7 +43,7 @@ public class StoryStageSelectPanel extends JPanel {
     };
 
     private final PixelButton back = new CampusBackButton("돌아가기");
-    private final StageCatalog catalog = StageCatalog.loadDefault();
+    private transient StageCatalog catalog = StageCatalog.loadDefault();
     private final List<MonsterSpec> monsters = new ArrayList<MonsterSpec>();
     private final List<String> stageIds = new ArrayList<String>();
     private final Map<String, List<ActionListener>> listeners = new LinkedHashMap<String, List<ActionListener>>();
@@ -59,11 +61,18 @@ public class StoryStageSelectPanel extends JPanel {
     private int selected, current, tokenFrom = -1;
     private long tokenMovedAt;
 
+    // 스테이지 카탈로그를 반환한다. 직렬화 이후 캐시가 비어 있으면 다시 불러온다.
+    private StageCatalog getCatalog() {
+        if (catalog == null) {
+            catalog = StageCatalog.loadDefault();
+        }
+        return catalog;
+    }
     public StoryStageSelectPanel() {
         setLayout(new BorderLayout(0, 10));
         setBackground(UniversityPixelTheme.BG);
         setBorder(new EmptyBorder(14, 22, 14, 22));
-        for (Stage stage : catalog.getStages())
+        for (Stage stage : getCatalog().getStages())
             for (MonsterSpec monster : stage.getEncounters()) { monsters.add(monster); stageIds.add(stage.getId()); }
         back.secondary();
         back.setPreferredSize(new Dimension(190, 56));
@@ -138,12 +147,10 @@ public class StoryStageSelectPanel extends JPanel {
         detailName.setText(monster.getName());
         detailStats.setText("몬스터 HP " + difficulty.getMonsterHp() + "   ·   낙하 속도 " + difficulty.getPlayerGravityMillis()
                 + "ms   ·   몬스터 아이템 LV " + difficulty.getMonsterItemLevel());
-        int reward = boss ? 80 : monster.getTier() == MonsterTier.ELITE ? 50 : 30;
-        UniversityPixelTheme.setChip(detailReward, cleared[index] ? "보상 획득 완료" : "첫 승리 +" + reward + " 코인",
-                cleared[index] ? UniversityPixelTheme.PANEL_LIGHT : UniversityPixelTheme.GOLD);
-        boolean next = index == current && unlocked[index] && !cleared[index];
-        UniversityPixelTheme.setChip(detailState, cleared[index] ? "CLEAR" : next ? "NEXT" : unlocked[index] ? "도전 가능" : "잠김",
-                cleared[index] ? UniversityPixelTheme.MINT : next ? UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
+
+        // 보상 및 스테이지 진행 상태 갱신
+        updateStageBadges(index, monster, boss);
+
         start.setEnabled(unlocked[index]);
         start.setText(cleared[index] ? "다시 도전" : unlocked[index] ? "도전하기" : "잠김");
         if (cleared[index]) start.secondary(); else start.primary();
@@ -151,7 +158,48 @@ public class StoryStageSelectPanel extends JPanel {
         map.repaint();
     }
 
-    private static String tierName(MonsterTier tier) {
+    // 선택한 스테이지의 보상 및 진행 상태를 갱신한다.
+    private void updateStageBadges(int index, MonsterSpec monster, boolean boss) {
+
+        // 몬스터 유형에 따른 보상
+        int reward = boss
+                ? 80
+                : monster.getTier() == MonsterTier.ELITE ? 50 : 30;
+
+        // 보상 획득 상태
+        UniversityPixelTheme.setChip(
+                detailReward,
+                cleared[index]
+                        ? "보상 획득 완료"
+                        : "첫 승리 +" + reward + " 코인",
+                cleared[index]
+                        ? UniversityPixelTheme.PANEL_LIGHT
+                        : UniversityPixelTheme.GOLD
+        );
+
+        // 현재 진행 가능한 다음 스테이지 확인
+        boolean next = index == current
+                && unlocked[index]
+                && !cleared[index];
+
+        // 스테이지 진행 상태
+        UniversityPixelTheme.setChip(
+                detailState,
+                cleared[index]
+                        ? "CLEAR"
+                        : next
+                            ? "NEXT"
+                            : unlocked[index]
+                                ? "도전 가능"
+                                : "잠김",
+                cleared[index]
+                        ? UniversityPixelTheme.MINT
+                        : next
+                            ? UniversityPixelTheme.GOLD
+                            : UniversityPixelTheme.PANEL_LIGHT
+        );
+    }
+        private static String tierName(MonsterTier tier) {
         return tier == MonsterTier.NORMAL ? "일반" : tier == MonsterTier.ELITE ? "엘리트" : "BOSS";
     }
 
@@ -165,13 +213,28 @@ public class StoryStageSelectPanel extends JPanel {
             if (next < 0 && unlocked[index] && !cleared[index]) next = index;
             index++;
         }
-        int newCurrent = next < 0 ? monsters.size() - 1 : next;
-        // 진행 위치가 바뀌었으면 말이 길을 따라 걸어가게 한다.
-        if (tokenFrom >= 0 && newCurrent != current) { tokenFrom = current; tokenMovedAt = System.currentTimeMillis(); }
-        else if (tokenFrom < 0) tokenFrom = newCurrent;
-        current = newCurrent;
+        updateCurrentStage(next);
+
         completion.setText(count + " / " + monsters.size() + " CLEAR");
         select(current);
+    }
+
+    // 현재 스테이지와 플레이어 이동 시작 위치를 갱신한다.
+    private void updateCurrentStage(int next) {
+
+        int newCurrent = next < 0
+                ? monsters.size() - 1
+                : next;
+
+        // 진행 위치가 변경되었을 때 이동 애니메이션 시작
+        if (tokenFrom >= 0 && newCurrent != current) {
+            tokenFrom = current;
+            tokenMovedAt = System.currentTimeMillis();
+        } else if (tokenFrom < 0) {
+            tokenFrom = newCurrent;
+        }
+
+        current = newCurrent;
     }
 
     public void setBackgroundSkin(BackgroundSkin skin) {
@@ -186,7 +249,7 @@ public class StoryStageSelectPanel extends JPanel {
         registered.add(listener);
     }
     public void setStageAction(int stageIndex, MonsterTier tier, ActionListener listener) {
-        for (MonsterSpec monster : catalog.getStages().get(stageIndex).getEncounters())
+        for (MonsterSpec monster : getCatalog().getStages().get(stageIndex).getEncounters())
             if (monster.getTier() == tier) { setStageAction(stageIndex, monster.getId(), listener); return; }
     }
     public void setStage1NormalAction(ActionListener l) { setStageAction(0, MonsterTier.NORMAL, l); }
@@ -286,12 +349,8 @@ public class StoryStageSelectPanel extends JPanel {
                 g.setPaint(new GradientPaint(0, 0, skies[region][0], 0, h, skies[region][1]));
                 g.fillRect(x0, 0, x1 - x0, h);
                 // Story map winter chapter backgrounds: same scene assets as story battle.
-                BufferedImage scene = null;
-                if (backgroundSkin == BackgroundSkin.WINTER) {
-                    String sceneId = region == 0 ? "university" : region == 1 ? "graduation" : "employment";
-                    scene = BackgroundSkinAssets.image(BackgroundSkin.WINTER, sceneId);
-                }
-                if (scene == null) scene = REGIONS[region];
+                BufferedImage scene = resolveRegionImage(region);
+
                 if (scene != null) {
                     int sourceWidth = Math.max(1, scene.getWidth() / 3);
                     int sourceX = Math.min(scene.getWidth() - sourceWidth,
@@ -317,7 +376,32 @@ public class StoryStageSelectPanel extends JPanel {
                 g.drawString(label, x0 + 22, 31);
             }
         }
+        // 지역에 맞는 배경 이미지를 선택한다. 겨울 스킨이 없으면 기본 지역 이미지를 사용한다.
+        private BufferedImage resolveRegionImage(int region) {
 
+            BufferedImage scene = null;
+
+            if (backgroundSkin == BackgroundSkin.WINTER) {
+
+                String sceneId = region == 0
+                        ? "university"
+                        : region == 1
+                            ? "graduation"
+                            : "employment";
+
+                scene = BackgroundSkinAssets.image(
+                        BackgroundSkin.WINTER,
+                        sceneId
+                );
+            }
+
+            // 겨울 배경을 불러오지 못하면 기본 이미지 사용
+            if (scene == null) {
+                scene = REGIONS[region];
+            }
+
+            return scene;
+        }
         private void paintRoad(Graphics2D g) {
             Stroke prior = g.getStroke();
             for (int pass = 0; pass < 2; pass++) {
@@ -386,36 +470,87 @@ public class StoryStageSelectPanel extends JPanel {
                 g.setColor(UniversityPixelTheme.TEXT);
                 g.fillRect(lx + 7, ly + 4, 2, 4);
             }
-            if (cleared[index]) {
-                int sx = x + size - 10, sy = y - 8;
-                g.setColor(UniversityPixelTheme.LINE);
-                g.fillRect(sx - 1, sy - 1, 20, 20);
-                g.setColor(UniversityPixelTheme.MINT);
-                g.fillRect(sx, sy, 18, 18);
-                g.setColor(UniversityPixelTheme.BLACK);
-                g.setStroke(new BasicStroke(3f));
-                g.drawLine(sx + 4, sy + 9, sx + 8, sy + 13);
-                g.drawLine(sx + 8, sy + 13, sx + 14, sy + 5);
-                g.setStroke(new BasicStroke(1f));
-            }
-            g.setFont(UniversityPixelTheme.font(boss ? 12 : 11, Font.BOLD));
-            String label = boss ? "BOSS · LV " + (index + 1) : "LV " + (index + 1);
-            FontMetrics m = g.getFontMetrics();
-            int lw = m.stringWidth(label) + 10;
-            g.setColor(new Color(241, 239, 230, 240));
-            g.fillRoundRect(p.x - lw / 2, y + size + 6, lw, 23, 12, 12);
-            g.setColor(boss ? UniversityPixelTheme.CORAL : isSelected ? UniversityPixelTheme.GOLD : UniversityPixelTheme.TEXT);
-            g.drawString(label, p.x - lw / 2 + 5, y + size + 22);
-            if (isSelected) {
-                int ay = y - 18 - (int) Math.round(Math.sin(now / 180.0) * 4);
-                g.setColor(UniversityPixelTheme.BLACK);
-                g.fillPolygon(new int[] { p.x - 9, p.x + 11, p.x + 1 }, new int[] { ay + 1, ay + 1, ay + 13 }, 3);
-                g.setColor(UniversityPixelTheme.GOLD);
-                g.fillPolygon(new int[] { p.x - 10, p.x + 10, p.x }, new int[] { ay, ay, ay + 12 }, 3);
-            }
+            paintNodeMarkers(g, index, now, p, x, y, size);
         }
 
-        /** 플레이어 말. 진행이 바뀌면 이전 점에서 새 점까지 길을 따라 걷는다. */
+        // 전투 노드의 클리어 표시, 레벨 및 선택 상태를 렌더링한다.
+        private void paintNodeMarkers(Graphics2D g, int index, long now,
+                                    Point p, int x, int y, int size) {
+
+            boolean boss = monsters.get(index).getTier() == MonsterTier.BOSS;
+            boolean isSelected = index == selected;
+
+            // 클리어한 스테이지 체크 표시
+            if (cleared[index]) {
+
+                int sx = x + size - 10;
+                int sy = y - 8;
+
+                g.setColor(UniversityPixelTheme.LINE);
+                g.fillRect(sx - 1, sy - 1, 20, 20);
+
+                g.setColor(UniversityPixelTheme.MINT);
+                g.fillRect(sx, sy, 18, 18);
+
+                g.setColor(UniversityPixelTheme.BLACK);
+                g.setStroke(new BasicStroke(3f));
+
+                g.drawLine(sx + 4, sy + 9, sx + 8, sy + 13);
+                g.drawLine(sx + 8, sy + 13, sx + 14, sy + 5);
+
+                g.setStroke(new BasicStroke(1f));
+            }
+
+            // 몬스터 레벨 및 BOSS 표시
+            g.setFont(UniversityPixelTheme.font(
+                    boss ? 12 : 11,
+                    Font.BOLD
+            ));
+
+            String label = boss
+                    ? "BOSS · LV " + (index + 1)
+                    : "LV " + (index + 1);
+
+            FontMetrics m = g.getFontMetrics();
+            int lw = m.stringWidth(label) + 10;
+
+            g.setColor(new Color(241, 239, 230, 240));
+            g.fillRoundRect(p.x - lw / 2, y + size + 6, lw, 23, 12, 12);
+
+            g.setColor(
+                    boss
+                            ? UniversityPixelTheme.CORAL
+                            : isSelected
+                                ? UniversityPixelTheme.GOLD
+                                : UniversityPixelTheme.TEXT
+            );
+
+            g.drawString(label, p.x - lw / 2 + 5, y + size + 22);
+
+            // 선택한 노드 위에 화살표 표시
+            if (isSelected) {
+
+                int ay = y - 18
+                        - (int) Math.round(Math.sin(now / 180.0) * 4);
+
+                g.setColor(UniversityPixelTheme.BLACK);
+
+                g.fillPolygon(
+                        new int[] { p.x - 9, p.x + 11, p.x + 1 },
+                        new int[] { ay + 1, ay + 1, ay + 13 },
+                        3
+                );
+
+                g.setColor(UniversityPixelTheme.GOLD);
+
+                g.fillPolygon(
+                        new int[] { p.x - 10, p.x + 10, p.x },
+                        new int[] { ay, ay, ay + 12 },
+                        3
+                );
+            }
+        }
+        // 플레이어 말. 진행이 바뀌면 이전 점에서 새 점까지 길을 따라 걷는다.
         private void paintToken(Graphics2D g, long now) {
             if (PLAYER == null || monsters.isEmpty()) return;
             float t = tokenMovedAt == 0 ? 1f : Math.min(1f, (now - tokenMovedAt) / 1100f);

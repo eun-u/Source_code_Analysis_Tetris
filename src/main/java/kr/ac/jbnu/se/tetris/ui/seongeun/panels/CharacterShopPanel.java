@@ -19,14 +19,13 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 획득한 재화로 전투 캐릭터를 구입하고 선택하는 로컬 화면. */
 public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.components.ScenePanel {
-    private final CharacterCatalog catalog = CharacterCatalog.loadDefault();
     private final MainLobbyPanel.CoinBadge wallet = new MainLobbyPanel.CoinBadge();
     private final PixelButton back = new CampusBackButton("돌아가기");
     private final Map<String, JPanel> cards = new LinkedHashMap<String, JPanel>();
     private final Map<String, JLabel> badges = new LinkedHashMap<String, JLabel>();
     private final Map<String, JButton> actions = new LinkedHashMap<String, JButton>();
-    private Consumer<String> selection;
-    private Consumer<BackgroundSkin> skinSelection;
+    private transient Consumer<String> selection;
+    private transient Consumer<BackgroundSkin> skinSelection;
     private final Map<BackgroundSkin, PixelButton> skinActions = new LinkedHashMap<BackgroundSkin, PixelButton>();
     private final Map<BackgroundSkin, JLabel> skinBadges = new LinkedHashMap<BackgroundSkin, JLabel>();
 
@@ -43,7 +42,10 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
 
         JPanel cards = new JPanel(new GridLayout(2, 2, 17, 17));
         cards.setOpaque(false);
-        for (CharacterSpec spec : catalog.all()) cards.add(card(spec));
+        CharacterCatalog catalog = CharacterCatalog.loadDefault();
+        for (CharacterSpec spec : catalog.all()) {
+            cards.add(card(spec));
+        }
         // 카드가 화면 높이만큼 늘어나지 않도록 위쪽에 붙여 내용 크기만 쓰게 한다.
         JPanel holder = new JPanel(new BorderLayout()); holder.setOpaque(false);
         JPanel sections = new JPanel(); sections.setOpaque(false);
@@ -161,24 +163,53 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
             PixelButton button = entry.getValue();
             boolean mine = owned.contains(skin.getId());
             boolean worn = skin.getId().equals(equipped);
-            if (worn) {
-                button.setText("장착 중"); button.setEnabled(false); button.positive();
-            } else if (mine) {
-                button.setText("장착하기"); button.setEnabled(true); button.positive();
-            } else if (skin == BackgroundSkin.WINTER && !ready) {
-                button.setText("겨울 배경 PNG 확인 필요"); button.setEnabled(false); button.secondary();
-            } else {
-                button.setText("구매하기 · " + skin.getPrice() + " COINS");
-                button.setEnabled(coins >= skin.getPrice()); button.primary();
-            }
+
+            // 배경 스킨 버튼 상태 갱신
+            updateSkinButton(skin, button, coins, worn, mine, ready);
+
             UniversityPixelTheme.setChip(skinBadges.get(skin), worn ? "장착 중" : mine ? "보유" : "미보유",
                     worn ? UniversityPixelTheme.MINT : mine ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL_LIGHT);
         }
     }
 
+    // 배경 스킨의 보유 및 장착 상태에 따라 버튼을 설정한다.
+    private void updateSkinButton(
+            BackgroundSkin skin,
+            PixelButton button,
+            int coins,
+            boolean worn,
+            boolean mine,
+            boolean ready) {
+
+        // 현재 장착 중인 배경
+        if (worn) {
+            button.setText("장착 중");
+            button.setEnabled(false);
+            button.positive();
+
+        // 보유 중이지만 장착하지 않은 배경
+        } else if (mine) {
+            button.setText("장착하기");
+            button.setEnabled(true);
+            button.positive();
+
+        // 겨울 배경 리소스가 준비되지 않은 경우
+        } else if (skin == BackgroundSkin.WINTER && !ready) {
+            button.setText("겨울 배경 PNG 확인 필요");
+            button.setEnabled(false);
+            button.secondary();
+
+        // 구매 가능한 배경
+        } else {
+            button.setText("구매하기 · " + skin.getPrice() + " COINS");
+            button.setEnabled(coins >= skin.getPrice());
+            button.primary();
+        }
+    }
+
     public void setSkinSelectionAction(Consumer<BackgroundSkin> listener) { skinSelection = listener; }
 
-    /** 픽셀 경계를 유지해 캐릭터 원화를 상점 카드 크기로 표시한다. */
+    // 픽셀 경계를 유지해 캐릭터 원화를 상점 카드 크기로 표시한다.
     private static BufferedImage portrait(String id) {
         String path = "/ui/characters/" + id + ".png";
         try (InputStream stream = CharacterShopPanel.class.getResourceAsStream(path)) {
@@ -212,17 +243,48 @@ public final class CharacterShopPanel extends kr.ac.jbnu.se.tetris.ui.seongeun.c
             JButton action = entry.getValue();
             PixelButton button = (PixelButton) action;
             boolean equipped = id.equals(selected), mine = owned.contains(id);
-            if (equipped) { action.setText("장착 중"); action.setEnabled(false); }
-            else if (mine) { action.setText("장착하기"); action.setEnabled(true); button.positive(); }
-            else { int cost = prices.get(id);
-                   action.setText(coins >= cost ? "구입  " + cost + " COINS" : cost + " COINS · 코인 부족");
-                   action.setEnabled(coins >= cost); button.primary(); }
+            updateCharacterButton(button, id, coins, equipped, mine, prices);
             UniversityPixelTheme.setChip(badges.get(id), equipped ? "장착 중" : mine ? "보유" : "미보유",
                     equipped ? UniversityPixelTheme.MINT : mine ? UniversityPixelTheme.LINE : UniversityPixelTheme.PANEL_LIGHT);
             // Rounded card border remains intact when an equipped character changes.
             cards.get(id).repaint();
         }
     }
+
+    private void updateCharacterButton(
+            PixelButton button,
+            String id,
+            int coins,
+            boolean equipped,
+            boolean mine,
+            Map<String, Integer> prices) {
+
+        // 현재 장착 중인 캐릭터
+        if (equipped) {
+            button.setText("장착 중");
+            button.setEnabled(false);
+
+        // 보유 중이지만 장착하지 않은 캐릭터
+        } else if (mine) {
+            button.setText("장착하기");
+            button.setEnabled(true);
+            button.positive();
+
+        // 구매하지 않은 캐릭터
+        } else {
+            int cost = prices.get(id);
+
+            button.setText(
+                    coins >= cost
+                            ? "구입  " + cost + " COINS"
+                            : cost + " COINS · 코인 부족"
+            );
+
+            button.setEnabled(coins >= cost);
+            button.primary();
+        }
+    }
+
     public void setSelectionAction(Consumer<String> listener) { selection = listener; }
     public void setBackAction(java.awt.event.ActionListener listener) { back.addActionListener(listener); }
 }

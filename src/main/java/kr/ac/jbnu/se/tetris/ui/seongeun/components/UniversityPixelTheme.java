@@ -195,18 +195,24 @@ public final class UniversityPixelTheme {
 
         }
 
-        if (component instanceof Container) {
-
-            for (Component child : ((Container) component).getComponents()) apply(child);
-
-        }
+        // 자식 컴포넌트에 테마 적용
+        applyChildren(component);
 
     }
 
+    // 컨테이너에 포함된 자식 컴포넌트에도 테마를 적용한다.
+    private static void applyChildren(Component component) {
 
+        if (!(component instanceof Container)) {
+            return;
+        }
 
-    /** 대화상자·툴팁·체크박스처럼 Swing이 직접 만드는 위젯도 같은 색으로 보이게 한다. */
+        for (Component child : ((Container) component).getComponents()) {
+            apply(child);
+        }
+    }
 
+    // 대화상자·툴팁·체크박스처럼 Swing이 직접 만드는 위젯도 같은 색으로 보이게 한다.
     public static void installDefaults() {
         // Swing-created dialogs, lists, combo boxes, tabs etc. also share the game font.
         // Take a snapshot of keys before writing back to UIManager.
