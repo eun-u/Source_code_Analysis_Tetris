@@ -2,19 +2,18 @@ package kr.ac.jbnu.se.tetris.core;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** 순서 있는 명령 처리와 UI용 스냅샷 조회를 제공하는 동기화된 순수 게임 규칙 엔진 */
 public final class GameEngine implements GameActionSink {
     private static final int MAX_PENDING_GARBAGE_LINES = 220;
-    private static final List<String> ITEM_IDS = Arrays.asList("damage_boost", "garbage_bomb",
-            "heal", "shield", "line_cleaner", "fever_charge", "time_warp", "nullify");
+    private static final List<String> ITEM_IDS = ItemIds.ALL;
     private final String actorId;
     private final PieceGenerator generator;
     private final Board board = new Board();
