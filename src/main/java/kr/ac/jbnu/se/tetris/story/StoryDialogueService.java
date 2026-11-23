@@ -8,6 +8,9 @@ import java.util.Set;
 
 /** 전투 상태와 확정 진행 결과를 화면용 대사 이벤트로 바꾼다. */
 public final class StoryDialogueService {
+    private static final String LEVEL_3_MONSTER = "level_3_monster";
+    private static final String LEVEL_4_MONSTER = "level_4_monster";
+    private static final String LEVEL_8_MONSTER = "level_8_monster";
     private static final int MONSTER_HP_PERCENT = 50;
     private static final int MONSTER_CRISIS_PERCENT = 20;
     /** 전투 시작 뒤 이 시간이 지나면 플레이어와 몬스터가 한 번 대화한다. */
@@ -101,28 +104,31 @@ public final class StoryDialogueService {
         if (disposition == null || before == null || after == null) {
             throw new IllegalArgumentException("Disposition and campaign progress are required");
         }
-        if (disposition != StoryProgressService.ResultDisposition.APPLIED_WIN
-                && disposition != StoryProgressService.ResultDisposition.APPLIED_LOSS) {
+        boolean win = disposition == StoryProgressService.ResultDisposition.APPLIED_WIN;
+        if (!win && disposition != StoryProgressService.ResultDisposition.APPLIED_LOSS) {
             return Collections.emptyList();
         }
-        if (!run.isFinished()
-                || run.isWon() != (disposition == StoryProgressService.ResultDisposition.APPLIED_WIN)
-                || !resultTriggeredRuns.add(run.getRunId())) {
+        if (!run.isFinished() || run.isWon() != win || !resultTriggeredRuns.add(run.getRunId())) {
             return Collections.emptyList();
         }
+        List<StoryDialogueCue> cues = win ? winCues(run, before, after) : lossCues(run);
+        return Collections.unmodifiableList(cues);
+    }
 
+    /** 플레이어가 진 결과: 몬스터(승리)와 플레이어(패배) 대사 */
+    private List<StoryDialogueCue> lossCues(EncounterRun run) {
         List<StoryDialogueCue> cues = new ArrayList<StoryDialogueCue>();
-        if (disposition == StoryProgressService.ResultDisposition.APPLIED_LOSS) {
-            // 플레이어가 진 결과: 몬스터(승리)와 플레이어(패배) 대사
-            addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, MONSTER, run.getEncounterId(), "playerLoss.monster");
-            addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, PLAYER, run.getEncounterId(), "playerLoss.player");
-            if (cues.isEmpty()) {
-                cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, lossSpeaker(run), lossLine(run)));
-            }
-            return Collections.unmodifiableList(cues);
+        addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, MONSTER, run.getEncounterId(), "playerLoss.monster");
+        addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, PLAYER, run.getEncounterId(), "playerLoss.player");
+        if (cues.isEmpty()) {
+            cues.add(cue(StoryDialogueCue.Trigger.ENCOUNTER_LOSS, run, lossSpeaker(run), lossLine(run)));
         }
+        return cues;
+    }
 
-        // 플레이어가 이긴 결과: 몬스터(패배)와 플레이어(승리) 대사
+    /** 플레이어가 이긴 결과: 몬스터(패배)와 플레이어(승리) 대사, 최초 클리어면 진행 단계 대사 추가 */
+    private List<StoryDialogueCue> winCues(EncounterRun run, CampaignProgress before, CampaignProgress after) {
+        List<StoryDialogueCue> cues = new ArrayList<StoryDialogueCue>();
         addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_WIN, run, MONSTER, run.getEncounterId(), "playerWin.monster");
         addLine(cues, StoryDialogueCue.Trigger.ENCOUNTER_WIN, run, PLAYER, run.getEncounterId(), "playerWin.player");
         if (cues.isEmpty()) {
@@ -130,23 +136,26 @@ public final class StoryDialogueService {
         }
         boolean firstClear = !before.isEncounterCleared(run.getEncounterId())
                 && after.isEncounterCleared(run.getEncounterId());
-        if (firstClear) {
-            int midpoint = (encounterCount() + 1) / 2;
-            if (before.getCompletedEncounterIds().size() < midpoint
-                    && after.getCompletedEncounterIds().size() >= midpoint) {
-                cues.add(cue(StoryDialogueCue.Trigger.HALFWAY, run,
-                        "내레이션", "여기까지는 준비 운동이었다. 이제부터 시작이다!"));
-            }
-            if (!before.isStageCleared(run.getStageId()) && after.isStageCleared(run.getStageId())) {
-                cues.add(cue(StoryDialogueCue.Trigger.STAGE_CLEAR, run,
-                        "내레이션", stageClearLine(run)));
-            }
-            if (after.getCompletedEncounterIds().size() == encounterCount()) {
-                cues.add(cue(StoryDialogueCue.Trigger.CAMPAIGN_CLEAR, run,
-                        "내레이션", "마침내 취업에 성공했다! 끝없이 쌓인 과제와 면접을 넘어, 첫 출근의 문이 열렸다!"));
-            }
+        if (firstClear) addProgressCues(cues, run, before, after);
+        return cues;
+    }
+
+    private void addProgressCues(List<StoryDialogueCue> cues, EncounterRun run,
+                                 CampaignProgress before, CampaignProgress after) {
+        int midpoint = (encounterCount() + 1) / 2;
+        if (before.getCompletedEncounterIds().size() < midpoint
+                && after.getCompletedEncounterIds().size() >= midpoint) {
+            cues.add(cue(StoryDialogueCue.Trigger.HALFWAY, run,
+                    "내레이션", "여기까지는 준비 운동이었다. 이제부터 시작이다!"));
         }
-        return Collections.unmodifiableList(cues);
+        if (!before.isStageCleared(run.getStageId()) && after.isStageCleared(run.getStageId())) {
+            cues.add(cue(StoryDialogueCue.Trigger.STAGE_CLEAR, run,
+                    "내레이션", stageClearLine(run)));
+        }
+        if (after.getCompletedEncounterIds().size() == encounterCount()) {
+            cues.add(cue(StoryDialogueCue.Trigger.CAMPAIGN_CLEAR, run,
+                    "내레이션", "마침내 취업에 성공했다! 끝없이 쌓인 과제와 면접을 넘어, 첫 출근의 문이 열렸다!"));
+        }
     }
 
     /** 대사 파일의 키 목록(철자 검증용). */
@@ -182,36 +191,36 @@ public final class StoryDialogueService {
     // 기획·프론트엔드 담당자는 트리거 횟수, HP 기준과 타이밍, 대사 문구·화자,
     // 화면 배치·디자인을 모두 자유롭게 바꾸어도 된다. 아래 문구는 연결용 예시다.
     private static String hpSpeaker(EncounterRun run) {
-        return "level_4_monster".equals(run.getEncounterId()) ? "플레이어" : "몬스터";
+        return LEVEL_4_MONSTER.equals(run.getEncounterId()) ? "플레이어" : "몬스터";
     }
 
     private static String hpLine(EncounterRun run) {
         String id = run.getEncounterId();
-        if ("level_3_monster".equals(id)) return "오늘은 오픈북이 아니다 으하하!";
-        if ("level_4_monster".equals(id)) return "벼락치기의 힘!~으어어!";
-        if ("level_8_monster".equals(id)) return "지원동기를 말해라 이녀석!!!!!";
+        if (LEVEL_3_MONSTER.equals(id)) return "오늘은 오픈북이 아니다 으하하!";
+        if (LEVEL_4_MONSTER.equals(id)) return "벼락치기의 힘!~으어어!";
+        if (LEVEL_8_MONSTER.equals(id)) return "지원동기를 말해라 이녀석!!!!!";
         return "이 정도면 제법이군. 하지만 아직 끝나지 않았다!";
     }
 
     private static String winSpeaker(EncounterRun run) {
-        return "level_3_monster".equals(run.getEncounterId()) ? "몬스터" : "플레이어";
+        return LEVEL_3_MONSTER.equals(run.getEncounterId()) ? "몬스터" : "플레이어";
     }
 
     private static String winLine(EncounterRun run) {
-        if ("level_3_monster".equals(run.getEncounterId())) {
+        if (LEVEL_3_MONSTER.equals(run.getEncounterId())) {
             return "이녀석 제법이구만… 대학원에 들어오지 않겠나?";
         }
         return "후….이번 학기는 살았다…";
     }
 
     private static String lossSpeaker(EncounterRun run) {
-        return "level_4_monster".equals(run.getEncounterId())
-                || "level_8_monster".equals(run.getEncounterId()) ? "몬스터" : "내레이션";
+        return LEVEL_4_MONSTER.equals(run.getEncounterId())
+                || LEVEL_8_MONSTER.equals(run.getEncounterId()) ? "몬스터" : "내레이션";
     }
 
     private String lossLine(EncounterRun run) {
-        if ("level_4_monster".equals(run.getEncounterId())) return "재수강을 하려고 이려냐!!!!";
-        if ("level_8_monster".equals(run.getEncounterId())) return "넌 면접 점수 0점이다. ㅋ";
+        if (LEVEL_4_MONSTER.equals(run.getEncounterId())) return "재수강을 하려고 이려냐!!!!";
+        if (LEVEL_8_MONSTER.equals(run.getEncounterId())) return "넌 면접 점수 0점이다. ㅋ";
         if (stageNumber(run) == 2) return "졸업에 실패했다. 취업의 문은 아직 멀고 높았다…";
         if (stageNumber(run) == 3) return "취업의 문은 높았다. 다음 면접에서 다시 도전하자…";
         return "이번 학기는 여기까지인가… 다시 도전하자!";
