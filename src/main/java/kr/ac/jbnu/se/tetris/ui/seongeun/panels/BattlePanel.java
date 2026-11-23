@@ -61,12 +61,13 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.OreFlightLayer;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelArena;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelButton;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
+import kr.ac.jbnu.se.tetris.ui.seongeun.components.StoryBattleFrame;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
 
 /**
- * PvE에서는 왼쪽 전투 무대, 가운데 플레이 보드, 오른쪽 조작 정보를 강의동 외벽으로 묶는다.
+ * PvE에서는 양쪽 캐릭터 사이에 크기가 다른 두 보드와 HOLD/NEXT를 배치한다.
  * 온라인에서는 서로 같은 크기의 보드 두 개와 가운데 전투 무대를 유지한다.
  */
 public class BattlePanel extends JPanel implements Scrollable {
@@ -129,9 +130,9 @@ public class BattlePanel extends JPanel implements Scrollable {
                     boolean hover = getModel().isRollover();
 
                     // 두꺼운 둥근 어두운 프레임 + 안쪽 패널
-                    g.setColor(new Color(0x101714));
+                    g.setColor(new Color(0x422B22));
                     g.fillRoundRect(0, 0, w, h - 2, 18, 18);
-                    g.setColor(new Color(0x929E8B));
+                    g.setColor(new Color(0xE0B17D));
                     g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
                     g.setColor(pressed ? new Color(0x253529)
                             : hover ? new Color(0x425B4C) : new Color(0x34443C));
@@ -313,22 +314,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JPanel pveFeverPanel = new JPanel(null) {
         @Override protected void paintComponent(Graphics graphics) {
             super.paintComponent(graphics);
-            Graphics2D g = (Graphics2D) graphics.create();
-            try {
-                int w = getWidth(), h = getHeight();
-                if (w < 5 || h < 5) return;
-                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g.setColor(new Color(0x273A35));
-                g.fillRoundRect(0, 0, w, h, 22, 22);
-                g.setStroke(new BasicStroke(2f));
-                g.setColor(new Color(0x13201D));
-                g.drawRoundRect(1, 1, w - 3, h - 3, 22, 22);
-                g.setStroke(new BasicStroke(1.2f));
-                g.setColor(new Color(0x9AAB9B));
-                g.drawRoundRect(4, 4, w - 9, h - 9, 17, 17);
-            } finally {
-                g.dispose();
-            }
+            StoryBattleFrame.drawFever((Graphics2D) graphics, getWidth(), getHeight());
         }
     };
     private final MiniPiecePreview pveHoldPreview = new MiniPiecePreview("HOLD");
@@ -419,21 +405,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static JPanel battlePreviewFrame(LayoutManager layout) {
         JPanel panel = new JPanel(layout) {
             @Override protected void paintComponent(Graphics graphics) {
-                Graphics2D g = (Graphics2D) graphics.create();
-                try {
-                    int w = getWidth(), h = getHeight();
-                    if (w < 10 || h < 10) return;
-                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setColor(new Color(0x302018));
-                    g.fillRoundRect(0, 0, w, h, 20, 20);
-                    g.setColor(new Color(0xF2D19D));
-                    g.fillRoundRect(3, 3, w - 6, h - 6, 16, 16);
-                    g.setColor(new Color(0xFFF8E9));
-                    g.fillRoundRect(6, 6, w - 12, h - 12, 13, 13);
-                    g.setColor(new Color(255, 255, 255, 72));
-                    g.setStroke(new BasicStroke(1.4f));
-                    g.drawRoundRect(5, 5, w - 11, h - 11, 14, 14);
-                } finally { g.dispose(); }
+                StoryBattleFrame.drawPreview((Graphics2D) graphics, getWidth(), getHeight());
             }
         };
         panel.setOpaque(false);
@@ -441,12 +413,12 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private void buildPveHud() {
-        // PvE: the panel draws its own rounded outer frame; no beige Swing border.
+        // PvE previews keep their live piece data in the new illustrated layout.
         pveHoldPanel.setOpaque(false);
         pveHoldPanel.setBorder(new EmptyBorder(7, 8, 8, 8));
         JLabel holdTitle = label("HOLD");
         holdTitle.setHorizontalAlignment(SwingConstants.CENTER);
-        holdTitle.setForeground(CampusArt.NAVY);
+        holdTitle.setForeground(new Color(0xFFF5E4));
         holdTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         pveHoldPanel.add(holdTitle, BorderLayout.NORTH);
         pveHoldPreview.setBattleHudStyle(true);
@@ -456,7 +428,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveNextPanel.setOpaque(false);
         pveNextPanel.setBorder(new EmptyBorder(7, 7, 9, 7));
         JLabel nextTitle = label("NEXT");
-        nextTitle.setForeground(CampusArt.NAVY);
+        nextTitle.setForeground(new Color(0xFFF5E4));
         nextTitle.setFont(UniversityPixelTheme.font(14, Font.BOLD));
         nextTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         pveNextPanel.add(nextTitle);
@@ -617,20 +589,18 @@ public class BattlePanel extends JPanel implements Scrollable {
         BufferedImage backdrop = winterBackdrop != null ? winterBackdrop
                 : "graduation".equals(chapter) ? GRADUATION_BG
                 : "employment".equals(chapter) ? EMPLOYMENT_BG
-                : UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG;
+                : UNIVERSITY_BG != null ? UNIVERSITY_BG : UNIVERSITY_BATTLE_BG;
         if (backdrop != null) paintBackdropCover(g, backdrop, getWidth(), getHeight());
         else {
             g.setColor(new Color(0xA2D785));
             g.fillRect(0, 0, getWidth(), getHeight());
         }
-        Rectangle board = playerBoard.getBounds();
-        if (board.width > 0 && board.height > 0) {
-            g.setColor(new Color(0x27353B));
-            g.fillRoundRect(board.x - 8, board.y - 8,
-                    board.width + 16, board.height + 16, 14, 14);
-            g.setColor(new Color(0x88BEA0));
-            g.drawRoundRect(board.x - 8, board.y - 8,
-                    board.width + 15, board.height + 15, 14, 14);
+        // Frames are drawn behind the live Swing boards, never over the cells.
+        StoryBattleFrame.drawBoard(g, playerBoard.getBounds(), "내 보드");
+        if (enemyColumn.isVisible() && enemyBoard.getWidth() > 0) {
+            Rectangle opponent = SwingUtilities.convertRectangle(enemyBoard.getParent(),
+                    enemyBoard.getBounds(), this);
+            StoryBattleFrame.drawBoard(g, opponent, "상대 보드");
         }
     }
 
@@ -748,14 +718,17 @@ public class BattlePanel extends JPanel implements Scrollable {
             g.drawLine(joint, y + 3, joint, y + 6);
     }
 
-    /** PvE는 중앙 보드와 양옆 캐릭터, 하단 아이템 HUD를 사용한다. PvP는 기존 방식 유지. */
+    /** PvE: player's large board at left, smaller live monster board at right. PvP is unchanged. */
     @Override public void doLayout() {
         int width = getWidth(), height = getHeight();
         if (width <= 0 || height <= 0) return;
         oreFlights.setBounds(0, 0, width, height);
         int margin = pveMargin(width, height);
-        int side = margin + 12, top = margin + 68, bottom = margin + 23;
-        topBar.setBounds(side + 4, margin + 6, Math.max(0, width - side * 2 - 8), 50);
+        int side = margin + 12, top = margin + 68;
+        int bottom = online ? margin + 23 : Math.max(35, margin / 2 + 19);
+        int headerHeight = clamp(Math.round(height * .073f), 54, 74);
+        topBar.setBounds(side + 4, margin + 6, Math.max(0, width - side * 2 - 8),
+                online ? 50 : headerHeight);
         layoutStatusBanner();
         resultTestButton.setVisible(false);
         if (online) {
@@ -766,38 +739,48 @@ public class BattlePanel extends JPanel implements Scrollable {
         }
 
         showPveHud(true);
-        enemyColumn.setVisible(false);
-        enemyColumn.setBounds(0, 0, 0, 0);
+        enemyColumn.setVisible(true);
         playerName.setVisible(false);
         int interiorWidth = Math.max(0, width - side * 2);
-        int footerHeight = Math.max(88, Math.min(96, height / 9));
+        int footerHeight = clamp(Math.round(height * .123f), 96, 136);
         int footerTop = height - bottom - footerHeight;
-        int boardAreaHeight = Math.max(220, footerTop - top - 12);
-        int cell = Math.max(9, Math.min((boardAreaHeight - 8) / 22,
-                Math.max(9, (interiorWidth - 400) / 10)));
+        int boardAreaHeight = Math.max(220, footerTop - top - 30);
+        // Both boards are real 10x22 grids. The opposing one is deliberately smaller.
+        int cell = Math.max(9, Math.min(31, Math.min((boardAreaHeight - 10) / 22,
+                Math.max(9, (interiorWidth - 345) / 18))));
+        int enemyCell = Math.max(8, Math.round(cell * 0.78f));
         int boardWidth = cell * 10 + 2, boardHeight = cell * 22 + 2;
-        int boardX = (width - boardWidth) / 2;
-        int boardY = top + Math.max(0, (boardAreaHeight - boardHeight) / 2);
+        int enemyWidth = enemyCell * 10 + 2, enemyHeight = enemyCell * 22 + 2;
+        int hudWidth = clamp(Math.round(width * 0.082f), 73, 105);
+        int enemyX = side + interiorWidth - Math.max(87, Math.round(interiorWidth * 0.16f)) - enemyWidth;
+        int boardX = side + Math.max(128, Math.round(interiorWidth * 0.23f));
+        // Leave an actual gap between NEXT and the opponent frame at minimum window size.
+        boardX -= Math.max(0, boardX + boardWidth + 15 + hudWidth + 24 - enemyX);
+        int boardY = top + 26 + Math.max(0, (boardAreaHeight - boardHeight) / 2);
+        int enemyY = boardY + (boardHeight - enemyHeight) / 2;
         playerBoard.setBounds(boardX, boardY, boardWidth, boardHeight);
+        enemyColumn.setBounds(enemyX, enemyY, enemyWidth, enemyHeight);
+        enemyBoard.setBounds(0, 0, enemyWidth, enemyHeight);
         garbage.setBounds(boardX - METER - 4, boardY + 1,
                 METER, Math.max(0, boardHeight - 2));
 
-        // HOLD와 NEXT는 보드 상단 양옆에만 표시한다.
-        int hudWidth = clamp(Math.round(width * 0.097f), 96, 116);
-        pveHoldPanel.setBounds(boardX - hudWidth - 15, boardY + 18, hudWidth, 132);
-        pveNextPanel.setBounds(boardX + boardWidth + 15, boardY + 18, hudWidth, 282);
+        pveHoldPanel.setBounds(boardX - hudWidth - 15, boardY + 18, hudWidth, 133);
+        pveNextPanel.setBounds(boardX + boardWidth + 15, boardY + 18, hudWidth,
+                Math.min(282, Math.max(215, boardHeight - 28)));
 
-        // 한 개의 투명 무대에서 캐릭터를 보드 좌우에 그리고, 보드는 그 위에 그린다.
+        // Characters are drawn in the outside lanes by the transparent PixelArena.
         arena.setBounds(side, top, interiorWidth, Math.max(1, footerTop - top));
-        // Reserve the upper-left free lane so combat notices do not cover either character.
-        int noticeWidth = Math.max(150, Math.min(380, (interiorWidth - boardWidth) / 2 - 30));
+        arena.setStorySafeLanes(pveHoldPanel.getX() - side,
+                enemyX + enemyWidth - side);
+        int noticeWidth = Math.max(120, Math.min(270, boardX - side - 18));
         battleLog.setBounds(side + 12, top + 5, noticeWidth, BattleLog.preferredHeight());
         // 네 개의 아이템을 레퍼런스처럼 정사각형으로 묶고 우측에 정렬한다.
         int itemGap = 10;
-        int itemSize = Math.max(54, Math.min(84, (interiorWidth - 230 - itemGap * 3) / 4));
+        int itemSize = Math.min(clamp(Math.round(width * .082f), 54, 116),
+                footerHeight - 9);
         int itemGroupWidth = itemSize * 4 + itemGap * 3;
         int itemStartX = interiorWidth - itemGroupWidth;
-        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .38f), 190, 390),
+        int feverWidth = Math.min(clamp(Math.round(interiorWidth * .41f), 190, 570),
                 Math.max(130, itemStartX - 18));
         pveFooter.setBounds(side, footerTop, interiorWidth, footerHeight);
         pveFeverPanel.setBounds(0, 4, feverWidth, footerHeight - 7);
@@ -805,9 +788,10 @@ public class BattlePanel extends JPanel implements Scrollable {
             pveSlots[i].setBounds(itemStartX + i * (itemSize + itemGap),
                     footerHeight - itemSize - 2, itemSize, itemSize);
         }
-        pveFeverLabel.setBounds(16, 7, feverWidth - 32, 23);
-        pveFeverBar.setBounds(14, 33, Math.max(20, feverWidth - 99), 27);
-        pveFeverPercent.setBounds(feverWidth - 78, 29, 62, 30);
+        int feverLabelY = clamp((footerHeight - 7 - 64) / 2, 7, 32);
+        pveFeverLabel.setBounds(45, feverLabelY, feverWidth - 60, 23);
+        pveFeverBar.setBounds(14, feverLabelY + 29, Math.max(20, feverWidth - 99), 27);
+        pveFeverPercent.setBounds(feverWidth - 78, feverLabelY + 25, 62, 30);
     }
 
     private void showPveHud(boolean pve) {
@@ -816,6 +800,10 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveHoldPanel.setVisible(pve);
         pveNextPanel.setVisible(pve);
         pveFooter.setVisible(pve);
+        // Enemy game state is already updated in setState(); PvE now renders it too.
+        enemyColumn.setVisible(true);
+        enemyName.setVisible(!pve);
+        enemyStatus.setVisible(!pve);
         arena.setWidePve(pve);
         battleLog.setVisible(pve);
     }
@@ -1339,7 +1327,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (System.currentTimeMillis() >= feedbackUntil) {
             status.setForeground(UniversityPixelTheme.TEXT);
             status.setText(state.getStatus() == BattleState.Status.PAUSED ? "일시정지 · P 키로 계속"
-                    : "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기");
+                    : online ? "줄을 지우면 공격 · 여러 줄을 한 번에, 연속으로 지울수록 강해집니다 · ESC 포기"
+                    : "");
             layoutStatusBanner();
         }
     }

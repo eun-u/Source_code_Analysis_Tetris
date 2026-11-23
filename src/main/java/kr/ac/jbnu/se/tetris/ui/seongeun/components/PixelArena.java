@@ -98,6 +98,9 @@ public final class PixelArena extends JComponent {
     }
     private boolean online;
     private boolean widePve;
+    // Safe lanes are measured in arena-local coordinates and updated by BattlePanel layout.
+    // They keep character sprites and dialogue out of the HOLD/NEXT and live board regions.
+    private int storyLeftLaneEnd = -1, storyRightLaneStart = -1;
     private MonsterTier pattern = MonsterTier.NORMAL;
     private long playerHitAt = -1, monsterHitAt = -1, playerAttackAt = -1, monsterAttackAt = -1;
     private long playerPlacementAt = -1, monsterPlacementAt = -1;
@@ -199,6 +202,16 @@ public final class PixelArena extends JComponent {
     public void setWidePve(boolean enabled) {
         if (widePve == enabled) return;
         widePve = enabled;
+        repaint();
+    }
+
+    /** Reserved space beside the live story boards; online layout never uses it. */
+    public void setStorySafeLanes(int leftEnd, int rightStart) {
+        int left = Math.max(0, leftEnd);
+        int right = Math.max(left, rightStart);
+        if (storyLeftLaneEnd == left && storyRightLaneStart == right) return;
+        storyLeftLaneEnd = left;
+        storyRightLaneStart = right;
         repaint();
     }
 
@@ -398,19 +411,25 @@ public final class PixelArena extends JComponent {
         if (online || !widePve || dialogueSpeaker == null || dialogueText == null
                 || now >= dialogueUntil) return;
         boolean player = dialogueSpeaker == DialogueSpeaker.PLAYER;
-        int laneWidth = Math.max(160, Math.round(s.w * 0.35f));
-        // NEXT preview occupies part of the right lane; monster dialogue uses a narrower card.
-        int width = Math.max(140, Math.min(player ? 304 : 236, laneWidth - 18));
-        g.setFont(UniversityPixelTheme.font(16, Font.BOLD));
+        // Use the actual free lane calculated by the Swing layout. A fixed 190px
+        // bubble would start underneath the opposing board and be cut off by it.
+        int laneWidth = player && storyLeftLaneEnd > 0 ? storyLeftLaneEnd - 16
+                : !player && storyRightLaneStart > 0 ? s.w - storyRightLaneStart - 16
+                : Math.max(130, Math.round(s.w * 0.19f)) - 12;
+        int width = Math.max(70, Math.min(player ? 210 : 190, laneWidth));
+        int textSize = width < 130 ? 13 : width < 165 ? 14 : 16;
+        int lineHeight = textSize + 5;
+        g.setFont(UniversityPixelTheme.font(textSize, Font.BOLD));
         FontMetrics fm = g.getFontMetrics();
-        List<String> lines = speechLines(dialogueText, fm, width - 28, 3);
-        int bodyHeight = 40 + lines.size() * 23;
+        List<String> lines = speechLines(dialogueText, fm, width - 24, 8);
+        int bodyHeight = 37 + lines.size() * lineHeight;
         int actorX = player ? s.playerCenterX() : s.monsterX;
         int actorTop = player ? s.portraitY : s.monsterFoot - s.monsterSize;
-        int zoneX = player ? 12 : s.w - width - 12;
+        int zoneX = player ? 8 : storyRightLaneStart > 0
+                ? storyRightLaneStart + 8 : s.w - width - 8;
         // Keep bubbles above the HP bars and sprite silhouettes rather than covering them.
         int y = Math.max(12, Math.min(s.h - bodyHeight - 25, actorTop - bodyHeight - 58));
-        int tailX = clampSpeech(actorX, zoneX + 26, zoneX + width - 26);
+        int tailX = clampSpeech(actorX, zoneX + width / 4, zoneX + width * 3 / 4);
         int tailY = Math.min(s.h - 5, y + bodyHeight + 21);
         int baseX = clampSpeech(tailX, zoneX + 18, zoneX + width - 18);
 
@@ -438,11 +457,11 @@ public final class PixelArena extends JComponent {
             bubble.setColor(player ? new Color(0x08795D) : new Color(0xA34235));
             bubble.drawString(player ? "플레이어" : "몬스터", zoneX + 15, y + 22);
             bubble.setColor(new Color(0x14264B));
-            bubble.setFont(UniversityPixelTheme.font(16, Font.BOLD));
-            int baseline = y + 43;
+            bubble.setFont(UniversityPixelTheme.font(textSize, Font.BOLD));
+            int baseline = y + 37;
             for (String line : lines) {
                 bubble.drawString(line, zoneX + 15, baseline);
-                baseline += 23;
+                baseline += lineHeight;
             }
         } finally { bubble.dispose(); }
     }
@@ -490,12 +509,23 @@ public final class PixelArena extends JComponent {
                 top = 40;
                 bottom = h - 22;
                 horizon = h - 100;
-                monsterSize = Math.max(64, Math.min(Math.round(w * 0.18f), Math.round(h * 0.29f)));
-                monsterX = w - Math.max(105, Math.round(w * 0.12f));
+                int naturalMonsterSize = Math.max(64, Math.min(Math.round(w * 0.18f), Math.round(h * 0.29f)));
+                if (storyRightLaneStart > 0) {
+                    // Reserve a little space at each side so wide enemy sprites cannot
+                    // disappear behind the active board or the right window edge.
+                    monsterSize = Math.min(naturalMonsterSize,
+                            Math.max(60, w - storyRightLaneStart - 22));
+                    int laneStart = storyRightLaneStart + 9;
+                    int laneEnd = w - 12;
+                    monsterX = (laneStart + laneEnd) / 2;
+                } else {
+                    monsterSize = naturalMonsterSize;
+                    monsterX = w - Math.max(78, Math.round(w * 0.07f));
+                }
                 monsterFoot = h - 45;
-                portraitW = Math.max(56, Math.min(Math.round(w * 0.16f), Math.round(h * 0.23f)));
+                portraitW = Math.max(56, Math.min(Math.round(w * 0.15f), Math.round(h * 0.23f)));
                 portraitH = portraitW * 7 / 6;
-                portraitX = Math.max(12, Math.round(w * 0.12f) - portraitW / 2);
+                portraitX = Math.max(8, Math.round(w * 0.095f) - portraitW / 2);
                 portraitY = monsterFoot - portraitH;
                 return;
             }
