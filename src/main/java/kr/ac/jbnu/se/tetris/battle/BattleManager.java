@@ -22,6 +22,7 @@ import kr.ac.jbnu.se.tetris.item.ItemIds;
 /** 가상 시간, 참가자 상태, 공격과 가비지를 처리하는 전투 규칙 소유자. */
 public final class BattleManager {
     private static final List<String> ITEM_IDS = ItemIds.ALL;
+    private static final String INVALID_TARGET_REASON = "INVALID_TARGET";
     private final Map<String, Participant> participants = new LinkedHashMap<String, Participant>();
     private final DamageManager damageManager = new DamageManager();
     private final HPManager hpManager = new HPManager();
@@ -159,7 +160,7 @@ public final class BattleManager {
         if (source.eliminated) return reject("ACTOR_ELIMINATED", actorId);
         if (use == null) return reject("INVALID_PAYLOAD", actorId);
         Participant target = participants.get(use.getTargetActorId());
-        if (target == null || target.eliminated) return reject("INVALID_TARGET", actorId);
+        if (target == null || target.eliminated) return reject(INVALID_TARGET_REASON, actorId);
         GameAction.TargetCell cell = use.getTargetCell();
         if (cell != null && (cell.getX() >= 10 || cell.getY() >= 22))
             return reject("INVALID_TARGET_CELL", actorId);
@@ -170,9 +171,9 @@ public final class BattleManager {
         if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id)) return reject("AUTO_ITEM", actorId);
         boolean self = source == target;
         if ((ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id)) == self)
-            return reject("INVALID_TARGET", actorId);
+            return reject(INVALID_TARGET_REASON, actorId);
         if (!(ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id)) && !self)
-            return reject("INVALID_TARGET", actorId);
+            return reject(INVALID_TARGET_REASON, actorId);
         if (ItemIds.HEAL.equals(id) && source.hp == source.spec.getMaxHp()) return reject("NO_EFFECT", actorId);
         if (ItemIds.TIME_WARP.equals(id) && source.warpUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
         List<BattleEvent> events = new ArrayList<BattleEvent>();
