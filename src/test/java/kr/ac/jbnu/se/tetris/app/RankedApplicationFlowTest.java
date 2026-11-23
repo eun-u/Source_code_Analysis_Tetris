@@ -72,82 +72,82 @@ public final class RankedApplicationFlowTest {
             System.setProperty(keys[1], "http://127.0.0.1:" + http.getAddress().getPort());
             System.setProperty(keys[2], "sb_publishable_fixture");
             System.setProperty(keys[3], "supabase");
-            SeongeunApplication[] app = new SeongeunApplication[1];
             try {
-                onEdt(() -> app[0] = new SeongeunApplication(new Random(7), null));
-                check("LOBBY".equals(app[0].getCurrentScreen()), "App must start in the lobby");
-                onEdt(() -> {
-                    button(child(app[0].getScreens(), MainLobbyPanel.class), "설정").doClick();
-                    button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").doClick();
-                });
-                check("LOGIN".equals(app[0].getCurrentScreen()), "Account login must open from settings");
-                onEdt(() -> button(child(app[0].getScreens(), LoginPanel.class), "설정으로").doClick());
-                check("SETTINGS".equals(app[0].getCurrentScreen()), "Account cancel must return to settings");
-                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "돌아가기").doClick());
-                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
-                check("LOGIN".equals(app[0].getCurrentScreen()), "Online entry must request login directly");
-                onEdt(() -> app[0].getScreens().getActionMap().get("navigate-back")
-                        .actionPerformed(new java.awt.event.ActionEvent(app[0].getScreens(), 0, "escape")));
-                check("LOBBY".equals(app[0].getCurrentScreen()), "Login ESC must return to lobby");
-                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
-                int completedBeforeCancel = app[0].getCompletedAuthRequests();
-                login(app[0], "cancel_user", "password-a");
-                check(canceledLoginStarted.await(5, TimeUnit.SECONDS), "Canceled login did not start");
-                onEdt(() -> {
-                    button(child(app[0].getScreens(), LoginPanel.class), "취소").doClick();
-                    button(child(app[0].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick();
-                });
-                releaseCanceledLogin.countDown();
-                check(canceledLoginAnswered.await(5, TimeUnit.SECONDS), "Canceled login did not finish");
-                await(() -> app[0].getCompletedAuthRequests() > completedBeforeCancel,
-                        "Canceled login completion callback");
-                check("LOGIN".equals(app[0].getCurrentScreen()) && !app[0].isSignedIn(),
-                        "Canceled login must not sign in or follow a later destination");
-                onEdt(() -> button(child(app[0].getScreens(), LoginPanel.class), "취소").doClick());
-                onEdt(() -> {
-                    button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
-                    button(child(app[0].getScreens(), LoginPanel.class), "회원가입").doClick();
-                });
-                check("SIGN_UP".equals(app[0].getCurrentScreen()), "Signup must preserve online destination");
-                onEdt(() -> button(child(app[0].getScreens(), kr.ac.jbnu.se.tetris.ui.seongeun.panels.SignUpPanel.class),
-                        "돌아가기").doClick());
-                login(app[0], "Player_01", "password-a");
-                await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen()) && app[0].isOnlineConnected(),
-                        "Login must resume online room entry");
-                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "돌아가기").doClick());
-                check(socketClosed.await(5, TimeUnit.SECONDS), "Old account socket remained open");
-                await(() -> !app[0].isOnlineConnected() && "LOBBY".equals(app[0].getCurrentScreen()),
-                        "Online room exit");
-                onEdt(() -> {
-                    button(child(app[0].getScreens(), MainLobbyPanel.class), "설정").doClick();
-                    button(child(app[0].getScreens(), SettingsPanel.class), "로그아웃").doClick();
-                });
-                await(() -> button(child(app[0].getScreens(), SettingsPanel.class), "로그인 / 가입").isEnabled(),
-                        "Settings account logout");
-                onEdt(() -> button(child(app[0].getScreens(), SettingsPanel.class), "돌아가기").doClick());
-                onEdt(() -> button(child(app[0].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick());
-                check("LOGIN".equals(app[0].getCurrentScreen()), "Ranking entry must request login directly");
-                login(app[0], "b@example.test", "password-b");
-                await(() -> {
-                    LeaderboardPanel panel = child(app[0].getScreens(), LeaderboardPanel.class);
-                    JTable table = child(panel, JTable.class);
-                    return "LEADERBOARD".equals(app[0].getCurrentScreen())
-                            && table.getRowCount() == 1 && "Player B".equals(table.getValueAt(0, 1));
-                }, "Login must resume ranking");
-                check("Bearer token-B".equals(rankBearer.get()), "Leaderboard used old account token");
-                onEdt(() -> {
-                    button(child(app[0].getScreens(), LeaderboardPanel.class), "돌아가기").doClick();
-                    button(child(app[0].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
-                });
-                await(() -> "ROOM_LIST".equals(app[0].getCurrentScreen())
-                        && button(child(app[0].getScreens(), RoomListPanel.class), "다시 로그인") != null,
-                        "Rejected ranked token must request login instead of repeating the same token");
-                onEdt(() -> button(child(app[0].getScreens(), RoomListPanel.class), "다시 로그인").doClick());
-                check("LOGIN".equals(app[0].getCurrentScreen()), "Rejected token retry must open login");
-                if (peerFailure.get() != null) throw new AssertionError("WebSocket fixture failure", peerFailure.get());
-                System.out.println("PASS RankedApplicationFlowTest");
+                try (EdtApplicationFixture fixture = EdtApplicationFixture.open(new Random(7), null)) {
+                    SeongeunApplication app = fixture.get();
+                    check("LOBBY".equals(app.getCurrentScreen()), "App must start in the lobby");
+                    onEdt(() -> {
+                        button(child(app.getScreens(), MainLobbyPanel.class), "설정").doClick();
+                        button(child(app.getScreens(), SettingsPanel.class), "로그인 / 가입").doClick();
+                    });
+                    check("LOGIN".equals(app.getCurrentScreen()), "Account login must open from settings");
+                    onEdt(() -> button(child(app.getScreens(), LoginPanel.class), "설정으로").doClick());
+                    check("SETTINGS".equals(app.getCurrentScreen()), "Account cancel must return to settings");
+                    onEdt(() -> button(child(app.getScreens(), SettingsPanel.class), "돌아가기").doClick());
+                    onEdt(() -> button(child(app.getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
+                    check("LOGIN".equals(app.getCurrentScreen()), "Online entry must request login directly");
+                    onEdt(() -> app.getScreens().getActionMap().get("navigate-back")
+                            .actionPerformed(new java.awt.event.ActionEvent(app.getScreens(), 0, "escape")));
+                    check("LOBBY".equals(app.getCurrentScreen()), "Login ESC must return to lobby");
+                    onEdt(() -> button(child(app.getScreens(), MainLobbyPanel.class), "온라인 대전").doClick());
+                    int completedBeforeCancel = app.getCompletedAuthRequests();
+                    login(app, "cancel_user", "password-a");
+                    check(canceledLoginStarted.await(5, TimeUnit.SECONDS), "Canceled login did not start");
+                    onEdt(() -> {
+                        button(child(app.getScreens(), LoginPanel.class), "취소").doClick();
+                        button(child(app.getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick();
+                    });
+                    releaseCanceledLogin.countDown();
+                    check(canceledLoginAnswered.await(5, TimeUnit.SECONDS), "Canceled login did not finish");
+                    await(() -> app.getCompletedAuthRequests() > completedBeforeCancel,
+                            "Canceled login completion callback");
+                    check("LOGIN".equals(app.getCurrentScreen()) && !app.isSignedIn(),
+                            "Canceled login must not sign in or follow a later destination");
+                    onEdt(() -> button(child(app.getScreens(), LoginPanel.class), "취소").doClick());
+                    onEdt(() -> {
+                        button(child(app.getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
+                        button(child(app.getScreens(), LoginPanel.class), "회원가입").doClick();
+                    });
+                    check("SIGN_UP".equals(app.getCurrentScreen()), "Signup must preserve online destination");
+                    onEdt(() -> button(child(app.getScreens(), kr.ac.jbnu.se.tetris.ui.seongeun.panels.SignUpPanel.class),
+                            "돌아가기").doClick());
+                    login(app, "Player_01", "password-a");
+                    await(() -> "ROOM_LIST".equals(app.getCurrentScreen()) && app.isOnlineConnected(),
+                            "Login must resume online room entry");
+                    onEdt(() -> button(child(app.getScreens(), RoomListPanel.class), "돌아가기").doClick());
+                    check(socketClosed.await(5, TimeUnit.SECONDS), "Old account socket remained open");
+                    await(() -> !app.isOnlineConnected() && "LOBBY".equals(app.getCurrentScreen()),
+                            "Online room exit");
+                    onEdt(() -> {
+                        button(child(app.getScreens(), MainLobbyPanel.class), "설정").doClick();
+                        button(child(app.getScreens(), SettingsPanel.class), "로그아웃").doClick();
+                    });
+                    await(() -> button(child(app.getScreens(), SettingsPanel.class), "로그인 / 가입").isEnabled(),
+                            "Settings account logout");
+                    onEdt(() -> button(child(app.getScreens(), SettingsPanel.class), "돌아가기").doClick());
+                    onEdt(() -> button(child(app.getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick());
+                    check("LOGIN".equals(app.getCurrentScreen()), "Ranking entry must request login directly");
+                    login(app, "b@example.test", "password-b");
+                    await(() -> {
+                        LeaderboardPanel panel = child(app.getScreens(), LeaderboardPanel.class);
+                        JTable table = child(panel, JTable.class);
+                        return "LEADERBOARD".equals(app.getCurrentScreen())
+                                && table.getRowCount() == 1 && "Player B".equals(table.getValueAt(0, 1));
+                    }, "Login must resume ranking");
+                    check("Bearer token-B".equals(rankBearer.get()), "Leaderboard used old account token");
+                    onEdt(() -> {
+                        button(child(app.getScreens(), LeaderboardPanel.class), "돌아가기").doClick();
+                        button(child(app.getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
+                    });
+                    await(() -> "ROOM_LIST".equals(app.getCurrentScreen())
+                            && button(child(app.getScreens(), RoomListPanel.class), "다시 로그인") != null,
+                            "Rejected ranked token must request login instead of repeating the same token");
+                    onEdt(() -> button(child(app.getScreens(), RoomListPanel.class), "다시 로그인").doClick());
+                    check("LOGIN".equals(app.getCurrentScreen()), "Rejected token retry must open login");
+                    if (peerFailure.get() != null) throw new AssertionError("WebSocket fixture failure", peerFailure.get());
+                    System.out.println("PASS RankedApplicationFlowTest");
+                }
             } finally {
-                if (app[0] != null) onEdt(() -> app[0].close());
                 for (int index = 0; index < keys.length; index++) {
                     if (previous[index] == null) System.clearProperty(keys[index]);
                     else System.setProperty(keys[index], previous[index]);

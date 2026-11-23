@@ -11,8 +11,8 @@ import kr.ac.jbnu.se.tetris.story.*;
 public final class PlayerSaveStoreTest {
     private PlayerSaveStoreTest() { }
     public static void main(String[] args) throws Exception {
-        Path folder = Files.createTempDirectory("tetris-save-test-");
-        try {
+        try (TemporaryDirectory fixture = new TemporaryDirectory()) {
+            Path folder = fixture.path;
             Path path = folder.resolve("save.properties");
             PlayerSaveStore store = new PlayerSaveStore(path);
             PlayerSaveStore.Data initial = store.load();
@@ -52,27 +52,37 @@ public final class PlayerSaveStoreTest {
             catch (IllegalArgumentException expected) { rejected = true; }
             assert rejected;
             Path interruptedPath = folder.resolve("interrupted.properties");
-            final SeongeunApplication[] app = new SeongeunApplication[1];
-            SwingUtilities.invokeAndWait(() -> app[0] = new SeongeunApplication(
-                    new Random(19), new PlayerSaveStore(interruptedPath)));
-            try {
+            try (EdtApplicationFixture applicationFixture = EdtApplicationFixture.open(
+                    new Random(19), new PlayerSaveStore(interruptedPath))) {
+                SeongeunApplication app = applicationFixture.get();
                 Files.createDirectory(interruptedPath);
-                SwingUtilities.invokeAndWait(() -> app[0].commitSave(
-                        app[0].getSaveData().withFirstClear(first, 30)));
-                assert app[0].isSaveDirty();
+                SwingUtilities.invokeAndWait(() -> app.commitSave(
+                        app.getSaveData().withFirstClear(first, 30)));
+                assert app.isSaveDirty();
                 Files.delete(interruptedPath);
-                SwingUtilities.invokeAndWait(() -> app[0].commitSave(
-                        app[0].getSaveData().withFirstClear(second, 50)));
-                assert !app[0].isSaveDirty();
+                SwingUtilities.invokeAndWait(() -> app.commitSave(
+                        app.getSaveData().withFirstClear(second, 50)));
+                assert !app.isSaveDirty();
                 PlayerSaveStore.Data recovered = new PlayerSaveStore(interruptedPath).load();
                 assert recovered.getCoins() == 80 && recovered.getCleared().size() == 2;
                 new StoryProgressService(catalog).restoreCompletedEncounterIds(recovered.getCleared());
-            } finally { SwingUtilities.invokeAndWait(() -> app[0].close()); }
+            }
             System.out.println("PASS PlayerSaveStoreTest");
-        } finally {
-            try (java.util.stream.Stream<Path> files = Files.walk(folder)) {
-                files.sorted(Comparator.reverseOrder()).forEach(path -> {
-                    try { Files.deleteIfExists(path); } catch (IOException ignored) { }
+        }
+    }
+
+    private static final class TemporaryDirectory implements AutoCloseable {
+        private final Path path;
+
+        private TemporaryDirectory() throws IOException {
+            path = Files.createTempDirectory("tetris-save-test-");
+        }
+
+        @Override
+        public void close() throws IOException {
+            try (java.util.stream.Stream<Path> files = Files.walk(path)) {
+                files.sorted(Comparator.reverseOrder()).forEach(file -> {
+                    try { Files.deleteIfExists(file); } catch (IOException ignored) { }
                 });
             }
         }

@@ -53,76 +53,77 @@ public final class RankedOnlineUiFlowTest {
         HttpServer auth = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         auth.createContext("/", request -> respondAuth(request, store));
         auth.start();
-        RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0);
-        SeongeunApplication[] apps = new SeongeunApplication[2];
         String[] keys = {"tetris.server.url", "tetris.supabase.url", "tetris.supabase.publishableKey",
                 "tetris.online.provider"};
         String[] previous = new String[keys.length];
         for (int i = 0; i < keys.length; i++) previous[i] = System.getProperty(keys[i]);
-        try {
-            server.start();
-            int port = server.getPort();
-            check(httpPost("http://127.0.0.1:" + port + "/admin/open", ADMIN) == 200, "admission open");
-            System.setProperty(keys[0], "ws://127.0.0.1:" + port + "/ws");
-            System.setProperty(keys[1], "http://127.0.0.1:" + auth.getAddress().getPort());
-            System.setProperty(keys[2], "public-test-key");
-            System.setProperty(keys[3], "supabase");
-            edt(() -> {
-                apps[0] = new SeongeunApplication(new Random(1), null);
-                apps[1] = new SeongeunApplication(new Random(2), null);
-                for (int i = 0; i < 2; i++) {
-                    button(child(apps[i].getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
-                    LoginPanel login = child(apps[i].getScreens(), LoginPanel.class);
-                    child(login, JTextField.class).setText(i == 0 ? "first@example.test" : "second@example.test");
-                    child(login, JPasswordField.class).setText("test-password");
-                    button(login, "온라인 로그인").doClick();
+        try (RenderGameServer server = new RenderGameServer(verifier, store, ADMIN, 0)) {
+            try {
+                server.start();
+                int port = server.getPort();
+                check(httpPost("http://127.0.0.1:" + port + "/admin/open", ADMIN) == 200, "admission open");
+                System.setProperty(keys[0], "ws://127.0.0.1:" + port + "/ws");
+                System.setProperty(keys[1], "http://127.0.0.1:" + auth.getAddress().getPort());
+                System.setProperty(keys[2], "public-test-key");
+                System.setProperty(keys[3], "supabase");
+                try (EdtApplicationFixture firstFixture = EdtApplicationFixture.open(new Random(1), null);
+                        EdtApplicationFixture secondFixture = EdtApplicationFixture.open(new Random(2), null)) {
+                    SeongeunApplication firstApp = firstFixture.get();
+                    SeongeunApplication secondApp = secondFixture.get();
+                    try {
+                        edt(() -> {
+                            startLogin(firstApp, "first@example.test");
+                            startLogin(secondApp, "second@example.test");
+                        });
+                        awaitEdt(() -> firstApp.isSignedIn() && secondApp.isSignedIn()
+                                && firstApp.isOnlineConnected() && secondApp.isOnlineConnected(), "both authenticated and connected");
+                        edt(() -> firstApp.createRoomWithName("공식 대전"));
+                        awaitEdt(() -> firstApp.getRoomState() != null, "room created");
+                        String roomId = onEdt(() -> firstApp.getRoomState().getRoomId());
+                        edt(() -> secondApp.joinRoom(roomId));
+                        awaitEdt(() -> firstApp.getRoomState().getReadyByParticipantId().size() == 2
+                                && secondApp.getRoomState() != null
+                                && secondApp.getRoomState().getReadyByParticipantId().size() == 2, "joined room");
+                        edt(() -> {
+                            button(child(firstApp.getScreens(), WaitingRoomPanel.class), "waitingReady").doClick();
+                            button(child(secondApp.getScreens(), WaitingRoomPanel.class), "waitingReady").doClick();
+                        });
+                        awaitEdt(() -> running(firstApp) && running(secondApp), "ranked match started");
+                        edt(() -> {
+                            check(!firstApp.isStoryClockRunning(), "no local match tick");
+                            button(firstApp.getScreens(), "대전 포기 [ESC]").doClick();
+                        });
+                        check(store.finishEntered.await(5, TimeUnit.SECONDS), "persistence reached");
+                        awaitEdt(() -> finished(secondApp)
+                                && labelContains(child(secondApp.getScreens(), ResultPanel.class), "저장 중"),
+                                "result shows pending save");
+                        check(store.records.size() == 1, "exactly one match registered");
+                        check(store.records.values().iterator().next().getStatus() == MatchRecord.Status.RUNNING,
+                                "record still pending while DB held");
+                        check(onEdt(() -> button(child(secondApp.getScreens(), ResultPanel.class), "로비로").isEnabled()),
+                                "held database worker keeps EDT responsive");
+                        edt(() -> firstApp.close());
+                        store.releaseFinish.countDown();
+                        awaitEdt(() -> store.records.values().iterator().next().getStatus() == MatchRecord.Status.FINALIZED
+                                && labelContains(child(secondApp.getScreens(), ResultPanel.class), "저장되었습니다"),
+                                "saved result updates current result");
+                        edt(() -> {
+                            button(child(secondApp.getScreens(), ResultPanel.class), "로비로").doClick();
+                            button(child(secondApp.getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick();
+                        });
+                        awaitEdt(() -> "LEADERBOARD".equals(secondApp.getCurrentScreen())
+                                && child(child(secondApp.getScreens(), LeaderboardPanel.class), JTable.class).getRowCount() == 1,
+                                "leaderboard shows finalized winner");
+                        check(onEdt(() -> child(child(secondApp.getScreens(), LeaderboardPanel.class), JTable.class)
+                                .getValueAt(0, 2)).equals(1016), "leaderboard rating");
+                    } finally {
+                        store.releaseFinish.countDown();
+                    }
                 }
-            });
-            awaitEdt(() -> apps[0].isSignedIn() && apps[1].isSignedIn()
-                    && apps[0].isOnlineConnected() && apps[1].isOnlineConnected(), "both authenticated and connected");
-            edt(() -> apps[0].createRoomWithName("공식 대전"));
-            awaitEdt(() -> apps[0].getRoomState() != null, "room created");
-            String roomId = onEdt(() -> apps[0].getRoomState().getRoomId());
-            edt(() -> apps[1].joinRoom(roomId));
-            awaitEdt(() -> apps[0].getRoomState().getReadyByParticipantId().size() == 2
-                    && apps[1].getRoomState() != null
-                    && apps[1].getRoomState().getReadyByParticipantId().size() == 2, "joined room");
-            edt(() -> {
-                button(child(apps[0].getScreens(), WaitingRoomPanel.class), "waitingReady").doClick();
-                button(child(apps[1].getScreens(), WaitingRoomPanel.class), "waitingReady").doClick();
-            });
-            awaitEdt(() -> running(apps[0]) && running(apps[1]), "ranked match started");
-            edt(() -> {
-                check(!apps[0].isStoryClockRunning(), "no local match tick");
-                button(apps[0].getScreens(), "대전 포기 [ESC]").doClick();
-            });
-            check(store.finishEntered.await(5, TimeUnit.SECONDS), "persistence reached");
-            awaitEdt(() -> finished(apps[1])
-                    && labelContains(child(apps[1].getScreens(), ResultPanel.class), "저장 중"),
-                    "result shows pending save");
-            check(store.records.size() == 1, "exactly one match registered");
-            check(store.records.values().iterator().next().getStatus() == MatchRecord.Status.RUNNING,
-                    "record still pending while DB held");
-            check(onEdt(() -> button(child(apps[1].getScreens(), ResultPanel.class), "로비로").isEnabled()),
-                    "held database worker keeps EDT responsive");
-            edt(() -> apps[0].close());
-            store.releaseFinish.countDown();
-            awaitEdt(() -> store.records.values().iterator().next().getStatus() == MatchRecord.Status.FINALIZED
-                    && labelContains(child(apps[1].getScreens(), ResultPanel.class), "저장되었습니다"),
-                    "saved result updates current result");
-            edt(() -> {
-                button(child(apps[1].getScreens(), ResultPanel.class), "로비로").doClick();
-                button(child(apps[1].getScreens(), MainLobbyPanel.class), "PvP 랭킹").doClick();
-            });
-            awaitEdt(() -> "LEADERBOARD".equals(apps[1].getCurrentScreen())
-                    && child(child(apps[1].getScreens(), LeaderboardPanel.class), JTable.class).getRowCount() == 1,
-                    "leaderboard shows finalized winner");
-            check(onEdt(() -> child(child(apps[1].getScreens(), LeaderboardPanel.class), JTable.class)
-                    .getValueAt(0, 2)).equals(1016), "leaderboard rating");
+            } finally {
+                store.releaseFinish.countDown();
+            }
         } finally {
-            store.releaseFinish.countDown();
-            edt(() -> { for (SeongeunApplication app : apps) if (app != null) app.close(); });
-            server.close();
             auth.stop(0);
             for (int i = 0; i < keys.length; i++) {
                 if (previous[i] == null) System.clearProperty(keys[i]);
@@ -130,6 +131,14 @@ public final class RankedOnlineUiFlowTest {
             }
         }
         System.out.println("PASS RankedOnlineUiFlowTest");
+    }
+
+    private static void startLogin(SeongeunApplication app, String email) {
+        button(child(app.getScreens(), MainLobbyPanel.class), "온라인 대전").doClick();
+        LoginPanel login = child(app.getScreens(), LoginPanel.class);
+        child(login, JTextField.class).setText(email);
+        child(login, JPasswordField.class).setText("test-password");
+        button(login, "온라인 로그인").doClick();
     }
 
     private static boolean running(SeongeunApplication app) {

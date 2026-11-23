@@ -2,6 +2,10 @@ package kr.ac.jbnu.se.tetris.ui.seongeun;
 
 import java.awt.*;
 import java.awt.event.*;
+import java.io.IOException;
+import java.io.NotSerializableException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -12,22 +16,23 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 
 /** 엔진 스냅샷을 픽셀 격자에 그리는 화면 전용 보드. */
 public class Board extends JPanel {
+    private static final long serialVersionUID = 1L;
     private static final int COLUMNS = 10, ROWS = 22;
     private static final Color EMPTY = new Color(0x293039);
     private static final Color GRID = new Color(0x414B55);
     private static final Color PLAYER_FRAME = new Color(0xB3BCC4);
     private static final Color ENEMY_FRAME = new Color(0xB3BCC4);
     private final JLabel statusbar;
-    private GameState state;
-    private Consumer<GameAction.Type> inputHandler;
-    private Runnable pauseHandler;
-    private Consumer<Integer> itemHandler;
+    private transient GameState state;
+    private transient Consumer<GameAction.Type> inputHandler;
+    private transient Runnable pauseHandler;
+    private transient Consumer<Integer> itemHandler;
     private String overlayText;
     private final boolean keyboardEnabled;
     private long placementAt, clearAt, garbageAt, attackAt, hitAt;
     private int effectX, effectY, clearCount, clearCombo;
     private boolean perfectClear;
-    private Piece effectPiece;
+    private transient Piece effectPiece;
     private boolean automaticEffects = true;
     // PvE 전투에서는 블록을 가리는 중앙 라인 삭제 알림을 사용하지 않는다.
     private boolean lineClearCalloutEnabled = true;
@@ -38,7 +43,7 @@ public class Board extends JPanel {
         repaint();
     });
     private final Map<Integer, Runnable> keyActions = new LinkedHashMap<Integer, Runnable>();
-    private final KeyEventDispatcher keyDispatcher = event -> {
+    private final transient KeyEventDispatcher keyDispatcher = event -> {
         if (event.getID() != KeyEvent.KEY_PRESSED || event.getModifiersEx() != 0
                 || !isShowing() || state == null ||
                 (state.getStatus() != GameState.Status.RUNNING
@@ -331,5 +336,14 @@ public class Board extends JPanel {
                                  PieceType type, boolean ghost, boolean ore) {
         int px = left + x * size, py = top + (ROWS - 1 - y) * size;
         ConcreteBlockSkin.paint(g, px, py, size, type, ghost, ore);
+    }
+
+    // The board owns live input dispatchers and animation callbacks that cannot be restored from a stream.
+    private void writeObject(ObjectOutputStream output) throws IOException {
+        throw new NotSerializableException(getClass().getName());
+    }
+
+    private void readObject(ObjectInputStream input) throws IOException {
+        throw new NotSerializableException(getClass().getName());
     }
 }

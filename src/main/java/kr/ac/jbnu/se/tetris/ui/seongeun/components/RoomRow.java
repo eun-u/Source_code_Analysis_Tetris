@@ -1,13 +1,18 @@
 package kr.ac.jbnu.se.tetris.ui.seongeun.components;
 
 import java.awt.*;
+import java.io.IOException;
+import java.io.NotSerializableException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.RoomData;
 
 public class RoomRow extends JPanel {
-    private final RoomData roomData;
+    private static final long serialVersionUID = 1L;
+    private final transient RoomData roomData;
     private final GameButton joinButton;
 
     public RoomRow (RoomData roomData) {
@@ -34,5 +39,14 @@ public class RoomRow extends JPanel {
         joinButton.addActionListener(e -> {
             listener.accept(roomData);
         });
+    }
+
+    // The join action captures the live room callback, so the row cannot be restored from a stream.
+    private void writeObject(ObjectOutputStream output) throws IOException {
+        throw new NotSerializableException(getClass().getName());
+    }
+
+    private void readObject(ObjectInputStream input) throws IOException {
+        throw new NotSerializableException(getClass().getName());
     }
 }

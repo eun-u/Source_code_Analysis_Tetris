@@ -23,15 +23,13 @@ import kr.ac.jbnu.se.tetris.story.StageCatalog;
 /** 현재 화면에서 실제 전투 엔진으로 패배·재도전·9전투 해금·최종 종료를 확인한다. */
 public final class StoryFlowTest {
     public static void main(String[] args) throws Exception {
-        final SeongeunApplication[] holder = new SeongeunApplication[1];
-        try {
+        try (EdtApplicationFixture fixture = EdtApplicationFixture.open(new Random(20260928L), null)) {
+            SeongeunApplication app = fixture.get();
             edt(() -> {
-                holder[0] = new SeongeunApplication(new Random(20260928L), null);
-                button(holder[0].getScreens(), "lobbyStory").doClick();
-                check("STORY_STAGE".equals(holder[0].getCurrentScreen()), "스토리 선택 화면");
-                button(holder[0].getScreens(), "storyStart").doClick();
+                button(app.getScreens(), "lobbyStory").doClick();
+                check("STORY_STAGE".equals(app.getCurrentScreen()), "스토리 선택 화면");
+                button(app.getScreens(), "storyStart").doClick();
             });
-            SeongeunApplication app = holder[0];
             String first = onEdt(() -> opponent(app));
             edt(() -> {
                 for (int i = 0; i < 100 && !finished(app); i++) app.submit(GameAction.Type.HARD_DROP);
@@ -90,8 +88,6 @@ public final class StoryFlowTest {
                 }
             }
             check(encounter == 9, "정확히 아홉 전투");
-        } finally {
-            edt(() -> { if (holder[0] != null) holder[0].close(); });
         }
         System.out.println("PASS StoryFlowTest: current UI, 9 encounters, loss retry, win replay, final clock stop");
     }
