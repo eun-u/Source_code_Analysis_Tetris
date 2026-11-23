@@ -14,6 +14,7 @@ import java.util.Set;
 
 /** UTF-8 설정 파일 검증 및 스테이지 목록 변환 */
 public final class StageCatalog {
+    private static final String NAME_SUFFIX = ".name";
     private final List<Stage> stages;
 
     private StageCatalog(List<Stage> stages) {
@@ -65,49 +66,63 @@ public final class StageCatalog {
         Set<String> knownKeys = new HashSet<String>();
         int count = integer(config, knownKeys, "stage.count", 1, 100);
         List<Stage> stages = new ArrayList<Stage>(count);
-        for (int index = 1; index <= count; index++) {
-            String stageKey = "stage." + index;
-            String stageId = required(config, knownKeys, stageKey + ".id");
-            String stageName = required(config, knownKeys, stageKey + ".name");
-            List<MonsterSpec> encounters = new ArrayList<MonsterSpec>(3);
-            if (config.containsKey(stageKey + ".encounter.count")) {
-                int encounterCount = integer(config, knownKeys,
-                        stageKey + ".encounter.count", 1, 9);
-                for (int number = 1; number <= encounterCount; number++) {
-                    String encounterKey = stageKey + ".encounter." + number;
-                    MonsterTier tier;
-                    try {
-                        tier = MonsterTier.valueOf(required(config, knownKeys,
-                                encounterKey + ".tier").toUpperCase(java.util.Locale.ROOT));
-                    } catch (IllegalArgumentException invalid) {
-                        throw new IllegalArgumentException("Invalid monster pattern: " + encounterKey,
-                                invalid);
-                    }
-                    encounters.add(new MonsterSpec(
-                            required(config, knownKeys, encounterKey + ".id"),
-                            required(config, knownKeys, encounterKey + ".name"), tier,
-                            integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
-                            required(config, knownKeys, encounterKey + ".aiProfile"),
-                            difficulty(config, knownKeys, encounterKey)));
-                }
-            } else {
-                // 이전 3전투 설정 파일도 읽되, 배포 기본 캠페인은 1레벨 1전투다.
-                for (MonsterTier tier : MonsterTier.values()) {
-                    String encounterKey = stageKey + "." +
-                            tier.name().toLowerCase(java.util.Locale.ROOT);
-                    encounters.add(new MonsterSpec(
-                            required(config, knownKeys, encounterKey + ".id"),
-                            required(config, knownKeys, encounterKey + ".name"), tier,
-                            integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
-                            required(config, knownKeys, encounterKey + ".aiProfile")));
-                }
-            }
-            stages.add(new Stage(stageId, stageName, encounters));
-        }
+        for (int index = 1; index <= count; index++) stages.add(parseStage(config, knownKeys, index));
         for (String key : config.stringPropertyNames()) {
             if (!knownKeys.contains(key)) throw new IllegalArgumentException("Unknown story property: " + key);
         }
         return new StageCatalog(stages);
+    }
+
+    private static Stage parseStage(Properties config, Set<String> knownKeys, int index) {
+        String stageKey = "stage." + index;
+        String stageId = required(config, knownKeys, stageKey + ".id");
+        String stageName = required(config, knownKeys, stageKey + NAME_SUFFIX);
+        List<MonsterSpec> encounters = config.containsKey(stageKey + ".encounter.count")
+                ? parseConfiguredEncounters(config, knownKeys, stageKey)
+                : parseLegacyEncounters(config, knownKeys, stageKey);
+        return new Stage(stageId, stageName, encounters);
+    }
+
+    private static List<MonsterSpec> parseConfiguredEncounters(Properties config, Set<String> knownKeys,
+                                                               String stageKey) {
+        List<MonsterSpec> encounters = new ArrayList<MonsterSpec>(3);
+        int encounterCount = integer(config, knownKeys, stageKey + ".encounter.count", 1, 9);
+        for (int number = 1; number <= encounterCount; number++) {
+            String encounterKey = stageKey + ".encounter." + number;
+            MonsterTier tier = parseTier(config, knownKeys, encounterKey);
+            encounters.add(new MonsterSpec(
+                    required(config, knownKeys, encounterKey + ".id"),
+                    required(config, knownKeys, encounterKey + NAME_SUFFIX), tier,
+                    integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
+                    required(config, knownKeys, encounterKey + ".aiProfile"),
+                    difficulty(config, knownKeys, encounterKey)));
+        }
+        return encounters;
+    }
+
+    private static MonsterTier parseTier(Properties config, Set<String> knownKeys, String encounterKey) {
+        try {
+            return MonsterTier.valueOf(required(config, knownKeys,
+                    encounterKey + ".tier").toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("Invalid monster pattern: " + encounterKey, invalid);
+        }
+    }
+
+    /** 이전 3전투 설정 파일도 읽되, 배포 기본 캠페인은 1레벨 1전투다. */
+    private static List<MonsterSpec> parseLegacyEncounters(Properties config, Set<String> knownKeys,
+                                                           String stageKey) {
+        List<MonsterSpec> encounters = new ArrayList<MonsterSpec>(3);
+        for (MonsterTier tier : MonsterTier.values()) {
+            String encounterKey = stageKey + "." +
+                    tier.name().toLowerCase(java.util.Locale.ROOT);
+            encounters.add(new MonsterSpec(
+                    required(config, knownKeys, encounterKey + ".id"),
+                    required(config, knownKeys, encounterKey + NAME_SUFFIX), tier,
+                    integer(config, knownKeys, encounterKey + ".hp", 1, 10000),
+                    required(config, knownKeys, encounterKey + ".aiProfile")));
+        }
+        return encounters;
     }
 
     private static String required(Properties config, Set<String> knownKeys, String key) {
