@@ -338,19 +338,11 @@ public final class GameEngine implements GameActionSink {
             return reject("Garbage requires a managed lock boundary");
         }
         if (batches == null) return reject("Garbage batches are null");
-        Board detached = new Board(board.snapshot());
-        int total = 0;
-        boolean overflow = false;
-        for (GameAction.Garbage batch : batches) {
-            if (batch == null || total > MAX_PENDING_GARBAGE_LINES - batch.getLines()) {
-                return reject("Invalid garbage batch");
-            }
-            total += batch.getLines();
-            for (int i = 0; i < batch.getLines(); i++) {
-                overflow |= detached.addGarbageLine(batch.getHoleColumn());
-            }
-        }
+        int total = totalGarbageLines(batches);
+        if (total < 0) return reject("Invalid garbage batch");
         if (total == 0) return accepted(new ArrayList<GameEvent>());
+        Board detached = new Board(board.snapshot());
+        boolean overflow = stackGarbage(detached, batches);
         board.copyFrom(detached);
         version++;
         List<GameEvent> events = new ArrayList<GameEvent>();
@@ -361,6 +353,27 @@ public final class GameEngine implements GameActionSink {
             topOut(events, "GARBAGE_TOP_OUT");
         }
         return accepted(events);
+    }
+
+    /** 가비지 묶음의 총 줄 수를 구한다. 묶음이 null이거나 한도를 넘으면 -1. */
+    private static int totalGarbageLines(List<GameAction.Garbage> batches) {
+        int total = 0;
+        for (GameAction.Garbage batch : batches) {
+            if (batch == null || total > MAX_PENDING_GARBAGE_LINES - batch.getLines()) return -1;
+            total += batch.getLines();
+        }
+        return total;
+    }
+
+    /** 가비지를 보드에 쌓고, 한 줄이라도 넘쳤으면 true를 돌려준다. */
+    private static boolean stackGarbage(Board target, List<GameAction.Garbage> batches) {
+        boolean overflow = false;
+        for (GameAction.Garbage batch : batches) {
+            for (int i = 0; i < batch.getLines(); i++) {
+                overflow |= target.addGarbageLine(batch.getHoleColumn());
+            }
+        }
+        return overflow;
     }
 
     /** 아이템 효과가 실제로 제거할 가비지 행이 있을 때만 성공한다. */
