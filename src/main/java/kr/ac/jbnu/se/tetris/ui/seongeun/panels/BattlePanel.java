@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntConsumer;
@@ -64,6 +63,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /**
  * PvE에서는 왼쪽 전투 무대, 가운데 플레이 보드, 오른쪽 조작 정보를 강의동 외벽으로 묶는다.
@@ -76,6 +76,11 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final Color FACADE_LIGHT = new Color(0xE5E2D7);
     private static final int GAP = 8, METER = 12;
     private static final int PVE_LEFT_PILLAR = 24, PVE_RIGHT_PILLAR = 12;
+    private static final String SPEAKER_PLAYER = "PLAYER";
+    private static final String SPEAKER_MONSTER = "MONSTER";
+    private static final String FEVER_TEXT = "FEVER";
+    private static final String QUIT_BATTLE_TEXT = "전투 포기 [ESC]";
+    private static final String QUIT_BATTLE_TOOLTIP = "현재 전투를 포기하고 로비로 돌아갑니다.";
     private static final BufferedImage UNIVERSITY_BATTLE_BG = readBackdrop(
             "/ui/campus-rpg/university-battle-bg.png");
     private static final BufferedImage UNIVERSITY_BG = readBackdrop("/ui/campus-rpg/university-bg.png");
@@ -87,14 +92,14 @@ public class BattlePanel extends JPanel implements Scrollable {
 
     private static Map<String, ImageIcon> loadItemIcons() {
         Map<String, ImageIcon> icons = new HashMap<>();
-        icons.put("damage_boost", loadItemIcon("item_damage.png"));
-        icons.put("garbage_bomb", loadItemIcon("item_bomb.png"));
-        icons.put("heal", loadItemIcon("item_heal.png"));
-        icons.put("shield", loadItemIcon("item_shield.png"));
-        icons.put("line_cleaner", loadItemIcon("item_line_cleaner.png"));
-        icons.put("fever_charge", loadItemIcon("item_fever.png"));
-        icons.put("time_warp", loadItemIcon("item_time.png"));
-        icons.put("nullify", loadItemIcon("item_nullify.png"));
+        icons.put(ItemIds.DAMAGE_BOOST, loadItemIcon("item_damage.png"));
+        icons.put(ItemIds.GARBAGE_BOMB, loadItemIcon("item_bomb.png"));
+        icons.put(ItemIds.HEAL, loadItemIcon("item_heal.png"));
+        icons.put(ItemIds.SHIELD, loadItemIcon("item_shield.png"));
+        icons.put(ItemIds.LINE_CLEANER, loadItemIcon("item_line_cleaner.png"));
+        icons.put(ItemIds.FEVER_CHARGE, loadItemIcon("item_fever.png"));
+        icons.put(ItemIds.TIME_WARP, loadItemIcon("item_time.png"));
+        icons.put(ItemIds.NULLIFY, loadItemIcon("item_nullify.png"));
         return icons;
     }
 
@@ -118,70 +123,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static JButton createPveItemButton(String text) {
         JButton button = new JButton() {
             @Override protected void paintComponent(Graphics graphics) {
-                Graphics2D g = (Graphics2D) graphics.create();
-                try {
-                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                    int w = getWidth(), h = getHeight();
-                    if (w < 15 || h < 15) return;
-                    boolean active = isEnabled();
-                    boolean pressed = getModel().isPressed();
-                    boolean hover = getModel().isRollover();
-
-                    // 두꺼운 둥근 어두운 프레임 + 안쪽 패널
-                    g.setColor(new Color(0x101714));
-                    g.fillRoundRect(0, 0, w, h - 2, 18, 18);
-                    g.setColor(new Color(0x929E8B));
-                    g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
-                    g.setColor(pressed ? new Color(0x253529)
-                            : hover ? new Color(0x425B4C) : new Color(0x34443C));
-                    g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
-                    g.setColor(new Color(0x233128));
-                    g.setStroke(new BasicStroke(2f));
-                    g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
-                    if (!active) {
-                        g.setColor(new Color(0, 0, 0, 48));
-                        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
-                    }
-
-                    // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
-                    Icon icon = getIcon();
-                    if (icon != null) {
-                        int iconX = (w - icon.getIconWidth()) / 2;
-                        int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
-                        icon.paintIcon(this, g, iconX, iconY);
-                    }
-
-                    // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
-                    Object countValue = getClientProperty("hudCharges");
-                    int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
-                    if (icon != null && count > 0) {
-                        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
-                        g.setColor(new Color(0x1B100B));
-                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
-                        g.setColor(new Color(0xC69362));
-                        g.fillRoundRect(bx, by, bw, bh, 10, 10);
-                        g.setColor(new Color(0x765036));
-                        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
-                        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
-                    }
-
-                    // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
-                    Object hotkeyValue = getClientProperty("hudHotkey");
-                    if (hotkeyValue instanceof Number) {
-                        String hotkey = String.valueOf(((Number) hotkeyValue).intValue());
-                        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
-                        g.setColor(new Color(0x102923));
-                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
-                        g.setColor(new Color(0x78DCC0));
-                        g.fillRoundRect(bx, by, bw, bh, 8, 8);
-                        g.setColor(new Color(0x43B99A));
-                        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
-                        drawBadgeNumber(g, hotkey, bx, by, bw, bh, 16);
-                    }
-                } finally {
-                    g.dispose();
-                }
+                paintPveItemButton(this, graphics);
             }
         };
         button.setOpaque(false);
@@ -191,6 +133,78 @@ public class BattlePanel extends JPanel implements Scrollable {
         button.setFocusPainted(false);
         button.setFocusable(false);
         return button;
+    }
+
+    private static void paintPveItemButton(JButton button, Graphics graphics) {
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int w = button.getWidth(), h = button.getHeight();
+            if (w < 15 || h < 15) return;
+            drawPveButtonFrame(g, w, h, button.isEnabled(),
+                    button.getModel().isPressed(), button.getModel().isRollover());
+
+            // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
+            Icon icon = button.getIcon();
+            if (icon != null) {
+                int iconX = (w - icon.getIconWidth()) / 2;
+                int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
+                icon.paintIcon(button, g, iconX, iconY);
+            }
+
+            // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
+            Object countValue = button.getClientProperty("hudCharges");
+            int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
+            if (icon != null && count > 0) drawChargeBadge(g, count, w);
+
+            // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
+            Object hotkeyValue = button.getClientProperty("hudHotkey");
+            if (hotkeyValue instanceof Number) drawHotkeyBadge(g, ((Number) hotkeyValue).intValue(), w, h);
+        } finally {
+            g.dispose();
+        }
+    }
+
+    /** 두꺼운 둥근 어두운 프레임 + 안쪽 패널 */
+    private static void drawPveButtonFrame(Graphics2D g, int w, int h,
+                                           boolean active, boolean pressed, boolean hover) {
+        g.setColor(new Color(0x101714));
+        g.fillRoundRect(0, 0, w, h - 2, 18, 18);
+        g.setColor(new Color(0x929E8B));
+        g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
+        g.setColor(pressed ? new Color(0x253529)
+                : hover ? new Color(0x425B4C) : new Color(0x34443C));
+        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        g.setColor(new Color(0x233128));
+        g.setStroke(new BasicStroke(2f));
+        g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
+        if (!active) {
+            g.setColor(new Color(0, 0, 0, 48));
+            g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        }
+    }
+
+    private static void drawChargeBadge(Graphics2D g, int count, int w) {
+        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
+        g.setColor(new Color(0x1B100B));
+        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
+        g.setColor(new Color(0xC69362));
+        g.fillRoundRect(bx, by, bw, bh, 10, 10);
+        g.setColor(new Color(0x765036));
+        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
+        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
+    }
+
+    private static void drawHotkeyBadge(Graphics2D g, int key, int w, int h) {
+        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
+        g.setColor(new Color(0x102923));
+        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+        g.setColor(new Color(0x78DCC0));
+        g.fillRoundRect(bx, by, bw, bh, 8, 8);
+        g.setColor(new Color(0x43B99A));
+        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
+        drawBadgeNumber(g, String.valueOf(key), bx, by, bw, bh, 16);
     }
 
     private static void drawBadgeNumber(Graphics2D g, String text,
@@ -281,7 +295,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     // Short-lived combat facts are separate from character speech and never enter its queue.
     private final BattleLog battleLog = new BattleLog();
     private final OreFlightLayer oreFlights = new OreFlightLayer();
-    private final JLabel playerName = label("PLAYER"), enemyName = label("MONSTER");
+    private final JLabel playerName = label(SPEAKER_PLAYER), enemyName = label(SPEAKER_MONSTER);
     private final JLabel playerStatus = label("LINES 0"), enemyStatus = label("LINES 0");
     private final JLabel hold = label("HOLD"), next = label("NEXT");
     private final MiniPiecePreview holdPreview = new MiniPiecePreview("HOLD");
@@ -301,7 +315,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final JButton[] slots = new JButton[4];
     private final boolean[] automaticSlots = new boolean[4];
     private final JButton resultTestButton = button("전투 정보");
-    private final JButton backButton = CartoonBattleTopHud.quitButton("전투 포기 [ESC]");
+    private final JButton backButton = CartoonBattleTopHud.quitButton(QUIT_BATTLE_TEXT);
     private final PixelMeter feverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JPanel topBar = new CartoonBattleTopHud(levelChip, title, clock, (PixelButton) backButton);
     private final JPanel leftColumn = column();
@@ -335,16 +349,17 @@ public class BattlePanel extends JPanel implements Scrollable {
     private final MiniPiecePreview[] pveNextPreviews = {
         new MiniPiecePreview("1"), new MiniPiecePreview("2"), new MiniPiecePreview("3")
     };
-    private final JLabel pveFeverLabel = whiteFeverLabel("FEVER");
+    private final JLabel pveFeverLabel = whiteFeverLabel(FEVER_TEXT);
     private final JLabel pveFeverPercent = whiteFeverLabel("0%");
     private final PixelMeter pveFeverBar = new PixelMeter(100, UniversityPixelTheme.GOLD);
     private final JButton[] pveSlots = new JButton[4];
     private final JPanel enemyColumn = new JPanel(null);
-    private IntConsumer itemAction;
+    private transient IntConsumer itemAction;
     private long feedbackUntil;
-    private AudioService audio;
+    private transient AudioService audio;
     private long lastEventId;
-    private ParticipantState previousLocal, previousEnemy;
+    private transient ParticipantState previousLocal;
+    private transient ParticipantState previousEnemy;
     private boolean online;
     private String chapter = "university";
     private kr.ac.jbnu.se.tetris.app.BackgroundSkin backgroundSkin =
@@ -384,7 +399,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         clock.setFont(UniversityPixelTheme.font(17, Font.BOLD));
         clock.setForeground(UniversityPixelTheme.TEXT);
         ((PixelButton) backButton).primary();
-        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+        backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         add(topBar);
 
         buildLeftColumn();
@@ -473,7 +488,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFooter.setOpaque(false);
         pveFeverPanel.setOpaque(false);
         pveFeverPanel.setBorder(null);
-        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setText(FEVER_TEXT);
         pveFeverLabel.setForeground(Color.WHITE);
         pveFeverLabel.setFont(UniversityPixelTheme.font(16, Font.BOLD));
         pveFeverPercent.setForeground(Color.WHITE);
@@ -909,8 +924,8 @@ public class BattlePanel extends JPanel implements Scrollable {
             arena.setChapter("university");
         } else {
             ((PixelButton) backButton).primary();
-            backButton.setText("전투 포기 [ESC]");
-            backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+            backButton.setText(QUIT_BATTLE_TEXT);
+            backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         }
         arena.setOnline(online);
         revalidate();
@@ -922,8 +937,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         playerBoard.setLineClearCalloutEnabled(false);
         this.chapter = chapter;
         ((PixelButton) backButton).primary();
-        backButton.setText("전투 포기 [ESC]");
-        backButton.setToolTipText("현재 전투를 포기하고 로비로 돌아갑니다.");
+        backButton.setText(QUIT_BATTLE_TEXT);
+        backButton.setToolTipText(QUIT_BATTLE_TOOLTIP);
         UniversityPixelTheme.setChip(levelChip, "LV " + level,
                 pattern == MonsterTier.BOSS ? UniversityPixelTheme.CORAL : UniversityPixelTheme.GOLD);
         String course = "graduation".equals(chapter) ? "졸업 과정" : "employment".equals(chapter) ? "취업 과정" : "대학교 과정";
@@ -972,121 +987,67 @@ public class BattlePanel extends JPanel implements Scrollable {
             if (event.getEventId() <= lastEventId) continue;
             lastEventId = event.getEventId();
             if (!online) accepted.add(event);
-            boolean local = localId != null && localId.equals(event.getActorId());
-            Board board = local ? playerBoard : enemyBoard;
-            if (event.getType() == BattleEvent.Type.DAMAGE) {
-                if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
-                else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
-                arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
-                        event.getAmount(), local);
-                soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
-                setFeedback((local ? "공격 적중  " : "피격  ") + event.getAmount() + " DAMAGE");
-            } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
-                board.showGarbage(event.getAmount());
-            } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
-                boolean mined = local && showOreFlight(event);
-                if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
-                if (local) {
-                    sound(AudioService.Event.ITEM_ACQUIRE);
-                    setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + itemName(event.getReason()));
-                }
-            } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
-                boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
-                arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
-                if (local) setFeedback("아이템 사용 · " + itemName(event.getReason()));
-            } else if (event.getType() == BattleEvent.Type.ITEM_REMOVED) {
-                if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + itemName(event.getReason()));
-            } else if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null) {
-                GameEvent core = event.getCoreEvent();
-                if (core.getType() == GameEvent.Type.PIECE_PLACED) {
-                    board.showPlacement(core.getPiece(), core.getX(), core.getY());
-                    arena.showPlacement(!local);
-                    if (local) sound(AudioService.Event.DROP);
-                } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
-                    board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
-                    arena.showClear(core.getLineCount(), core.getCombo(), core.isPerfectClear(), !local);
-                    if (local) sound(AudioService.Event.LINE_CLEAR);
-                } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) sound(AudioService.Event.ROTATE);
-            }
+            applyEvent(event, localId);
         }
         // Render completed notices only once all related events in this engine update are known.
         if (!online) recordBattleNotices(accepted, localId);
     }
 
-    private interface BattleNotice {
-        BattleLog.Side side();
-        String text();
-    }
-
-    private static final class ClearNotice implements BattleNotice {
-        final BattleLog.Side side;
-        final String subject;
-        final int lines, combo;
-        final boolean perfect;
-        Integer damage, garbage;
-
-        ClearNotice(BattleLog.Side side, String subject, GameEvent clear) {
-            this.side = side;
-            this.subject = subject;
-            this.lines = clear.getLineCount();
-            this.combo = clear.getCombo();
-            this.perfect = clear.isPerfectClear();
-        }
-
-        @Override public BattleLog.Side side() { return side; }
-
-        @Override public String text() {
-            StringBuilder notice = new StringBuilder(subject).append(" · ").append(lines).append("줄 클리어");
-            if (perfect) notice.append(" 퍼펙트!");
-            if (combo > 0) notice.append(" · ").append(combo).append("콤보");
-            if (damage != null || garbage != null) {
-                notice.append(" → ");
-                if (damage != null) notice.append(damage).append(" 피해");
-                if (garbage != null) {
-                    if (damage != null) notice.append(" · ");
-                    notice.append("가비지 ").append(garbage).append("줄");
-                }
-            }
-            return notice.toString();
+    /** 이벤트 종류별 연출·효과음·피드백 처리 메서드를 호출한다. */
+    private void applyEvent(BattleEvent event, String localId) {
+        boolean local = localId != null && localId.equals(event.getActorId());
+        Board board = local ? playerBoard : enemyBoard;
+        if (event.getType() == BattleEvent.Type.DAMAGE) {
+            showDamageEvent(event, local);
+        } else if (event.getType() == BattleEvent.Type.GARBAGE_RECEIVED) {
+            board.showGarbage(event.getAmount());
+        } else if (event.getType() == BattleEvent.Type.ITEM_ACQUIRED) {
+            showItemAcquired(event, local);
+        } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
+            showItemUsed(event, localId);
+        } else if (event.getType() == BattleEvent.Type.ITEM_REMOVED) {
+            if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + ItemLabels.name(event.getReason()));
+        } else if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null) {
+            showCoreEvent(event.getCoreEvent(), board, local);
         }
     }
 
-    /** Damage and items without a LINE_CLEAR source are still legitimate battle facts. */
-    private static final class ActionNotice implements BattleNotice {
-        final BattleLog.Side side;
-        final String subject, actor, target;
-        String action;
-        Integer damage, garbage;
-        String removedItem, removedFrom;
+    private void showDamageEvent(BattleEvent event, boolean local) {
+        if (local) { playerBoard.showAttack(); showHitAtImpact(enemyBoard); }
+        else { enemyBoard.showAttack(); showHitAtImpact(playerBoard); }
+        arena.showEffect(local ? PixelArena.Effect.ATTACK : PixelArena.Effect.MONSTER_ATTACK,
+                event.getAmount(), local);
+        soundAtImpact(local ? AudioService.Event.ATTACK : AudioService.Event.HIT);
+        setFeedback((local ? "공격 적중  " : "피격  ") + event.getAmount() + " DAMAGE");
+    }
 
-        ActionNotice(BattleLog.Side side, String subject, String actor, String target, String action) {
-            this.side = side;
-            this.subject = subject;
-            this.actor = actor;
-            this.target = target;
-            this.action = action;
+    private void showItemAcquired(BattleEvent event, boolean local) {
+        boolean mined = local && showOreFlight(event);
+        if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
+        if (local) {
+            sound(AudioService.Event.ITEM_ACQUIRE);
+            setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + ItemLabels.name(event.getReason()));
         }
+    }
 
-        @Override public BattleLog.Side side() { return side; }
+    private void showItemUsed(BattleEvent event, String localId) {
+        boolean local = localId != null && localId.equals(event.getActorId());
+        boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
+        arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
+        if (local) setFeedback("아이템 사용 · " + ItemLabels.name(event.getReason()));
+    }
 
-        boolean sameParticipants(BattleEvent event) {
-            return java.util.Objects.equals(actor, event.getActorId())
-                    && java.util.Objects.equals(target, event.getTargetId());
-        }
-
-        @Override public String text() {
-            StringBuilder value = new StringBuilder(subject).append(" · ").append(action);
-            if (removedItem != null) {
-                value.append(" → ").append(removedFrom).append(' ').append(itemName(removedItem)).append(" 제거");
-            } else if (damage != null || garbage != null) {
-                value.append(" → ");
-                if (damage != null) value.append("피해 ").append(damage);
-                if (garbage != null) {
-                    if (damage != null) value.append(" + ");
-                    value.append("가비지 ").append(garbage).append("줄");
-                }
-            }
-            return value.toString();
+    private void showCoreEvent(GameEvent core, Board board, boolean local) {
+        if (core.getType() == GameEvent.Type.PIECE_PLACED) {
+            board.showPlacement(core.getPiece(), core.getX(), core.getY());
+            arena.showPlacement(!local);
+            if (local) sound(AudioService.Event.DROP);
+        } else if (core.getType() == GameEvent.Type.LINE_CLEAR) {
+            board.showLineClear(core.getLineCount(), core.getCombo(), core.isPerfectClear());
+            arena.showClear(core.getLineCount(), core.getCombo(), core.isPerfectClear(), !local);
+            if (local) sound(AudioService.Event.LINE_CLEAR);
+        } else if (local && core.getType() == GameEvent.Type.PIECE_ROTATED) {
+            sound(AudioService.Event.ROTATE);
         }
     }
 
@@ -1095,110 +1056,14 @@ public class BattlePanel extends JPanel implements Scrollable {
      * standalone damage/garbage and item consequences are paired in event order.
      */
     private void recordBattleNotices(List<BattleEvent> events, String localId) {
-        List<BattleNotice> output = new ArrayList<BattleNotice>();
-        Map<String, ClearNotice> clearByCore = new LinkedHashMap<String, ClearNotice>();
-        ActionNotice attack = null;
-        ActionNotice item = null;
-        for (BattleEvent event : events) {
-            String actor = event.getActorId();
-            boolean local = localId != null && localId.equals(actor);
-            BattleLog.Side side = logSide(local);
-            String subject = actorLabel(local);
-            BattleEvent.Type type = event.getType();
-
-            GameEvent core = event.getCoreEvent();
-            if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
-                String coreActor = actor == null ? core.getActorId() : actor;
-                String key = coreActor + ":" + core.getEventId();
-                ClearNotice notice = clearByCore.get(key);
-                if (notice == null) {
-                    notice = new ClearNotice(side, subject, core);
-                    clearByCore.put(key, notice);
-                    output.add(notice);
-                }
-                if (type == BattleEvent.Type.DAMAGE) notice.damage = event.getAmount();
-                if (type == BattleEvent.Type.GARBAGE_SENT) notice.garbage = event.getAmount();
-                continue;
-            }
-            if (type == BattleEvent.Type.DAMAGE) {
-                // A direct attack may have no backing Tetris line clear (synthetic/wire event).
-                if (attack == null || !attack.sameParticipants(event) || attack.damage != null) {
-                    attack = new ActionNotice(side, subject, actor, event.getTargetId(), "공격");
-                    output.add(attack);
-                }
-                attack.damage = event.getAmount();
-                item = null;
-            } else if (type == BattleEvent.Type.GARBAGE_SENT) {
-                if (item != null && "가비지 폭탄".equals(item.action)
-                        && item.sameParticipants(event) && item.garbage == null) {
-                    item.garbage = event.getAmount();
-                    item = null;
-                    attack = null;
-                } else {
-                    if (attack == null || !attack.sameParticipants(event) || attack.garbage != null) {
-                        attack = new ActionNotice(side, subject, actor, event.getTargetId(), "공격");
-                        output.add(attack);
-                    }
-                    attack.garbage = event.getAmount();
-                }
-            } else if (type == BattleEvent.Type.ITEM_USED) {
-                String id = event.getReason();
-                if ("garbage_bomb".equals(id) && attack != null
-                        && attack.sameParticipants(event) && attack.damage == null
-                        && attack.garbage != null) {
-                    // BattleManager submits the bomb's garbage event before ITEM_USED.
-                    attack.action = "가비지 폭탄";
-                    attack = null;
-                    item = null;
-                } else {
-                    String action = itemAction(id);
-                    item = new ActionNotice(side, subject, actor, event.getTargetId(), action);
-                    output.add(item);
-                    attack = null;
-                    if (!"가비지 폭탄".equals(action) && !"무효화".equals(action)) item = null;
-                }
-            } else if (type == BattleEvent.Type.ITEM_REMOVED) {
-                if (item != null && "무효화".equals(item.action) && item.sameParticipants(event)) {
-                    item.removedItem = event.getReason();
-                    item.removedFrom = local ? "상대" : "내";
-                } else {
-                    ActionNotice removed = new ActionNotice(side, subject, actor, event.getTargetId(),
-                            itemName(event.getReason()) + " 제거");
-                    output.add(removed);
-                }
-                item = null;
-                attack = null;
-            } else if (type == BattleEvent.Type.ITEM_ACQUIRED) {
-                // Player pickups already have an ore-flight / inventory effect.
-                if (!local) output.add(new ActionNotice(side, subject, actor, event.getTargetId(),
-                        "아이템 획득 · " + itemName(event.getReason())));
-                attack = null;
-                item = null;
-            } else if (type == BattleEvent.Type.CORE_EVENT) {
-                // Placement starts a separate engine action; never group its attacks with the last one.
-                attack = null;
-                item = null;
-            }
-        }
-        for (BattleNotice notice : output) battleLog.push(notice.side(), notice.text());
+        BattleNoticeBuilder builder = new BattleNoticeBuilder(enemyLabel());
+        for (BattleEvent event : events) builder.add(event, localId);
+        for (BattleNoticeBuilder.BattleNotice notice : builder.notices()) battleLog.push(notice.side(), notice.text());
     }
 
-    private static String itemAction(String id) {
-        if ("heal".equals(id)) return "회복 사용";
-        if ("shield".equals(id)) return "보호막 발동";
-        if ("garbage_bomb".equals(id)) return "가비지 폭탄";
-        if ("nullify".equals(id)) return "무효화";
-        return itemName(id) + " 사용";
-    }
-
-    private static BattleLog.Side logSide(boolean local) {
-        return local ? BattleLog.Side.PLAYER : BattleLog.Side.ENEMY;
-    }
-
-    private String actorLabel(boolean local) {
-        if (local) return "나";
+    private String enemyLabel() {
         String name = enemyName.getText();
-        return name == null || name.trim().isEmpty() || "MONSTER".equals(name)
+        return name == null || name.trim().isEmpty() || SPEAKER_MONSTER.equals(name)
                 ? "일반 몬스터" : name;
     }
 
@@ -1217,9 +1082,9 @@ public class BattlePanel extends JPanel implements Scrollable {
     /** Story dialogue is presented near its actual speaker, not in the status ticker. */
     public void showStoryDialogue(String speaker, String text) {
         if (online || speaker == null || text == null || text.trim().isEmpty()) return;
-        if ("플레이어".equals(speaker) || "PLAYER".equalsIgnoreCase(speaker))
+        if ("플레이어".equals(speaker) || SPEAKER_PLAYER.equalsIgnoreCase(speaker))
             dialogue.enqueue(BattleDialogue.Speaker.PLAYER, text);
-        else if ("몬스터".equals(speaker) || "MONSTER".equalsIgnoreCase(speaker))
+        else if ("몬스터".equals(speaker) || SPEAKER_MONSTER.equalsIgnoreCase(speaker))
             dialogue.enqueue(BattleDialogue.Speaker.MONSTER, text);
         else setFeedback(speaker + ": " + text); // Narration remains in the status ticker.
     }
@@ -1232,7 +1097,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             if (delimiter > 0) {
                 String speaker = text.substring(0, delimiter).trim();
                 if ("플레이어".equals(speaker) || "몬스터".equals(speaker)
-                        || "PLAYER".equalsIgnoreCase(speaker) || "MONSTER".equalsIgnoreCase(speaker)) {
+                        || SPEAKER_PLAYER.equalsIgnoreCase(speaker) || SPEAKER_MONSTER.equalsIgnoreCase(speaker)) {
                     showStoryDialogue(speaker, text.substring(delimiter + 1).trim());
                     return;
                 }
@@ -1250,10 +1115,27 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (state == null || localId == null) return;
         ParticipantState local = state.getParticipant(localId);
         if (local == null) return;
-        ParticipantState enemy = null;
-        for (ParticipantState participant : state.getParticipants().values())
-            if (!localId.equals(participant.getId())) { enemy = participant; break; }
+        ParticipantState enemy = findEnemy(state, localId);
         if (enemy == null) return;
+        playStateChangeEffects(local, enemy);
+        previousLocal = local; previousEnemy = enemy;
+        updateBoardsAndHeader(local, enemy);
+        GameState game = local.getGameState();
+        updateStatsAndPreviews(game);
+        updateFeverDisplay(local);
+        updateWarpAndGarbage(local);
+        updateItemSlots(state, local);
+        updateClockAndBanner(state);
+    }
+
+    private static ParticipantState findEnemy(BattleState state, String localId) {
+        for (ParticipantState participant : state.getParticipants().values())
+            if (!localId.equals(participant.getId())) return participant;
+        return null;
+    }
+
+    /** 이전 상태와 비교해 회복·온라인 효과·피버 시작 연출을 재생한다. */
+    private void playStateChangeEffects(ParticipantState local, ParticipantState enemy) {
         if (previousLocal != null && local.getHp() > previousLocal.getHp()) sound(AudioService.Event.HEAL);
         if (previousEnemy != null && enemy.getHp() > previousEnemy.getHp()) sound(AudioService.Event.HEAL);
         if (online) {
@@ -1263,7 +1145,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (previousLocal != null && !previousLocal.isFeverActive() && local.isFeverActive()) {
             arena.showEffect(PixelArena.Effect.FEVER, 0); sound(AudioService.Event.FEVER);
         }
-        previousLocal = local; previousEnemy = enemy;
+    }
+
+    private void updateBoardsAndHeader(ParticipantState local, ParticipantState enemy) {
         playerName.setText(local.getName());
         enemyName.setText(enemy.getName());
         playerBoard.setState(local.getGameState());
@@ -1274,26 +1158,36 @@ public class BattlePanel extends JPanel implements Scrollable {
         arena.update(local.getName(), local.getHp(), local.getMaxHp(),
                 enemy.getName(), enemy.getHp(), enemy.getMaxHp());
         arena.setFever(local.isFeverActive());
-        GameState game = local.getGameState();
+    }
+
+    private void updateStatsAndPreviews(GameState game) {
         stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
         holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
                 game.getHoldOreCellIndex());
         pveHoldPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
                 game.getHoldOreCellIndex());
-        for (int index = 0; index < nextPreviews.length; index++)
-            nextPreviews[index].setPiece(index < game.getNextPieces().size()
+        updateNextPreviews(nextPreviews, game);
+        updateNextPreviews(pveNextPreviews, game);
+    }
+
+    private static void updateNextPreviews(MiniPiecePreview[] previews, GameState game) {
+        for (int index = 0; index < previews.length; index++)
+            previews[index].setPiece(index < game.getNextPieces().size()
                     ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
-        for (int index = 0; index < pveNextPreviews.length; index++)
-            pveNextPreviews[index].setPiece(index < game.getNextPieces().size()
-                    ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
+    }
+
+    private void updateFeverDisplay(ParticipantState local) {
         gauge.setText(local.isFeverActive() ? String.format("FEVER %.1fs", local.getFeverRemainingMillis() / 1000.0)
                 : "FEVER " + local.getFever() + "%");
         feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
-        pveFeverLabel.setText("FEVER");
+        pveFeverLabel.setText(FEVER_TEXT);
         pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
         pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
         pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
+    }
+
+    private void updateWarpAndGarbage(ParticipantState local) {
         warp.setText(local.getTimeWarpRemainingMillis() > 0
                 ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
         int incoming = local.getPendingGarbageLines();
@@ -1301,39 +1195,58 @@ public class BattlePanel extends JPanel implements Scrollable {
         pending.setText(incoming == 0 ? "가비지 0" : String.format("가비지 %d · %.1fs", incoming,
                 local.getGarbageWaitRemainingMillis() / 1000.0));
         pending.setForeground(incoming == 0 ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.CORAL);
+    }
+
+    private void updateItemSlots(BattleState state, ParticipantState local) {
+        for (int i = 0; i < slots.length; i++) updateItemSlot(i, state, local);
+    }
+
+    private void updateItemSlot(int i, BattleState state, ParticipantState local) {
         List<String> items = local.getItems();
         List<Integer> charges = local.getItemCharges();
-        for (int i = 0; i < slots.length; i++) {
-            boolean locked = i >= local.getItemSlots();
-            boolean available = !locked && i < items.size() && items.get(i) != null;
-            String item = available ? items.get(i) : null;
-            int count = available && i < charges.size() ? charges.get(i) : 1;
-            boolean automatic = "damage_boost".equals(item) || "shield".equals(item);
-            boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
-            slots[i].setText((i + 1) + " " + (locked ? "잠김" : item == null ? "빈 슬롯"
-                    : ItemSpec.categoryOf(item) + " " + itemShortName(item)
-                    + (count > 1 ? "×" + count : "")));
-            automaticSlots[i] = automatic;
-            slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
-                    : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
-            slots[i].setToolTipText(locked ? "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다."
-                    : item == null ? "비어 있는 슬롯"
-                    : itemName(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · "
-                    + (automatic ? "조건이 맞으면 자동 사용"
-                    : waitingForEarlierSlot ? "같은 아이템의 앞 슬롯부터 사용"
-                    : "클릭 또는 " + (i + 1) + " 키"));
-            slots[i].setEnabled(item != null
-                    && !waitingForEarlierSlot
-                    && state.getStatus() == BattleState.Status.RUNNING);
-            // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
-            ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
-            pveSlots[i].setIcon(icon);
-            pveSlots[i].setDisabledIcon(icon);
-            pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
-            pveSlots[i].setText("");
-            pveSlots[i].setToolTipText(slots[i].getToolTipText());
-            pveSlots[i].setEnabled(slots[i].isEnabled());
-        }
+        boolean locked = i >= local.getItemSlots();
+        boolean available = !locked && i < items.size() && items.get(i) != null;
+        String item = available ? items.get(i) : null;
+        int count = available && i < charges.size() ? charges.get(i) : 1;
+        boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
+        boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
+        slots[i].setText(slotText(i, locked, item, count));
+        automaticSlots[i] = automatic;
+        slots[i].setBackground(available ? automatic ? UniversityPixelTheme.MINT
+                : UniversityPixelTheme.GOLD : UniversityPixelTheme.PANEL_LIGHT);
+        slots[i].setToolTipText(slotTooltip(i, locked, item, count, automatic, waitingForEarlierSlot));
+        slots[i].setEnabled(item != null
+                && !waitingForEarlierSlot
+                && state.getStatus() == BattleState.Status.RUNNING);
+        // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
+        ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
+        pveSlots[i].setIcon(icon);
+        pveSlots[i].setDisabledIcon(icon);
+        pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
+        pveSlots[i].setText("");
+        pveSlots[i].setToolTipText(slots[i].getToolTipText());
+        pveSlots[i].setEnabled(slots[i].isEnabled());
+    }
+
+    private static String slotText(int index, boolean locked, String item, int count) {
+        if (locked) return (index + 1) + " 잠김";
+        if (item == null) return (index + 1) + " 빈 슬롯";
+        return (index + 1) + " " + ItemSpec.categoryOf(item) + " " + ItemLabels.shortName(item)
+                + (count > 1 ? "×" + count : "");
+    }
+
+    private static String slotTooltip(int index, boolean locked, String item, int count,
+                                      boolean automatic, boolean waitingForEarlierSlot) {
+        if (locked) return "유틸형 캐릭터가 4번 슬롯을 사용할 수 있습니다.";
+        if (item == null) return "비어 있는 슬롯";
+        String usage;
+        if (automatic) usage = "조건이 맞으면 자동 사용";
+        else if (waitingForEarlierSlot) usage = "같은 아이템의 앞 슬롯부터 사용";
+        else usage = "클릭 또는 " + (index + 1) + " 키";
+        return ItemLabels.name(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · " + usage;
+    }
+
+    private void updateClockAndBanner(BattleState state) {
         clock.setText(String.format("%02d:%02d", state.getElapsedMillis() / 60000,
                 state.getElapsedMillis() / 1000 % 60));
         if (System.currentTimeMillis() >= feedbackUntil) {
@@ -1377,40 +1290,25 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
     private static boolean oldWirePlacement(BoardState before, BoardState after) {
         if (latestPlacedOrigin(before) != 0 || latestPlacedOrigin(after) != 0) return false;
-        int newlyFilled = 0, oldGarbage = 0, newGarbage = 0;
-        for (int y = 0; y < before.getHeight(); y++) for (int x = 0; x < before.getWidth(); x++) {
-            PieceType oldCell = before.getCell(x, y), newCell = after.getCell(x, y);
-            if (oldCell == PieceType.GARBAGE) oldGarbage++;
-            if (newCell == PieceType.GARBAGE) newGarbage++;
-            if (oldCell == PieceType.EMPTY && newCell != PieceType.EMPTY
-                    && newCell != PieceType.GARBAGE) newlyFilled++;
-        }
-        return newlyFilled == 4 && newGarbage <= oldGarbage;
+        return countNewlyFilled(before, after) == 4
+                && countCells(after, PieceType.GARBAGE) <= countCells(before, PieceType.GARBAGE);
     }
-    private static String itemName(String id) {
-        switch (id) {
-            case "damage_boost": return "공격 증폭";
-            case "garbage_bomb": return "가비지 폭탄";
-            case "heal": return "회복";
-            case "shield": return "보호막";
-            case "line_cleaner": return "줄 정리";
-            case "fever_charge": return "피버 충전";
-            case "time_warp": return "시간 왜곡";
-            case "nullify": return "무효화";
-            default: return id;
-        }
+    private static int countCells(BoardState board, PieceType type) {
+        int count = 0;
+        for (int y = 0; y < board.getHeight(); y++)
+            for (int x = 0; x < board.getWidth(); x++)
+                if (board.getCell(x, y) == type) count++;
+        return count;
     }
-    private static String itemShortName(String id) {
-        switch (id) {
-            case "damage_boost": return "증폭";
-            case "garbage_bomb": return "폭탄";
-            case "heal": return "회복";
-            case "shield": return "방어";
-            case "line_cleaner": return "정리";
-            case "fever_charge": return "피버";
-            case "time_warp": return "왜곡";
-            case "nullify": return "무효화";
-            default: return id;
-        }
+    /** 이전에 비어 있다가 가비지가 아닌 블록으로 채워진 칸의 수. */
+    private static int countNewlyFilled(BoardState before, BoardState after) {
+        int filled = 0;
+        for (int y = 0; y < before.getHeight(); y++)
+            for (int x = 0; x < before.getWidth(); x++) {
+                PieceType newCell = after.getCell(x, y);
+                if (before.getCell(x, y) == PieceType.EMPTY && newCell != PieceType.EMPTY
+                        && newCell != PieceType.GARBAGE) filled++;
+            }
+        return filled;
     }
 }

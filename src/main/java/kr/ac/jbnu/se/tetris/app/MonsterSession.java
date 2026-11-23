@@ -25,6 +25,7 @@ import kr.ac.jbnu.se.tetris.controller.AIController;
 import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** AI 계산은 worker에서, 완성된 계획은 호출자(앱 EDT)의 같은 전투 큐에서 실행 */
 public final class MonsterSession implements PlaySession {
@@ -169,49 +170,82 @@ public final class MonsterSession implements PlaySession {
     }
     @Override public void pulse(long nowNanos) {
         if (closed || isPaused() || isFinished()) return;
-        GameState opponent = getOpponentState();
-        AIPlan ready = ai.poll(opponent);
+        AIPlan ready = ai.poll(getOpponentState());
         if (ready != null) {
-            lastPlan = ready;
-            int accepted = 0;
-            for (GameAction.Type action : ready.getActions()) {
-                BattleResult result = battle.submit(opponentParticipantId, action);
-                lastBattleResult = result;
-                if (!result.isAccepted()) break;
-                accepted++;
-                if (isFinished()) break;
-            }
-            PolicyDecision decision = ready.getPolicyDecision();
-            if (decision != null && accepted > 0 && accepted == ready.getActions().size()) {
-                previousWeights = decision.getWeights(); policyState = decision.getNextPolicyState();
-            }
-            if (!isFinished() && accepted == ready.getActions().size()) useOneMonsterItem();
+            applyPlan(ready);
             nextDecisionNanos = nowNanos + actionDelayNanos;
         }
-        opponent = getOpponentState();
-        if (!isFinished() && nowNanos >= nextDecisionNanos && !ai.isThinking()
-                && opponent.getActivePiece() != null && !opponent.isAwaitingSpawn()) {
-            ai.request(new AIContext(matchId, opponent, battle.getState().getParticipant(opponentParticipantId).getHp(),
-                    battle.getState().getParticipant(opponentParticipantId).getMaxHp(), profile.snapshot(),
-                    nextDecisionId++, previousWeights, policyState));
-        }
+        requestDecisionIfReady(nowNanos);
     }
+
+    /** AI가 확정한 계획의 동작을 순서대로 제출하고, 전부 수락되면 정책 상태 갱신과 아이템 사용까지 진행한다. */
+    private void applyPlan(AIPlan plan) {
+        lastPlan = plan;
+        int accepted = submitPlanActions(plan);
+        boolean allAccepted = accepted == plan.getActions().size();
+        PolicyDecision decision = plan.getPolicyDecision();
+        if (decision != null && accepted > 0 && allAccepted) {
+            previousWeights = decision.getWeights();
+            policyState = decision.getNextPolicyState();
+        }
+        if (!isFinished() && allAccepted) useOneMonsterItem();
+    }
+
+    /** 거절되거나 전투가 끝나기 전까지 수락된 동작 수를 돌려준다. */
+    private int submitPlanActions(AIPlan plan) {
+        int accepted = 0;
+        for (GameAction.Type action : plan.getActions()) {
+            BattleResult result = battle.submit(opponentParticipantId, action);
+            lastBattleResult = result;
+            if (!result.isAccepted()) break;
+            accepted++;
+            if (isFinished()) break;
+        }
+        return accepted;
+    }
+
+    private void requestDecisionIfReady(long nowNanos) {
+        GameState opponent = getOpponentState();
+        if (isFinished() || nowNanos < nextDecisionNanos || ai.isThinking()
+                || opponent.getActivePiece() == null || opponent.isAwaitingSpawn()) return;
+        ParticipantState self = battle.getState().getParticipant(opponentParticipantId);
+        ai.request(new AIContext(matchId, opponent, self.getHp(), self.getMaxHp(), profile.snapshot(),
+                nextDecisionId++, previousWeights, policyState));
+    }
+
     /** AI 배치가 확정된 뒤 사용 가능한 수동 아이템 한 개만 사용한다. */
     private void useOneMonsterItem() {
         BattleState state = battle.getState();
         ParticipantState self = state.getParticipant(opponentParticipantId);
         ParticipantState player = state.getParticipant(localParticipantId);
         for (String item : self.getItems()) {
-            String target = opponentParticipantId;
-            if ("heal".equals(item) && self.getHp() == self.getMaxHp()) continue;
-            if ("fever_charge".equals(item) && self.isFeverActive()) continue;
-            if ("time_warp".equals(item) && self.getTimeWarpRemainingMillis() > 0) continue;
-            if ("nullify".equals(item) && player.getItems().isEmpty()) continue;
-            if ("garbage_bomb".equals(item) || "nullify".equals(item)) target = localParticipantId;
-            if ("damage_boost".equals(item) || "shield".equals(item)) continue;
-            BattleResult used = battle.submitItem(opponentParticipantId,
-                    new GameAction.ItemUse(item, target));
-            if (used.isAccepted()) { lastBattleResult = used; break; }
+            if (shouldSkipItem(item, self, player)) continue;
+            boolean againstPlayer = ItemIds.GARBAGE_BOMB.equals(item) || ItemIds.NULLIFY.equals(item);
+            String target = againstPlayer ? localParticipantId : opponentParticipantId;
+            BattleResult used = battle.submitItem(opponentParticipantId, new GameAction.ItemUse(item, target));
+            if (used.isAccepted()) {
+                lastBattleResult = used;
+                break;
+            }
+        }
+    }
+
+    /** 지금 쓸 효과가 없거나 수동 사용 대상이 아닌 아이템은 건너뛴다. */
+    private static boolean shouldSkipItem(String item, ParticipantState self, ParticipantState player) {
+        switch (item) {
+            case ItemIds.HEAL:
+                return self.getHp() == self.getMaxHp();
+            case ItemIds.FEVER_CHARGE:
+                return self.isFeverActive();
+            case ItemIds.TIME_WARP:
+                return self.getTimeWarpRemainingMillis() > 0;
+            case ItemIds.NULLIFY:
+                return player.getItems().isEmpty();
+            case ItemIds.DAMAGE_BOOST:
+            case ItemIds.SHIELD:
+                return true;
+            default:
+                return false;
         }
     }
     public BattleResult submitItem(GameAction.ItemUse item) {

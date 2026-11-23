@@ -87,58 +87,98 @@ final class PlacementSearch {
         if (!PlacementSimulator.canPlace(board, initial.piece, initial.x, initial.y)) {
             return new Result(Collections.<Candidate>emptyList(), false);
         }
-        ArrayDeque<Node> queue = new ArrayDeque<Node>();
-        Set<String> visited = new HashSet<String>();
-        Set<String> landings = new HashSet<String>();
-        List<Candidate> candidates = new ArrayList<Candidate>();
-        queue.add(initial);
-        visited.add(initial.key());
-        Node held = heldRoot(board, canHold, holdPiece, nextPieces);
-        if (held != null && PlacementSimulator.canPlace(board, held.piece, held.x, held.y)
-                && visited.add(held.key())) queue.add(held);
-        int expanded = 0;
-        boolean timedOut = false;
-        while (!queue.isEmpty()) {
-            // 상태 수와 계산 시간 중 먼저 도달한 상한에서 탐색 중단
-            if (expanded >= maxStates || (expanded > 0
-                    && (System.nanoTime() - started >= budgetNanos
-                        || Thread.currentThread().isInterrupted()))) {
-                timedOut = true;
-                break;
+        Search run = new Search(board, maxStates, budgetNanos, started);
+        run.enqueueRoots(initial, heldRoot(board, canHold, holdPiece, nextPieces));
+        return run.execute();
+    }
+
+    /** 너비 우선 탐색 한 번의 진행 상태(대기열, 방문 기록, 후보, 시간 초과 여부) */
+    private static final class Search {
+        private final BoardState board;
+        private final int maxStates;
+        private final long budgetNanos;
+        private final long started;
+        private final ArrayDeque<Node> queue = new ArrayDeque<Node>();
+        private final Set<String> visited = new HashSet<String>();
+        private final Set<String> landings = new HashSet<String>();
+        private final List<Candidate> candidates = new ArrayList<Candidate>();
+        private boolean timedOut;
+
+        Search(BoardState board, int maxStates, long budgetNanos, long started) {
+            this.board = board;
+            this.maxStates = maxStates;
+            this.budgetNanos = budgetNanos;
+            this.started = started;
+        }
+
+        void enqueueRoots(Node initial, Node held) {
+            queue.add(initial);
+            visited.add(initial.key());
+            if (held != null && PlacementSimulator.canPlace(board, held.piece, held.x, held.y)
+                    && visited.add(held.key())) queue.add(held);
+        }
+
+        Result execute() {
+            int expanded = 0;
+            while (!queue.isEmpty()) {
+                if (limitReached(expanded)) {
+                    timedOut = true;
+                    break;
+                }
+                Node current = queue.removeFirst();
+                expanded++;
+                recordLanding(current);
+                expandMoves(current);
+                if (timedOut) break;
             }
-            Node current = queue.removeFirst();
-            expanded++;
+            return new Result(candidates, timedOut);
+        }
+
+        /** 상태 수와 계산 시간 중 먼저 도달한 상한에서 탐색 중단 */
+        private boolean limitReached(int expanded) {
+            return expanded >= maxStates || (expanded > 0
+                    && (System.nanoTime() - started >= budgetNanos
+                        || Thread.currentThread().isInterrupted()));
+        }
+
+        private void recordLanding(Node current) {
             // 같은 X·회전에도 시작 높이에 따라 달라지는 틈새 착지 가능성
             PlacementResult result = PlacementSimulator.hardDrop(board, current.piece,
                     current.x, current.y);
-            if (result.isValid()) {
-                String key = (current.held ? "H" : "A") + current.piece.getType()
-                        + ":" + current.piece.getRotation() + ":" + current.x + ":" + result.getY();
-                if (landings.add(key)) candidates.add(new Candidate(current, result));
-            }
+            if (!result.isValid()) return;
+            String key = (current.held ? "H" : "A") + current.piece.getType()
+                    + ":" + current.piece.getRotation() + ":" + current.x + ":" + result.getY();
+            if (landings.add(key)) candidates.add(new Candidate(current, result));
+        }
+
+        private void expandMoves(Node current) {
             for (GameAction.Type move : MOVES) {
                 if (Thread.currentThread().isInterrupted()
                         || System.nanoTime() - started >= budgetNanos) {
                     timedOut = true;
                     break;
                 }
-                Piece piece = current.piece;
-                int x = current.x, y = current.y;
-                switch (move) {
-                    case MOVE_LEFT: x--; break;
-                    case MOVE_RIGHT: x++; break;
-                    case ROTATE_LEFT: piece = piece.rotateLeft(); break;
-                    case ROTATE_RIGHT: piece = piece.rotateRight(); break;
-                    case SOFT_DROP: y--; break;
-                    default: throw new IllegalStateException("Unexpected search action");
-                }
-                if (!PlacementSimulator.canPlace(board, piece, x, y)) continue;
-                Node next = new Node(piece, x, y, current.held, append(current.path, move));
-                if (visited.add(next.key())) queue.addLast(next);
+                Node next = neighbor(current, move);
+                if (next != null && visited.add(next.key())) queue.addLast(next);
             }
-            if (timedOut) break;
         }
-        return new Result(candidates, timedOut);
+
+        /** 이동 후 놓을 수 있으면 다음 노드를, 아니면 null을 돌려준다. */
+        private Node neighbor(Node current, GameAction.Type move) {
+            Piece piece = current.piece;
+            int x = current.x;
+            int y = current.y;
+            switch (move) {
+                case MOVE_LEFT: x--; break;
+                case MOVE_RIGHT: x++; break;
+                case ROTATE_LEFT: piece = piece.rotateLeft(); break;
+                case ROTATE_RIGHT: piece = piece.rotateRight(); break;
+                case SOFT_DROP: y--; break;
+                default: throw new IllegalStateException("Unexpected search action");
+            }
+            if (!PlacementSimulator.canPlace(board, piece, x, y)) return null;
+            return new Node(piece, x, y, current.held, append(current.path, move));
+        }
     }
 
     private static Node heldRoot(BoardState board, boolean canHold, PieceType holdPiece,

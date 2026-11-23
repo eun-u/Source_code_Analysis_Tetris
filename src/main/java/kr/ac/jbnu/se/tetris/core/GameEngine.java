@@ -2,19 +2,18 @@ package kr.ac.jbnu.se.tetris.core;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** 순서 있는 명령 처리와 UI용 스냅샷 조회를 제공하는 동기화된 순수 게임 규칙 엔진 */
 public final class GameEngine implements GameActionSink {
     private static final int MAX_PENDING_GARBAGE_LINES = 220;
-    private static final List<String> ITEM_IDS = Arrays.asList("damage_boost", "garbage_bomb",
-            "heal", "shield", "line_cleaner", "fever_charge", "time_warp", "nullify");
+    private static final List<String> ITEM_IDS = ItemIds.ALL;
     private final String actorId;
     private final PieceGenerator generator;
     private final Board board = new Board();
@@ -110,146 +109,177 @@ public final class GameEngine implements GameActionSink {
         GameAction.Type type = action.getType();
         if (type == null) return reject("Action type is null");
         if (type == GameAction.Type.USE_ITEM) return reject("USE_ITEM is not implemented in Phase 1");
-        if (type == GameAction.Type.START) {
-            if (status != GameState.Status.READY) return reject("START requires READY");
-            PreparedPiece next = prepareNextPiece();
-            if (next.reason != null) return reject(next.reason);
-            Piece first = consumePreparedPiece();
-            status = GameState.Status.RUNNING;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.GAME_STARTED, null, 0, 0, 0, null));
-            spawn(first, true, events);
-            return accepted(events);
+        switch (type) {
+            case START:
+                return start();
+            case PAUSE:
+                return changeRunState(GameState.Status.RUNNING, GameState.Status.PAUSED,
+                        GameEvent.Type.PAUSED, "PAUSE requires RUNNING");
+            case RESUME:
+                return changeRunState(GameState.Status.PAUSED, GameState.Status.RUNNING,
+                        GameEvent.Type.RESUMED, "RESUME requires PAUSED");
+            default:
+                return dispatchWhileRunning(action, type);
         }
-        if (type == GameAction.Type.PAUSE) {
-            if (status != GameState.Status.RUNNING) return reject("PAUSE requires RUNNING");
-            status = GameState.Status.PAUSED;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.PAUSED, null, 0, 0, 0, null));
-            return accepted(events);
-        }
-        if (type == GameAction.Type.RESUME) {
-            if (status != GameState.Status.PAUSED) return reject("RESUME requires PAUSED");
-            status = GameState.Status.RUNNING;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.RESUMED, null, 0, 0, 0, null));
-            return accepted(events);
-        }
-        if (status != GameState.Status.RUNNING) return reject(type + " requires RUNNING");
-        if (type == GameAction.Type.RECEIVE_GARBAGE) {
-            GameAction.Garbage payload = action.getGarbage();
-            if (payload == null) return reject("RECEIVE_GARBAGE requires a payload");
-            if (pendingGarbageLines > MAX_PENDING_GARBAGE_LINES - payload.getLines()) {
-                return reject("Too many pending garbage lines");
-            }
-            pendingGarbage.addLast(payload);
-            pendingGarbageLines += payload.getLines();
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.GARBAGE_QUEUED, null, 0, 0, payload.getLines(), null));
-            return accepted(events);
-        }
-        // 줄 제거 뒤에는 다음 중력 틱에서 새 블록을 생성해 입력 순서를 일정하게 유지
-        if (awaitingSpawn) {
-            if (type != GameAction.Type.GRAVITY_TICK) return reject("Waiting for next gravity tick to spawn");
-            PreparedPiece next = prepareNextPiece();
-            if (next.reason != null) return reject(next.reason);
-            Piece piece = consumePreparedPiece();
-            version++;
-            tick++;
-            awaitingSpawn = false;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            spawn(piece, true, events);
-            return accepted(events);
-        }
-        if (activePiece == null) return reject("No active piece");
+    }
 
-        // 현재 블록당 HOLD 한 번 허용 및 교체 블록 확보 후 상태 변경
-        if (type == GameAction.Type.HOLD) {
-            if (holdUsed) return reject("HOLD already used for this piece");
-            Piece previous = activePiece;
-            Piece replacement;
-            if (heldPiece == null) {
-                PreparedPiece next = prepareNextPiece();
-                if (next.reason != null) return reject(next.reason);
-                replacement = consumePreparedPiece();
-            } else {
-                replacement = new Piece(heldPiece.getType(), heldPiece.getIdentity(),
-                        heldPiece.getItemId(), heldPiece.getOreCellIndex());
-            }
-            heldPiece = new Piece(previous.getType(), previous.getIdentity(),
-                    previous.getItemId(), previous.getOreCellIndex());
-            holdPiece = previous.getType();
-            holdUsed = true;
-            lastSuccessfulRotation = false;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.PIECE_HELD, previous, pieceX, pieceY, 0, null));
-            spawn(replacement, false, events);
-            return accepted(events);
+    /** 실행 중에만 허용되는 명령을 종류별 처리 메서드로 전달한다. */
+    private ActionResult dispatchWhileRunning(GameAction action, GameAction.Type type) {
+        if (status != GameState.Status.RUNNING) return reject(type + " requires RUNNING");
+        if (type == GameAction.Type.RECEIVE_GARBAGE) return receiveGarbage(action.getGarbage());
+        // 줄 제거 뒤에는 다음 중력 틱에서 새 블록을 생성해 입력 순서를 일정하게 유지
+        if (awaitingSpawn) return spawnAfterLineClear(type);
+        if (activePiece == null) return reject("No active piece");
+        switch (type) {
+            case HOLD:
+                return hold();
+            case MOVE_LEFT:
+            case MOVE_RIGHT:
+                return move(type);
+            case ROTATE_LEFT:
+            case ROTATE_RIGHT:
+                return rotate(type);
+            case SOFT_DROP:
+            case GRAVITY_TICK:
+                return drop(type);
+            case HARD_DROP:
+                return hardDrop();
+            default:
+                return reject("Unsupported action: " + type);
         }
-        if (type == GameAction.Type.MOVE_LEFT || type == GameAction.Type.MOVE_RIGHT) {
-            int nextX = pieceX + (type == GameAction.Type.MOVE_LEFT ? -1 : 1);
-            if (!board.canPlace(activePiece, nextX, pieceY)) return reject("Piece collision");
-            pieceX = nextX;
+    }
+
+    private ActionResult start() {
+        if (status != GameState.Status.READY) return reject("START requires READY");
+        PreparedPiece next = prepareNextPiece();
+        if (next.reason != null) return reject(next.reason);
+        Piece first = consumePreparedPiece();
+        status = GameState.Status.RUNNING;
+        version++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event(GameEvent.Type.GAME_STARTED, null, 0, 0, 0, null));
+        spawn(first, true, events);
+        return accepted(events);
+    }
+
+    /** PAUSE/RESUME처럼 실행 상태만 바꾸는 명령의 공통 처리 */
+    private ActionResult changeRunState(GameState.Status required, GameState.Status next,
+                                        GameEvent.Type eventType, String rejection) {
+        if (status != required) return reject(rejection);
+        status = next;
+        version++;
+        return acceptedWith(event(eventType, null, 0, 0, 0, null));
+    }
+
+    private ActionResult receiveGarbage(GameAction.Garbage payload) {
+        if (payload == null) return reject("RECEIVE_GARBAGE requires a payload");
+        if (pendingGarbageLines > MAX_PENDING_GARBAGE_LINES - payload.getLines()) {
+            return reject("Too many pending garbage lines");
+        }
+        pendingGarbage.addLast(payload);
+        pendingGarbageLines += payload.getLines();
+        version++;
+        return acceptedWith(event(GameEvent.Type.GARBAGE_QUEUED, null, 0, 0, payload.getLines(), null));
+    }
+
+    private ActionResult spawnAfterLineClear(GameAction.Type type) {
+        if (type != GameAction.Type.GRAVITY_TICK) return reject("Waiting for next gravity tick to spawn");
+        PreparedPiece next = prepareNextPiece();
+        if (next.reason != null) return reject(next.reason);
+        Piece piece = consumePreparedPiece();
+        version++;
+        tick++;
+        awaitingSpawn = false;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        spawn(piece, true, events);
+        return accepted(events);
+    }
+
+    // 현재 블록당 HOLD 한 번 허용 및 교체 블록 확보 후 상태 변경
+    private ActionResult hold() {
+        if (holdUsed) return reject("HOLD already used for this piece");
+        Piece previous = activePiece;
+        Piece replacement;
+        if (heldPiece == null) {
+            PreparedPiece next = prepareNextPiece();
+            if (next.reason != null) return reject(next.reason);
+            replacement = consumePreparedPiece();
+        } else {
+            replacement = copyOf(heldPiece);
+        }
+        heldPiece = copyOf(previous);
+        holdPiece = previous.getType();
+        holdUsed = true;
+        lastSuccessfulRotation = false;
+        version++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event(GameEvent.Type.PIECE_HELD, previous, pieceX, pieceY, 0, null));
+        spawn(replacement, false, events);
+        return accepted(events);
+    }
+
+    private static Piece copyOf(Piece piece) {
+        return new Piece(piece.getType(), piece.getIdentity(), piece.getItemId(), piece.getOreCellIndex());
+    }
+
+    private ActionResult move(GameAction.Type type) {
+        int nextX = pieceX + (type == GameAction.Type.MOVE_LEFT ? -1 : 1);
+        if (!board.canPlace(activePiece, nextX, pieceY)) return reject("Piece collision");
+        pieceX = nextX;
+        lastSuccessfulRotation = false;
+        version++;
+        return acceptedWith(event(GameEvent.Type.PIECE_MOVED, activePiece, pieceX, pieceY, 0, null));
+    }
+
+    private ActionResult rotate(GameAction.Type type) {
+        Piece rotated = type == GameAction.Type.ROTATE_LEFT
+                ? activePiece.rotateLeft() : activePiece.rotateRight();
+        if (!board.canPlace(rotated, pieceX, pieceY)) return reject("Piece collision");
+        activePiece = rotated;
+        lastSuccessfulRotation = activePiece.getType() == PieceType.T;
+        version++;
+        return acceptedWith(event(GameEvent.Type.PIECE_ROTATED, activePiece, pieceX, pieceY, 0, null));
+    }
+
+    /** SOFT_DROP과 GRAVITY_TICK: 한 칸 내리거나, 더 내릴 수 없으면 블록을 고정한다. */
+    private ActionResult drop(GameAction.Type type) {
+        boolean canMove = board.canPlace(activePiece, pieceX, pieceY - 1);
+        LockPreview preview = null;
+        PreparedPiece next = null;
+        if (!canMove) {
+            preview = previewLock(pieceY, lastSuccessfulRotation);
+            next = prepareForLock(preview);
+            if (next != null && next.reason != null) return reject(next.reason);
+        }
+        version++;
+        if (type == GameAction.Type.GRAVITY_TICK) tick++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        if (canMove) {
+            pieceY--;
             lastSuccessfulRotation = false;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
             events.add(event(GameEvent.Type.PIECE_MOVED, activePiece, pieceX, pieceY, 0, null));
-            return accepted(events);
-        }
-        if (type == GameAction.Type.ROTATE_LEFT || type == GameAction.Type.ROTATE_RIGHT) {
-            Piece rotated = type == GameAction.Type.ROTATE_LEFT
-                    ? activePiece.rotateLeft() : activePiece.rotateRight();
-            if (!board.canPlace(rotated, pieceX, pieceY)) return reject("Piece collision");
-            activePiece = rotated;
-            lastSuccessfulRotation = activePiece.getType() == PieceType.T;
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            events.add(event(GameEvent.Type.PIECE_ROTATED, activePiece, pieceX, pieceY, 0, null));
-            return accepted(events);
-        }
-        if (type == GameAction.Type.SOFT_DROP || type == GameAction.Type.GRAVITY_TICK) {
-            boolean canMove = board.canPlace(activePiece, pieceX, pieceY - 1);
-            LockPreview preview = null;
-            PreparedPiece next = null;
-            if (!canMove) {
-                preview = previewLock(pieceY, lastSuccessfulRotation);
-                if (!battleManaged && preview.linesCleared == 0 && !preview.overflow) {
-                    next = prepareNextPiece();
-                    if (next.reason != null) return reject(next.reason);
-                }
-            }
-            version++;
-            if (type == GameAction.Type.GRAVITY_TICK) tick++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            if (canMove) {
-                pieceY--;
-                lastSuccessfulRotation = false;
-                events.add(event(GameEvent.Type.PIECE_MOVED, activePiece, pieceX, pieceY, 0, null));
-            } else {
-                lock(preview, next == null ? null : consumePreparedPiece(), events);
-            }
-            return accepted(events);
-        }
-        if (type == GameAction.Type.HARD_DROP) {
-            int landingY = board.landingY(activePiece, pieceX, pieceY);
-            LockPreview preview = previewLock(landingY, lastSuccessfulRotation && landingY == pieceY);
-            PreparedPiece next = null;
-            if (!battleManaged && preview.linesCleared == 0 && !preview.overflow) {
-                next = prepareNextPiece();
-                if (next.reason != null) return reject(next.reason);
-            }
-            version++;
-            List<GameEvent> events = new ArrayList<GameEvent>();
-            pieceY = landingY;
+        } else {
             lock(preview, next == null ? null : consumePreparedPiece(), events);
-            return accepted(events);
         }
-        return reject("Unsupported action: " + type);
+        return accepted(events);
+    }
+
+    private ActionResult hardDrop() {
+        int landingY = board.landingY(activePiece, pieceX, pieceY);
+        LockPreview preview = previewLock(landingY, lastSuccessfulRotation && landingY == pieceY);
+        PreparedPiece next = prepareForLock(preview);
+        if (next != null && next.reason != null) return reject(next.reason);
+        version++;
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        pieceY = landingY;
+        lock(preview, next == null ? null : consumePreparedPiece(), events);
+        return accepted(events);
+    }
+
+    /** 줄이 지워지지 않는 일반 고정이면 다음 블록을 미리 준비하고, 그 외에는 null을 돌려준다. */
+    private PreparedPiece prepareForLock(LockPreview preview) {
+        if (battleManaged || preview.linesCleared != 0 || preview.overflow) return null;
+        return prepareNextPiece();
     }
 
     private void spawn(Piece next, boolean resetHold, List<GameEvent> events) {
@@ -294,7 +324,8 @@ public final class GameEngine implements GameActionSink {
         int occupied = 0;
         int[] offsets = {-1, 1};
         for (int dx : offsets) for (int dy : offsets) {
-            int cx = x + dx, cy = y + dy;
+            int cx = x + dx;
+            int cy = y + dy;
             if (cx < 0 || cx >= Board.WIDTH || cy < 0 || cy >= Board.HEIGHT
                     || board.getCell(cx, cy) != PieceType.EMPTY) occupied++;
         }
@@ -307,19 +338,11 @@ public final class GameEngine implements GameActionSink {
             return reject("Garbage requires a managed lock boundary");
         }
         if (batches == null) return reject("Garbage batches are null");
-        Board detached = new Board(board.snapshot());
-        int total = 0;
-        boolean overflow = false;
-        for (GameAction.Garbage batch : batches) {
-            if (batch == null || total > MAX_PENDING_GARBAGE_LINES - batch.getLines()) {
-                return reject("Invalid garbage batch");
-            }
-            total += batch.getLines();
-            for (int i = 0; i < batch.getLines(); i++) {
-                overflow |= detached.addGarbageLine(batch.getHoleColumn());
-            }
-        }
+        int total = totalGarbageLines(batches);
+        if (total < 0) return reject("Invalid garbage batch");
         if (total == 0) return accepted(new ArrayList<GameEvent>());
+        Board detached = new Board(board.snapshot());
+        boolean overflow = stackGarbage(detached, batches);
         board.copyFrom(detached);
         version++;
         List<GameEvent> events = new ArrayList<GameEvent>();
@@ -330,6 +353,27 @@ public final class GameEngine implements GameActionSink {
             topOut(events, "GARBAGE_TOP_OUT");
         }
         return accepted(events);
+    }
+
+    /** 가비지 묶음의 총 줄 수를 구한다. 묶음이 null이거나 한도를 넘으면 -1. */
+    private static int totalGarbageLines(List<GameAction.Garbage> batches) {
+        int total = 0;
+        for (GameAction.Garbage batch : batches) {
+            if (batch == null || total > MAX_PENDING_GARBAGE_LINES - batch.getLines()) return -1;
+            total += batch.getLines();
+        }
+        return total;
+    }
+
+    /** 가비지를 보드에 쌓고, 한 줄이라도 넘쳤으면 true를 돌려준다. */
+    private static boolean stackGarbage(Board target, List<GameAction.Garbage> batches) {
+        boolean overflow = false;
+        for (GameAction.Garbage batch : batches) {
+            for (int i = 0; i < batch.getLines(); i++) {
+                overflow |= target.addGarbageLine(batch.getHoleColumn());
+            }
+        }
+        return overflow;
     }
 
     /** 아이템 효과가 실제로 제거할 가비지 행이 있을 때만 성공한다. */
@@ -349,7 +393,8 @@ public final class GameEngine implements GameActionSink {
 
     private void lock(LockPreview preview, Piece next, List<GameEvent> events) {
         Piece placed = activePiece;
-        int placedX = pieceX, placedY = pieceY;
+        int placedX = pieceX;
+        int placedY = pieceY;
         board.copyFrom(preview.board);
         activePiece = null;
         lastSuccessfulRotation = false;
@@ -359,24 +404,11 @@ public final class GameEngine implements GameActionSink {
                     preview.linesCleared, null, combo, true));
         }
         if (preview.linesCleared > 0) {
-            linesCleared += preview.linesCleared;
-            combo++;
-            collectedItemOrigins.addAll(preview.collected.keySet());
-            events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
-                    itemIds(preview.collected), new ArrayList<GameEvent.ItemExtraction>(preview.collected.values())));
-            if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin));
-            // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
-            if (preview.perfectClear) combo = -1;
+            recordLineClear(preview, events);
         } else {
             combo = -1;
         }
-        if (!battleManaged && pendingGarbageLines > 0) {
-            events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
-            pendingGarbage.clear();
-            pendingGarbageLines = 0;
-        }
+        flushPendingGarbage(events);
         if (preview.overflow) {
             awaitingSpawn = false;
             status = GameState.Status.GAME_OVER;
@@ -386,6 +418,26 @@ public final class GameEngine implements GameActionSink {
         } else {
             spawn(next, true, events);
         }
+    }
+
+    private void recordLineClear(LockPreview preview, List<GameEvent> events) {
+        linesCleared += preview.linesCleared;
+        combo++;
+        collectedItemOrigins.addAll(preview.collected.keySet());
+        events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
+                preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
+                itemIds(preview.collected), new ArrayList<GameEvent.ItemExtraction>(preview.collected.values())));
+        if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
+                preview.linesCleared, null, combo, preview.tSpin));
+        // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
+        if (preview.perfectClear) combo = -1;
+    }
+
+    private void flushPendingGarbage(List<GameEvent> events) {
+        if (battleManaged || pendingGarbageLines <= 0) return;
+        events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
+        pendingGarbage.clear();
+        pendingGarbageLines = 0;
     }
 
     private void topOut(List<GameEvent> events, String reason) {
@@ -492,6 +544,12 @@ public final class GameEngine implements GameActionSink {
 
     private ActionResult accepted(List<GameEvent> events) {
         return new ActionResult(true, null, getState(), events);
+    }
+
+    private ActionResult acceptedWith(GameEvent event) {
+        List<GameEvent> events = new ArrayList<GameEvent>();
+        events.add(event);
+        return accepted(events);
     }
 
     private ActionResult reject(String reason) {

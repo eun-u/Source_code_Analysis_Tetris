@@ -38,13 +38,13 @@ public final class BattleDialogue extends JComponent {
     }
 
     private final Deque<Line> pending = new ArrayDeque<Line>();
-    private Line current;
+    private transient Line current;
     private long currentStartedAt;
     private long currentDuration;
     private final Timer timer = new Timer(50, event -> step());
     // The queue owns dialogue order/timing; the arena owns where the bubble is drawn.
     // Do not mount this legacy box as a visible Swing component.
-    private BiConsumer<Speaker, String> speechListener;
+    private transient BiConsumer<Speaker, String> speechListener;
 
     public void setSpeechListener(BiConsumer<Speaker, String> listener) {
         speechListener = listener;
@@ -195,15 +195,7 @@ public final class BattleDialogue extends JComponent {
         while (index < text.length()) {
             char c = text.charAt(index);
             if (row.length() > 0 && metrics.stringWidth(row.toString() + c) > maxWidth) {
-                // 단어 중간이 아니라 가능한 한 공백에서 끊는다.
-                int space = row.lastIndexOf(" ");
-                if (c != ' ' && space > row.length() / 2) {
-                    rows.add(row.substring(0, space));
-                    row = new StringBuilder(row.substring(space + 1));
-                } else {
-                    rows.add(row.toString());
-                    row = new StringBuilder();
-                }
+                row = breakRow(rows, row, c);
                 if (rows.size() == maxLines) break;
                 continue;
             }
@@ -212,12 +204,31 @@ public final class BattleDialogue extends JComponent {
         }
         if (rows.size() < maxLines && row.length() > 0) rows.add(row.toString());
         boolean cut = index < text.length() || rows.size() > maxLines;
-        if (rows.size() > maxLines) rows = new ArrayList<String>(rows.subList(0, maxLines));
-        if (cut && !rows.isEmpty()) {
-            String last = rows.get(rows.size() - 1);
-            while (last.length() > 1 && metrics.stringWidth(last + "…") > maxWidth) last = last.substring(0, last.length() - 1);
-            rows.set(rows.size() - 1, last + "…");
+        return limitRows(rows, cut, metrics, maxWidth, maxLines);
+    }
+
+    /** 최대 줄 수로 자르고, 잘린 경우 마지막 줄 끝을 …로 줄인다. */
+    private static List<String> limitRows(List<String> rows, boolean cut, FontMetrics metrics,
+                                          int maxWidth, int maxLines) {
+        List<String> result = rows.size() > maxLines ? new ArrayList<String>(rows.subList(0, maxLines)) : rows;
+        if (cut && !result.isEmpty()) ellipsizeLast(result, metrics, maxWidth);
+        return result;
+    }
+
+    /** 현재 줄을 확정하고 다음 줄에 이어질 내용을 돌려준다. 단어 중간이 아니라 가능한 한 공백에서 끊는다. */
+    private static StringBuilder breakRow(List<String> rows, StringBuilder row, char next) {
+        int space = row.lastIndexOf(" ");
+        if (next != ' ' && space > row.length() / 2) {
+            rows.add(row.substring(0, space));
+            return new StringBuilder(row.substring(space + 1));
         }
-        return rows;
+        rows.add(row.toString());
+        return new StringBuilder();
+    }
+
+    private static void ellipsizeLast(List<String> rows, FontMetrics metrics, int maxWidth) {
+        String last = rows.get(rows.size() - 1);
+        while (last.length() > 1 && metrics.stringWidth(last + "…") > maxWidth) last = last.substring(0, last.length() - 1);
+        rows.set(rows.size() - 1, last + "…");
     }
 }

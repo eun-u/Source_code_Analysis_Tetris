@@ -15,8 +15,8 @@ public final class AssetTest {
         Logger logger = Logger.getLogger(AssetManager.class.getName());
         Handler capture = new Handler() {
             @Override public void publish(LogRecord record) { warnings.add(record.getMessage()); }
-            @Override public void flush() { }
-            @Override public void close() { }
+            @Override public void flush() { /* 캡처 핸들러는 버퍼가 없어 비울 것이 없다 */ }
+            @Override public void close() { /* 해제할 자원이 없다 */ }
         };
         logger.addHandler(capture);
         try {
