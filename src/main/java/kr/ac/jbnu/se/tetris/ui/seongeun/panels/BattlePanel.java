@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntConsumer;
@@ -77,7 +76,6 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static final Color FACADE_LIGHT = new Color(0xE5E2D7);
     private static final int GAP = 8, METER = 12;
     private static final int PVE_LEFT_PILLAR = 24, PVE_RIGHT_PILLAR = 12;
-    private static final String GARBAGE_BOMB_TEXT = "가비지 폭탄";
     private static final String SPEAKER_PLAYER = "PLAYER";
     private static final String SPEAKER_MONSTER = "MONSTER";
     private static final String FEVER_TEXT = "FEVER";
@@ -1008,7 +1006,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         } else if (event.getType() == BattleEvent.Type.ITEM_USED) {
             showItemUsed(event, localId);
         } else if (event.getType() == BattleEvent.Type.ITEM_REMOVED) {
-            if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + itemName(event.getReason()));
+            if (localId != null && localId.equals(event.getTargetId())) setFeedback("아이템이 무효화됨 · " + ItemLabels.name(event.getReason()));
         } else if (event.getType() == BattleEvent.Type.CORE_EVENT && event.getCoreEvent() != null) {
             showCoreEvent(event.getCoreEvent(), board, local);
         }
@@ -1028,7 +1026,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (!mined) arena.showEffect(PixelArena.Effect.ITEM_ACQUIRE, event.getAmount(), !local);
         if (local) {
             sound(AudioService.Event.ITEM_ACQUIRE);
-            setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + itemName(event.getReason()));
+            setFeedback((mined ? "광석 채굴 · " : "아이템 획득 · ") + ItemLabels.name(event.getReason()));
         }
     }
 
@@ -1036,7 +1034,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         boolean local = localId != null && localId.equals(event.getActorId());
         boolean targetMonster = localId != null && !localId.equals(event.getTargetId());
         arena.showItemEffect(event.getReason(), targetMonster); sound(AudioService.Event.ITEM_USE);
-        if (local) setFeedback("아이템 사용 · " + itemName(event.getReason()));
+        if (local) setFeedback("아이템 사용 · " + ItemLabels.name(event.getReason()));
     }
 
     private void showCoreEvent(GameEvent core, Board board, boolean local) {
@@ -1053,220 +1051,17 @@ public class BattlePanel extends JPanel implements Scrollable {
         }
     }
 
-    private interface BattleNotice {
-        BattleLog.Side side();
-        String text();
-    }
-
-    private static final class ClearNotice implements BattleNotice {
-        final BattleLog.Side side;
-        final String subject;
-        final int lines, combo;
-        final boolean perfect;
-        Integer damage, garbage;
-
-        ClearNotice(BattleLog.Side side, String subject, GameEvent clear) {
-            this.side = side;
-            this.subject = subject;
-            this.lines = clear.getLineCount();
-            this.combo = clear.getCombo();
-            this.perfect = clear.isPerfectClear();
-        }
-
-        @Override public BattleLog.Side side() { return side; }
-
-        @Override public String text() {
-            StringBuilder notice = new StringBuilder(subject).append(" · ").append(lines).append("줄 클리어");
-            if (perfect) notice.append(" 퍼펙트!");
-            if (combo > 0) notice.append(" · ").append(combo).append("콤보");
-            if (damage != null || garbage != null) {
-                notice.append(" → ");
-                if (damage != null) notice.append(damage).append(" 피해");
-                if (garbage != null) {
-                    if (damage != null) notice.append(" · ");
-                    notice.append("가비지 ").append(garbage).append("줄");
-                }
-            }
-            return notice.toString();
-        }
-    }
-
-    /** Damage and items without a LINE_CLEAR source are still legitimate battle facts. */
-    private static final class ActionNotice implements BattleNotice {
-        final BattleLog.Side side;
-        final String subject, actor, target;
-        String action;
-        Integer damage, garbage;
-        String removedItem, removedFrom;
-
-        ActionNotice(BattleLog.Side side, String subject, String actor, String target, String action) {
-            this.side = side;
-            this.subject = subject;
-            this.actor = actor;
-            this.target = target;
-            this.action = action;
-        }
-
-        @Override public BattleLog.Side side() { return side; }
-
-        boolean sameParticipants(BattleEvent event) {
-            return java.util.Objects.equals(actor, event.getActorId())
-                    && java.util.Objects.equals(target, event.getTargetId());
-        }
-
-        @Override public String text() {
-            StringBuilder value = new StringBuilder(subject).append(" · ").append(action);
-            if (removedItem != null) {
-                value.append(" → ").append(removedFrom).append(' ').append(itemName(removedItem)).append(" 제거");
-            } else if (damage != null || garbage != null) {
-                value.append(" → ");
-                if (damage != null) value.append("피해 ").append(damage);
-                if (garbage != null) {
-                    if (damage != null) value.append(" + ");
-                    value.append("가비지 ").append(garbage).append("줄");
-                }
-            }
-            return value.toString();
-        }
-    }
-
     /**
      * Formats one batch of accepted engine events. Linked LINE_CLEAR events share a core ID;
      * standalone damage/garbage and item consequences are paired in event order.
      */
     private void recordBattleNotices(List<BattleEvent> events, String localId) {
-        NoticeBuilder builder = new NoticeBuilder();
+        BattleNoticeBuilder builder = new BattleNoticeBuilder(enemyLabel());
         for (BattleEvent event : events) builder.add(event, localId);
-        for (BattleNotice notice : builder.output) battleLog.push(notice.side(), notice.text());
+        for (BattleNoticeBuilder.BattleNotice notice : builder.notices()) battleLog.push(notice.side(), notice.text());
     }
 
-    /** 이벤트를 순서대로 받아 공격·아이템 결과를 짝지어 전투 로그 항목으로 만든다. */
-    private final class NoticeBuilder {
-        final List<BattleNotice> output = new ArrayList<BattleNotice>();
-        private final Map<String, ClearNotice> clearByCore = new LinkedHashMap<String, ClearNotice>();
-        private ActionNotice attack;
-        private ActionNotice item;
-
-        void add(BattleEvent event, String localId) {
-            boolean local = localId != null && localId.equals(event.getActorId());
-            BattleLog.Side side = logSide(local);
-            String subject = actorLabel(local);
-            BattleEvent.Type type = event.getType();
-            GameEvent core = event.getCoreEvent();
-            if (core != null && core.getType() == GameEvent.Type.LINE_CLEAR) {
-                addClear(event, core, side, subject);
-            } else if (type == BattleEvent.Type.DAMAGE) {
-                addDamage(event, side, subject);
-            } else if (type == BattleEvent.Type.GARBAGE_SENT) {
-                addGarbageSent(event, side, subject);
-            } else if (type == BattleEvent.Type.ITEM_USED) {
-                addItemUsed(event, side, subject);
-            } else if (type == BattleEvent.Type.ITEM_REMOVED) {
-                addItemRemoved(event, local, side, subject);
-            } else if (type == BattleEvent.Type.ITEM_ACQUIRED) {
-                addItemAcquired(event, local, side, subject);
-            } else if (type == BattleEvent.Type.CORE_EVENT) {
-                // Placement starts a separate engine action; never group its attacks with the last one.
-                resetPending();
-            }
-        }
-
-        private void resetPending() {
-            attack = null;
-            item = null;
-        }
-
-        private void addClear(BattleEvent event, GameEvent core, BattleLog.Side side, String subject) {
-            String actor = event.getActorId();
-            String coreActor = actor == null ? core.getActorId() : actor;
-            String key = coreActor + ":" + core.getEventId();
-            ClearNotice notice = clearByCore.get(key);
-            if (notice == null) {
-                notice = new ClearNotice(side, subject, core);
-                clearByCore.put(key, notice);
-                output.add(notice);
-            }
-            if (event.getType() == BattleEvent.Type.DAMAGE) notice.damage = event.getAmount();
-            if (event.getType() == BattleEvent.Type.GARBAGE_SENT) notice.garbage = event.getAmount();
-        }
-
-        private void startAttack(BattleEvent event, BattleLog.Side side, String subject) {
-            attack = new ActionNotice(side, subject, event.getActorId(), event.getTargetId(), "공격");
-            output.add(attack);
-        }
-
-        private void addDamage(BattleEvent event, BattleLog.Side side, String subject) {
-            // A direct attack may have no backing Tetris line clear (synthetic/wire event).
-            if (attack == null || !attack.sameParticipants(event) || attack.damage != null) {
-                startAttack(event, side, subject);
-            }
-            attack.damage = event.getAmount();
-            item = null;
-        }
-
-        private void addGarbageSent(BattleEvent event, BattleLog.Side side, String subject) {
-            if (item != null && GARBAGE_BOMB_TEXT.equals(item.action)
-                    && item.sameParticipants(event) && item.garbage == null) {
-                item.garbage = event.getAmount();
-                resetPending();
-                return;
-            }
-            if (attack == null || !attack.sameParticipants(event) || attack.garbage != null) {
-                startAttack(event, side, subject);
-            }
-            attack.garbage = event.getAmount();
-        }
-
-        private void addItemUsed(BattleEvent event, BattleLog.Side side, String subject) {
-            String id = event.getReason();
-            if (ItemIds.GARBAGE_BOMB.equals(id) && attack != null
-                    && attack.sameParticipants(event) && attack.damage == null
-                    && attack.garbage != null) {
-                // BattleManager submits the bomb's garbage event before ITEM_USED.
-                attack.action = GARBAGE_BOMB_TEXT;
-                resetPending();
-                return;
-            }
-            String action = itemAction(id);
-            item = new ActionNotice(side, subject, event.getActorId(), event.getTargetId(), action);
-            output.add(item);
-            attack = null;
-            if (!GARBAGE_BOMB_TEXT.equals(action) && !"무효화".equals(action)) item = null;
-        }
-
-        private void addItemRemoved(BattleEvent event, boolean local, BattleLog.Side side, String subject) {
-            if (item != null && "무효화".equals(item.action) && item.sameParticipants(event)) {
-                item.removedItem = event.getReason();
-                item.removedFrom = local ? "상대" : "내";
-            } else {
-                output.add(new ActionNotice(side, subject, event.getActorId(), event.getTargetId(),
-                        itemName(event.getReason()) + " 제거"));
-            }
-            resetPending();
-        }
-
-        private void addItemAcquired(BattleEvent event, boolean local, BattleLog.Side side, String subject) {
-            // Player pickups already have an ore-flight / inventory effect.
-            if (!local) output.add(new ActionNotice(side, subject, event.getActorId(), event.getTargetId(),
-                    "아이템 획득 · " + itemName(event.getReason())));
-            resetPending();
-        }
-    }
-
-    private static String itemAction(String id) {
-        if (ItemIds.HEAL.equals(id)) return "회복 사용";
-        if (ItemIds.SHIELD.equals(id)) return "보호막 발동";
-        if (ItemIds.GARBAGE_BOMB.equals(id)) return GARBAGE_BOMB_TEXT;
-        if (ItemIds.NULLIFY.equals(id)) return "무효화";
-        return itemName(id) + " 사용";
-    }
-
-    private static BattleLog.Side logSide(boolean local) {
-        return local ? BattleLog.Side.PLAYER : BattleLog.Side.ENEMY;
-    }
-
-    private String actorLabel(boolean local) {
-        if (local) return "나";
+    private String enemyLabel() {
         String name = enemyName.getText();
         return name == null || name.trim().isEmpty() || SPEAKER_MONSTER.equals(name)
                 ? "일반 몬스터" : name;
@@ -1436,7 +1231,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static String slotText(int index, boolean locked, String item, int count) {
         if (locked) return (index + 1) + " 잠김";
         if (item == null) return (index + 1) + " 빈 슬롯";
-        return (index + 1) + " " + ItemSpec.categoryOf(item) + " " + itemShortName(item)
+        return (index + 1) + " " + ItemSpec.categoryOf(item) + " " + ItemLabels.shortName(item)
                 + (count > 1 ? "×" + count : "");
     }
 
@@ -1448,7 +1243,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         if (automatic) usage = "조건이 맞으면 자동 사용";
         else if (waitingForEarlierSlot) usage = "같은 아이템의 앞 슬롯부터 사용";
         else usage = "클릭 또는 " + (index + 1) + " 키";
-        return itemName(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · " + usage;
+        return ItemLabels.name(item) + " [" + ItemSpec.categoryOf(item) + "] · " + count + "회 · " + usage;
     }
 
     private void updateClockAndBanner(BattleState state) {
@@ -1515,31 +1310,5 @@ public class BattlePanel extends JPanel implements Scrollable {
                         && newCell != PieceType.GARBAGE) filled++;
             }
         return filled;
-    }
-    private static String itemName(String id) {
-        switch (id) {
-            case ItemIds.DAMAGE_BOOST: return "공격 증폭";
-            case ItemIds.GARBAGE_BOMB: return GARBAGE_BOMB_TEXT;
-            case ItemIds.HEAL: return "회복";
-            case ItemIds.SHIELD: return "보호막";
-            case ItemIds.LINE_CLEANER: return "줄 정리";
-            case ItemIds.FEVER_CHARGE: return "피버 충전";
-            case ItemIds.TIME_WARP: return "시간 왜곡";
-            case ItemIds.NULLIFY: return "무효화";
-            default: return id;
-        }
-    }
-    private static String itemShortName(String id) {
-        switch (id) {
-            case ItemIds.DAMAGE_BOOST: return "증폭";
-            case ItemIds.GARBAGE_BOMB: return "폭탄";
-            case ItemIds.HEAL: return "회복";
-            case ItemIds.SHIELD: return "방어";
-            case ItemIds.LINE_CLEANER: return "정리";
-            case ItemIds.FEVER_CHARGE: return "피버";
-            case ItemIds.TIME_WARP: return "왜곡";
-            case ItemIds.NULLIFY: return "무효화";
-            default: return id;
-        }
     }
 }
