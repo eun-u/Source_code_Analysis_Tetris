@@ -17,11 +17,11 @@ import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.PieceGenerator;
 import kr.ac.jbnu.se.tetris.core.SevenBagGenerator;
 import kr.ac.jbnu.se.tetris.item.ItemSpec;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** 가상 시간, 참가자 상태, 공격과 가비지를 처리하는 전투 규칙 소유자. */
 public final class BattleManager {
-    private static final List<String> ITEM_IDS = Arrays.asList("damage_boost", "garbage_bomb",
-            "heal", "shield", "line_cleaner", "fever_charge", "time_warp", "nullify");
+    private static final List<String> ITEM_IDS = ItemIds.ALL;
     private final Map<String, Participant> participants = new LinkedHashMap<String, Participant>();
     private final DamageManager damageManager = new DamageManager();
     private final HPManager hpManager = new HPManager();
@@ -167,37 +167,37 @@ public final class BattleManager {
         if (source.itemLevel >= 0 && !monsterItems(source.itemLevel).contains(id))
             return reject("ITEM_RESTRICTED", actorId);
         if (!ITEM_IDS.contains(id) || !source.items.contains(id)) return reject("ITEM_NOT_OWNED", actorId);
-        if ("damage_boost".equals(id) || "shield".equals(id)) return reject("AUTO_ITEM", actorId);
+        if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id)) return reject("AUTO_ITEM", actorId);
         boolean self = source == target;
-        if (("garbage_bomb".equals(id) || "nullify".equals(id)) == self)
+        if ((ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id)) == self)
             return reject("INVALID_TARGET", actorId);
-        if (!("garbage_bomb".equals(id) || "nullify".equals(id)) && !self)
+        if (!(ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id)) && !self)
             return reject("INVALID_TARGET", actorId);
-        if ("heal".equals(id) && source.hp == source.spec.getMaxHp()) return reject("NO_EFFECT", actorId);
-        if ("time_warp".equals(id) && source.warpUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
+        if (ItemIds.HEAL.equals(id) && source.hp == source.spec.getMaxHp()) return reject("NO_EFFECT", actorId);
+        if (ItemIds.TIME_WARP.equals(id) && source.warpUntil > elapsedMillis) return reject("NO_EFFECT", actorId);
         List<BattleEvent> events = new ArrayList<BattleEvent>();
         String removedByNullify = null;
-        if ("heal".equals(id)) {
+        if (ItemIds.HEAL.equals(id)) {
             int amount = Math.max(1, (int) Math.ceil(source.spec.getMaxHp() * .1));
             source.hp = hpManager.applyHealing(source.hp, source.spec.getMaxHp(), amount);
-            events.add(event(BattleEvent.Type.HP_CHANGED, actorId, actorId, source.hp, "HEAL", null));
-        } else if ("garbage_bomb".equals(id))
+            events.add(event(BattleEvent.Type.HP_CHANGED, actorId, actorId, source.hp, ItemIds.HEAL, null));
+        } else if (ItemIds.GARBAGE_BOMB.equals(id))
             sendGarbage(source, target, source.tank.cancel(1), null, events);
-        else if ("line_cleaner".equals(id)) {
+        else if (ItemIds.LINE_CLEANER.equals(id)) {
             ActionResult clean = source.engine.clearBottomGarbageLine();
             if (clean.isAccepted()) processCore(source, clean, events);
             else if (!"No garbage line to clean".equals(clean.getReason()))
                 return rejectWithEvents(clean.getReason(), actorId, events);
-        } else if ("fever_charge".equals(id)) chargeFever(source, 20);
-        else if ("time_warp".equals(id)) {
+        } else if (ItemIds.FEVER_CHARGE.equals(id)) chargeFever(source, 20);
+        else if (ItemIds.TIME_WARP.equals(id)) {
             source.warpUntil = elapsedMillis + 5000;
             source.warpSlotIndex = source.items.indexOf(id);
         }
-        else if ("nullify".equals(id) && !target.items.isEmpty()) {
+        else if (ItemIds.NULLIFY.equals(id) && !target.items.isEmpty()) {
             int removedIndex = itemRandom.nextInt(target.items.size());
             removedByNullify = removeItemAt(target, removedIndex);
         }
-        if (!"time_warp".equals(id)) consumeItem(source, id);
+        if (!ItemIds.TIME_WARP.equals(id)) consumeItem(source, id);
         events.add(event(BattleEvent.Type.ITEM_USED, actorId, target.spec.getId(), 1, id, null));
         if (removedByNullify != null)
             events.add(event(BattleEvent.Type.ITEM_REMOVED, actorId,
@@ -350,19 +350,19 @@ public final class BattleManager {
         Participant target = nextLivingTarget(source.spec.getId());
         if (target == null) return;
         boolean perfect = clear.isPerfectClear();
-        boolean boost = !perfect && source.items.contains("damage_boost");
-        boolean shield = !perfect && target.items.contains("shield");
+        boolean boost = !perfect && source.items.contains(ItemIds.DAMAGE_BOOST);
+        boolean shield = !perfect && target.items.contains(ItemIds.SHIELD);
         double buff = perfect ? 0 : source.spec.getCharacter().getDamageBuff()
                 + source.extraAttackBuff + (source.feverUntil > elapsedMillis ? .2 : 0)
                 + (boost ? .5 : 0);
         DamageManager.Attack computed = damageManager.forLineClear(clear, buff, shield ? .3 : 0);
         int damage = computed.getDamage();
-        if (boost && consumeItem(source, "damage_boost"))
+        if (boost && consumeItem(source, ItemIds.DAMAGE_BOOST))
             events.add(event(BattleEvent.Type.ITEM_USED, source.spec.getId(),
-                    source.spec.getId(), 1, "damage_boost", null));
-        if (shield && damage > 0 && consumeItem(target, "shield"))
+                    source.spec.getId(), 1, ItemIds.DAMAGE_BOOST, null));
+        if (shield && damage > 0 && consumeItem(target, ItemIds.SHIELD))
             events.add(event(BattleEvent.Type.ITEM_USED, target.spec.getId(),
-                    target.spec.getId(), 1, "shield", null));
+                    target.spec.getId(), 1, ItemIds.SHIELD, null));
         int before = target.hp;
         target.hp = hpManager.applyDamage(before, target.spec.getMaxHp(), damage);
         source.totalDamage = (int) Math.min(Integer.MAX_VALUE,
@@ -430,11 +430,11 @@ public final class BattleManager {
     static List<String> monsterItems(int level) {
         switch (level) {
             case 0: return java.util.Collections.emptyList();
-            case 1: return Arrays.asList("heal");
-            case 2: return Arrays.asList("heal", "shield");
-            case 3: return Arrays.asList("heal", "shield", "fever_charge", "line_cleaner");
-            case 4: return Arrays.asList("heal", "shield", "fever_charge", "line_cleaner",
-                    "damage_boost", "time_warp");
+            case 1: return Arrays.asList(ItemIds.HEAL);
+            case 2: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD);
+            case 3: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER);
+            case 4: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER,
+                    ItemIds.DAMAGE_BOOST, ItemIds.TIME_WARP);
             case 5: return ITEM_IDS;
             default: throw new IllegalArgumentException("Invalid monster item level");
         }
