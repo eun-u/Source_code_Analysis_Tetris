@@ -1286,33 +1286,9 @@ public class BattlePanel extends JPanel implements Scrollable {
         playStateChangeEffects(local, enemy);
         previousLocal = local; previousEnemy = enemy;
         updateBoardsAndHeader(local, enemy);
-        GameState game = local.getGameState();
-        stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
-        holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
-                game.getHoldOreCellIndex());
-        pveHoldPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
-                game.getHoldOreCellIndex());
-        for (int index = 0; index < nextPreviews.length; index++)
-            nextPreviews[index].setPiece(index < game.getNextPieces().size()
-                    ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
-        for (int index = 0; index < pveNextPreviews.length; index++)
-            pveNextPreviews[index].setPiece(index < game.getNextPieces().size()
-                    ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
-        gauge.setText(local.isFeverActive() ? String.format("FEVER %.1fs", local.getFeverRemainingMillis() / 1000.0)
-                : "FEVER " + local.getFever() + "%");
-        feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
-        feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
-        pveFeverLabel.setText(FEVER_TEXT);
-        pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
-        pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
-        pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
-        warp.setText(local.getTimeWarpRemainingMillis() > 0
-                ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
-        int incoming = local.getPendingGarbageLines();
-        garbage.setPending(incoming, local.getGarbageWaitRemainingMillis());
-        pending.setText(incoming == 0 ? "가비지 0" : String.format("가비지 %d · %.1fs", incoming,
-                local.getGarbageWaitRemainingMillis() / 1000.0));
-        pending.setForeground(incoming == 0 ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.CORAL);
+        updateStatsAndPreviews(local.getGameState());
+        updateFeverDisplay(local);
+        updateWarpAndGarbage(local);
         List<String> items = local.getItems();
         List<Integer> charges = local.getItemCharges();
         for (int i = 0; i < slots.length; i++) {
@@ -1385,6 +1361,43 @@ public class BattlePanel extends JPanel implements Scrollable {
         arena.update(local.getName(), local.getHp(), local.getMaxHp(),
                 enemy.getName(), enemy.getHp(), enemy.getMaxHp());
         arena.setFever(local.isFeverActive());
+    }
+
+    private void updateStatsAndPreviews(GameState game) {
+        stats.setText("<html>LINES " + game.getLinesCleared() + "<br>COMBO " + Math.max(0, game.getCombo()) + "</html>");
+        holdPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
+                game.getHoldOreCellIndex());
+        pveHoldPreview.setPiece(game.getHoldPiece(), game.getHoldItemId() != null,
+                game.getHoldOreCellIndex());
+        updateNextPreviews(nextPreviews, game);
+        updateNextPreviews(pveNextPreviews, game);
+    }
+
+    private static void updateNextPreviews(MiniPiecePreview[] previews, GameState game) {
+        for (int index = 0; index < previews.length; index++)
+            previews[index].setPiece(index < game.getNextPieces().size()
+                    ? game.getNextPieces().get(index) : PieceType.EMPTY, false);
+    }
+
+    private void updateFeverDisplay(ParticipantState local) {
+        gauge.setText(local.isFeverActive() ? String.format("FEVER %.1fs", local.getFeverRemainingMillis() / 1000.0)
+                : "FEVER " + local.getFever() + "%");
+        feverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
+        feverBar.setFill(local.isFeverActive() ? UniversityPixelTheme.MINT : UniversityPixelTheme.GOLD);
+        pveFeverLabel.setText(FEVER_TEXT);
+        pveFeverPercent.setText(local.isFeverActive() ? "100%" : local.getFever() + "%");
+        pveFeverBar.setValue(local.isFeverActive() ? 100 : local.getFever());
+        pveFeverBar.setFill(local.isFeverActive() ? new Color(0xA0F777) : new Color(0x93EB70));
+    }
+
+    private void updateWarpAndGarbage(ParticipantState local) {
+        warp.setText(local.getTimeWarpRemainingMillis() > 0
+                ? String.format("시간 왜곡 %.1fs", local.getTimeWarpRemainingMillis() / 1000.0) : " ");
+        int incoming = local.getPendingGarbageLines();
+        garbage.setPending(incoming, local.getGarbageWaitRemainingMillis());
+        pending.setText(incoming == 0 ? "가비지 0" : String.format("가비지 %d · %.1fs", incoming,
+                local.getGarbageWaitRemainingMillis() / 1000.0));
+        pending.setForeground(incoming == 0 ? UniversityPixelTheme.TEXT_SUB : UniversityPixelTheme.CORAL);
     }
 
     private void onlineEffects(ParticipantState previous, ParticipantState current, Board board, boolean monster) {
