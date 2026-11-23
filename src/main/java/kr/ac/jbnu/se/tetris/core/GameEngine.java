@@ -404,24 +404,11 @@ public final class GameEngine implements GameActionSink {
                     preview.linesCleared, null, combo, true));
         }
         if (preview.linesCleared > 0) {
-            linesCleared += preview.linesCleared;
-            combo++;
-            collectedItemOrigins.addAll(preview.collected.keySet());
-            events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
-                    itemIds(preview.collected), new ArrayList<GameEvent.ItemExtraction>(preview.collected.values())));
-            if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
-                    preview.linesCleared, null, combo, preview.tSpin));
-            // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
-            if (preview.perfectClear) combo = -1;
+            recordLineClear(preview, events);
         } else {
             combo = -1;
         }
-        if (!battleManaged && pendingGarbageLines > 0) {
-            events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
-            pendingGarbage.clear();
-            pendingGarbageLines = 0;
-        }
+        flushPendingGarbage(events);
         if (preview.overflow) {
             awaitingSpawn = false;
             status = GameState.Status.GAME_OVER;
@@ -431,6 +418,26 @@ public final class GameEngine implements GameActionSink {
         } else {
             spawn(next, true, events);
         }
+    }
+
+    private void recordLineClear(LockPreview preview, List<GameEvent> events) {
+        linesCleared += preview.linesCleared;
+        combo++;
+        collectedItemOrigins.addAll(preview.collected.keySet());
+        events.add(event(GameEvent.Type.LINE_CLEAR, null, 0, 0,
+                preview.linesCleared, null, combo, preview.tSpin, preview.perfectClear,
+                itemIds(preview.collected), new ArrayList<GameEvent.ItemExtraction>(preview.collected.values())));
+        if (combo > 0 && !preview.perfectClear) events.add(event(GameEvent.Type.COMBO, null, 0, 0,
+                preview.linesCleared, null, combo, preview.tSpin));
+        // 퍼펙트 클리어는 콤보를 이어가지 않으므로 다음 줄 제거가 0콤보가 되도록 콤보 없음 상태로 되돌림
+        if (preview.perfectClear) combo = -1;
+    }
+
+    private void flushPendingGarbage(List<GameEvent> events) {
+        if (battleManaged || pendingGarbageLines <= 0) return;
+        events.add(event(GameEvent.Type.GARBAGE_RECEIVED, null, 0, 0, pendingGarbageLines, null));
+        pendingGarbage.clear();
+        pendingGarbageLines = 0;
     }
 
     private void topOut(List<GameEvent> events, String reason) {
