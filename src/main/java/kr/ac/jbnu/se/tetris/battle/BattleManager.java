@@ -243,12 +243,18 @@ public final class BattleManager {
         if (source.itemLevel >= 0 && !monsterItems(source.itemLevel).contains(id)) return "ITEM_RESTRICTED";
         if (!ITEM_IDS.contains(id) || !source.items.contains(id)) return "ITEM_NOT_OWNED";
         if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id)) return "AUTO_ITEM";
-        boolean self = source == target;
-        boolean offensive = ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id);
-        if (offensive == self) return INVALID_TARGET_REASON;
-        if (ItemIds.HEAL.equals(id) && source.hp == source.spec.getMaxHp()) return "NO_EFFECT";
-        if (ItemIds.TIME_WARP.equals(id) && source.warpUntil > elapsedMillis) return "NO_EFFECT";
-        return null;
+        if (isOffensive(id) == (source == target)) return INVALID_TARGET_REASON;
+        return noEffectRejection(source, id);
+    }
+
+    private static boolean isOffensive(String id) {
+        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id);
+    }
+
+    private String noEffectRejection(Participant source, String id) {
+        boolean healAtFull = ItemIds.HEAL.equals(id) && source.hp == source.spec.getMaxHp();
+        boolean warpActive = ItemIds.TIME_WARP.equals(id) && source.warpUntil > elapsedMillis;
+        return healAtFull || warpActive ? "NO_EFFECT" : null;
     }
 
     private void useHeal(Participant source, String actorId, List<BattleEvent> events) {
