@@ -41,37 +41,59 @@ public final class PlacementLog {
             held = false;
             hardDropped = false;
         }
-        GameEvent placed = null;
-        int cleared = 0;
-        int combo = -1;
-        boolean tSpin = false;
+        EventSummary summary = new EventSummary();
         for (GameEvent event : events) {
             if (event == null || !before.getActorId().equals(event.getActorId())) continue;
-            if (event.getType() == GameEvent.Type.PIECE_HELD) held = true;
-            if (event.getType() == GameEvent.Type.PIECE_PLACED) {
-                if (action == GameAction.Type.HARD_DROP) hardDropped = true;
-                placed = event;
-            }
-            if (event.getType() == GameEvent.Type.LINE_CLEAR) {
-                cleared = event.getLineCount();
-                // 첫 줄 삭제에는 COMBO 이벤트가 없으므로 LINE_CLEAR의 콤보 값 사용
-                combo = event.getCombo();
-            }
-            if (event.getType() == GameEvent.Type.COMBO) combo = event.getCombo();
-            if (event.getType() == GameEvent.Type.T_SPIN) tSpin = true;
+            collect(event, action, summary);
         }
-        if (placed != null) {
-            if (start != null) {
-                if (samples.size() == capacity) samples.removeFirst();
-                samples.addLast(new Sample(start, placed, held, hardDropped, cleared, combo, tSpin));
-                revision++;
-            }
-            start = null;
-            held = false;
-            hardDropped = false;
-        }
+        if (summary.placed != null) recordPlacement(summary);
         // 일시정지·게임오버에서 미완성 피스 기록 생성 방지
         if (before.getStatus() == GameState.Status.GAME_OVER) start = null;
+    }
+
+    /** 한 번의 관측 동안 모은 배치·줄 삭제·콤보·T-스핀 정보 */
+    private static final class EventSummary {
+        GameEvent placed;
+        int cleared;
+        int combo = -1;
+        boolean tSpin;
+    }
+
+    private void collect(GameEvent event, GameAction.Type action, EventSummary summary) {
+        switch (event.getType()) {
+            case PIECE_HELD:
+                held = true;
+                break;
+            case PIECE_PLACED:
+                if (action == GameAction.Type.HARD_DROP) hardDropped = true;
+                summary.placed = event;
+                break;
+            case LINE_CLEAR:
+                summary.cleared = event.getLineCount();
+                // 첫 줄 삭제에는 COMBO 이벤트가 없으므로 LINE_CLEAR의 콤보 값 사용
+                summary.combo = event.getCombo();
+                break;
+            case COMBO:
+                summary.combo = event.getCombo();
+                break;
+            case T_SPIN:
+                summary.tSpin = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void recordPlacement(EventSummary summary) {
+        if (start != null) {
+            if (samples.size() == capacity) samples.removeFirst();
+            samples.addLast(new Sample(start, summary.placed, held, hardDropped,
+                    summary.cleared, summary.combo, summary.tSpin));
+            revision++;
+        }
+        start = null;
+        held = false;
+        hardDropped = false;
     }
 
     public synchronized List<Sample> snapshot() {
