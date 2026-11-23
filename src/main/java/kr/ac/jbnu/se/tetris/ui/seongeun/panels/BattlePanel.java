@@ -1486,15 +1486,26 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
     private static boolean oldWirePlacement(BoardState before, BoardState after) {
         if (latestPlacedOrigin(before) != 0 || latestPlacedOrigin(after) != 0) return false;
-        int newlyFilled = 0, oldGarbage = 0, newGarbage = 0;
-        for (int y = 0; y < before.getHeight(); y++) for (int x = 0; x < before.getWidth(); x++) {
-            PieceType oldCell = before.getCell(x, y), newCell = after.getCell(x, y);
-            if (oldCell == PieceType.GARBAGE) oldGarbage++;
-            if (newCell == PieceType.GARBAGE) newGarbage++;
-            if (oldCell == PieceType.EMPTY && newCell != PieceType.EMPTY
-                    && newCell != PieceType.GARBAGE) newlyFilled++;
-        }
-        return newlyFilled == 4 && newGarbage <= oldGarbage;
+        return countNewlyFilled(before, after) == 4
+                && countCells(after, PieceType.GARBAGE) <= countCells(before, PieceType.GARBAGE);
+    }
+    private static int countCells(BoardState board, PieceType type) {
+        int count = 0;
+        for (int y = 0; y < board.getHeight(); y++)
+            for (int x = 0; x < board.getWidth(); x++)
+                if (board.getCell(x, y) == type) count++;
+        return count;
+    }
+    /** 이전에 비어 있다가 가비지가 아닌 블록으로 채워진 칸의 수. */
+    private static int countNewlyFilled(BoardState before, BoardState after) {
+        int filled = 0;
+        for (int y = 0; y < before.getHeight(); y++)
+            for (int x = 0; x < before.getWidth(); x++) {
+                PieceType newCell = after.getCell(x, y);
+                if (before.getCell(x, y) == PieceType.EMPTY && newCell != PieceType.EMPTY
+                        && newCell != PieceType.GARBAGE) filled++;
+            }
+        return filled;
     }
     private static String itemName(String id) {
         switch (id) {
