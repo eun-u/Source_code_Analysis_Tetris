@@ -26,6 +26,7 @@ public final class OnlineMatchSessionTest {
         onlineLifecycle();
         oreEventsFollowSnapshotAndDeduplicate();
         failedSessionIgnoresLateMessages();
+        approvedRoomAndMatchSnapshots();
         concurrentCallbacksDoNotDeadlock(false);
         concurrentCallbacksDoNotDeadlock(true);
     }
@@ -240,6 +241,55 @@ public final class OnlineMatchSessionTest {
         session.close();
     }
 
+    private static void approvedRoomAndMatchSnapshots() {
+        FakeNetworkClient fake = new FakeNetworkClient();
+        OnlineMatchSession session = new OnlineMatchSession("room-snapshot", fake);
+        List<SessionUpdate> observed = new ArrayList<SessionUpdate>();
+        session.subscribe(observed::add);
+        RoomState waiting = roomOf("room", 1, RoomState.Phase.WAITING);
+        fake.emit(NetworkUpdate.connected());
+        fake.emit(NetworkUpdate.roomState(waiting));
+        fake.drain();
+        check(session.getSnapshot().getRoomState() == waiting
+                && observed.get(observed.size() - 1).getSnapshot().getRoomState() == waiting,
+                "승인한 방 상태를 발행 시점의 스냅샷에 보존");
+
+        fake.emit(NetworkUpdate.matchStarted("room", 2, "match-a", "p"));
+        fake.drain();
+        check("match-a".equals(observed.get(observed.size() - 1).getSnapshot().getMatchId()),
+                "수락된 경기 시작을 스냅샷에 반영");
+        int accepted = observed.size();
+        fake.emit(NetworkUpdate.roomState(roomOf("room", 0, RoomState.Phase.WAITING)));
+        fake.emit(NetworkUpdate.roomState(roomOf("other", 3, RoomState.Phase.WAITING)));
+        fake.emit(NetworkUpdate.matchStarted("room", 2, "match-a", "p"));
+        fake.emit(NetworkUpdate.matchStarted("other", 3, "other-match", "p"));
+        fake.drain();
+        check(observed.size() == accepted && session.getSnapshot().getRoomState() == waiting
+                && "match-a".equals(session.getSnapshot().getMatchId()),
+                "낮은 버전·다른 방·중복 경기 시작을 화면 상태에서 제외");
+
+        RoomState closed = roomOf("room", 3, RoomState.Phase.CLOSED);
+        RoomState rejoined = roomOf("other", 4, RoomState.Phase.WAITING);
+        fake.emit(NetworkUpdate.roomState(closed));
+        fake.emit(NetworkUpdate.roomState(rejoined));
+        fake.drain();
+        check(observed.get(observed.size() - 2).getSnapshot().getRoomState() == closed
+                && observed.get(observed.size() - 2).getSnapshot().getMatchId() == null
+                && session.getSnapshot().getRoomState() == rejoined,
+                "방 종료와 다른 방 재입장 상태를 순서대로 전달");
+
+        fake.emit(NetworkUpdate.connectionFailed("CONNECTION_LOST"));
+        fake.drain();
+        accepted = observed.size();
+        fake.emit(NetworkUpdate.roomState(roomOf("other", 5, RoomState.Phase.WAITING)));
+        fake.emit(NetworkUpdate.matchStarted("other", 6, "late-match", "p"));
+        fake.drain();
+        check(observed.size() == accepted && session.getSnapshot().getRoomState() == rejoined
+                && session.getSnapshot().getPhase() == SessionPhase.FAILED,
+                "연결 실패 후 도착한 방·경기 메시지를 폐기");
+        session.close();
+    }
+
     private static BattleState runningVersionZero() {
         BattleState started = SampleSnapshots.running("p", "m");
         return BattleSnapshots.battle(BattleState.Status.RUNNING, 0,
@@ -251,10 +301,14 @@ public final class OnlineMatchSessionTest {
     }
 
     private static RoomState room(long version) {
+        return roomOf("room", version, RoomState.Phase.IN_MATCH);
+    }
+
+    private static RoomState roomOf(String roomId, long version, RoomState.Phase phase) {
         Map<String, Boolean> ready = new LinkedHashMap<String, Boolean>();
         ready.put("p", true);
         ready.put("m", true);
-        return new RoomState("room", version, RoomState.Phase.IN_MATCH, "p", ready);
+        return new RoomState(roomId, version, phase, "p", ready);
     }
 
     private static CommandOutcome findOutcome(List<SessionUpdate> updates, long id) {

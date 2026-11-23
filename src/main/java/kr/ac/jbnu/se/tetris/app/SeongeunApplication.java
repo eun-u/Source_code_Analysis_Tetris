@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -97,6 +98,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.panels.WaitingRoomPanel;
 public final class SeongeunApplication implements AutoCloseable {
     private static final String PLAYER_LABEL = "Player";
     private static final String WAITING_ROOM_BUTTON = "대기방으로";
+    private static final long LEAVE_AWAITING_ROOM_STATE = -1L;
     private static final String LOCAL_PLAY_STATUS = "로컬 플레이";
     private static final String NAVIGATE_BACK = "navigate-back";
     private static final String USERNAME_RULE = "아이디는 영문 시작, 영문·숫자·_ 3~20자로 입력하세요.";
@@ -185,6 +187,8 @@ public final class SeongeunApplication implements AutoCloseable {
     private NetworkClient network;
     private NetworkSubscription networkSubscription;
     private RoomState roomState;
+    private String acceptedOnlineMatchId;
+    private long pendingLeaveRequestId;
     private String requestedRoomName;
     private boolean onlineConnected;
     private boolean onlineResultReturned;
@@ -742,10 +746,17 @@ public final class SeongeunApplication implements AutoCloseable {
 
     private void onMatchUpdate(MatchSession session, SessionUpdate update) {
         if (closed || session != match) return;
+        if (session instanceof OnlineMatchSession) applyOnlineSnapshot(update.getSnapshot());
         if (storyBattle && session instanceof LocalMatchSession) {
             recordStoryResult((LocalMatchSession) session, update.getSnapshot().getMatchId());
         }
         CommandOutcome outcome = update.getOutcome();
+        if (outcome != null && outcome.getRequestId() == pendingLeaveRequestId) {
+            pendingLeaveRequestId = outcome.isAccepted() ? LEAVE_AWAITING_ROOM_STATE : 0;
+            if (!outcome.isAccepted() && update.getSnapshot().getPhase() != SessionPhase.FAILED
+                    && roomState != null && ROOM_LIST.equals(currentScreen))
+                show(WAITING_ROOM);
+        }
         if (outcome != null && itemRequests.remove(outcome.getRequestId()) && !outcome.isAccepted())
             battle.setFeedback("아이템 사용 불가 · " + outcome.getReasonCode());
         renderMatch();
@@ -1308,11 +1319,15 @@ public final class SeongeunApplication implements AutoCloseable {
     }
 
     void openOnline(ConnectionOptions options) {
+        openOnline(options, new WebSocketNetworkClient(rankedConfig != null && rankedConfig.isFirebase()));
+    }
+
+    void openOnline(ConnectionOptions options, NetworkClient client) {
         closeSession();
         roomList.setRooms(Collections.<RoomData>emptyList(), room -> joinRoom(room.getRoomName()));
         roomList.setConnected(false);
         show(ROOM_LIST);
-        connectOnline(options);
+        connectOnline(options, client);
     }
 
     private void retryOnlineConnection() {
@@ -1326,14 +1341,19 @@ public final class SeongeunApplication implements AutoCloseable {
     }
 
     void connectOnline(ConnectionOptions options) {
+        connectOnline(options, new WebSocketNetworkClient(rankedConfig != null && rankedConfig.isFirebase()));
+    }
+
+    private void connectOnline(ConnectionOptions options, NetworkClient client) {
         ScreenRouter.requireEdt();
         if (closed) return;
         if (match != null || network != null) closeSession();
-        final NetworkClient client = new WebSocketNetworkClient(rankedConfig != null && rankedConfig.isFirebase());
         network = client;
         onlineConnected = false;
         onlineResultReturned = false;
         roomState = null;
+        acceptedOnlineMatchId = null;
+        pendingLeaveRequestId = 0;
         installMatch(new OnlineMatchSession(newRunId(), client));
         networkSubscription = client.subscribe(update -> SwingUtilities.invokeLater(() -> {
             if (closed || network != client) return;
@@ -1345,16 +1365,10 @@ public final class SeongeunApplication implements AutoCloseable {
     private void onNetworkUpdate(NetworkUpdate update) {
         switch (update.getType()) {
             case CONNECTED:
+                if (match instanceof OnlineMatchSession
+                        && match.getSnapshot().getPhase() == SessionPhase.FAILED) break;
                 onlineConnected = true;
                 roomList.setConnected(true);
-                break;
-            case ROOM_STATE:
-                onRoomState(update.getRoomState());
-                break;
-            case MATCH_STARTED:
-                onlineResultReturned = false;
-                rankedSaveStatus = "SAVE_PENDING";
-                result.setRankedStatus(network instanceof WebSocketNetworkClient ? rankStatusText(rankedSaveStatus) : "");
                 break;
             case RANKED_SAVE_STATUS:
                 onRankedSaveStatus(update);
@@ -1365,10 +1379,36 @@ public final class SeongeunApplication implements AutoCloseable {
                 onConnectionEnded(update.getReasonCode());
                 break;
             case REQUEST_OUTCOME:
+                if (match instanceof OnlineMatchSession
+                        && match.getSnapshot().getPhase() == SessionPhase.FAILED) break;
                 onRequestOutcome(update.getRequestOutcome());
                 break;
             default: break;
         }
+    }
+
+    /** 화면에는 온라인 세션이 수락한 방과 경기 상태만 적용한다. */
+    private void applyOnlineSnapshot(SessionSnapshot snapshot) {
+        String approvedMatchId = snapshot.getMatchId();
+        if (!Objects.equals(acceptedOnlineMatchId, approvedMatchId)) {
+            acceptedOnlineMatchId = approvedMatchId;
+            if (approvedMatchId != null) {
+                onlineResultReturned = false;
+                rankedSaveStatus = "SAVE_PENDING";
+                result.setRankedStatus(network instanceof WebSocketNetworkClient
+                        ? rankStatusText(rankedSaveStatus) : "");
+            }
+        }
+        RoomState approvedRoom = snapshot.getRoomState();
+        if (approvedRoom == roomState || approvedRoom == null) return;
+        if (approvedRoom.getPhase() == RoomState.Phase.CLOSED && roomState == null) return;
+        if (approvedRoom.getPhase() == RoomState.Phase.CLOSED) {
+            pendingLeaveRequestId = 0;
+            requestedRoomName = null;
+        } else if (roomState != null && !roomState.getRoomId().equals(approvedRoom.getRoomId())) {
+            pendingLeaveRequestId = 0;
+        }
+        onRoomState(approvedRoom);
     }
 
     private void onRoomState(RoomState state) {
@@ -1381,7 +1421,8 @@ public final class SeongeunApplication implements AutoCloseable {
         }
         renderRoom();
         if (roomState.getPhase() == RoomState.Phase.WAITING
-                && (WAITING_ROOM.equals(currentScreen) || ROOM_LIST.equals(currentScreen))) {
+                && (WAITING_ROOM.equals(currentScreen)
+                        || (ROOM_LIST.equals(currentScreen) && pendingLeaveRequestId == 0))) {
             show(WAITING_ROOM);
         }
     }
@@ -1495,8 +1536,8 @@ public final class SeongeunApplication implements AutoCloseable {
     }
 
     private void leaveRoom() {
-        if (roomState != null && network != null) sendRoomCommand(RoomCommand.leaveRoom());
-        roomState = null;
+        if (roomState != null && match instanceof OnlineMatchSession)
+            pendingLeaveRequestId = match.leave();
         requestedRoomName = null;
         show(ROOM_LIST);
     }
@@ -1571,6 +1612,8 @@ public final class SeongeunApplication implements AutoCloseable {
         if (localGame != null) { localGame.close(); localGame = null; }
         if (tutorial != null) { tutorial.close(); tutorial = null; }
         roomState = null;
+        acceptedOnlineMatchId = null;
+        pendingLeaveRequestId = 0;
         requestedRoomName = null;
         onlineConnected = false;
         onlineResultReturned = false;

@@ -289,7 +289,7 @@ public final class OnlineMatchSession implements MatchSession {
         SessionCapabilities capabilities = new SessionCapabilities(running, false, false, canLeave);
         return new SessionSnapshot(sessionId, SessionMode.ONLINE_PVP, phase,
                 roomState == null ? null : roomState.getLocalParticipantId(), matchId,
-                battleState, capabilities);
+                battleState, capabilities, roomState);
     }
 
     private void emit(List<BattleEvent> events, CommandOutcome outcome) {

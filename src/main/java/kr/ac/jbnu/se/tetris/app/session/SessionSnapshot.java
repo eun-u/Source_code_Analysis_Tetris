@@ -2,6 +2,7 @@ package kr.ac.jbnu.se.tetris.app.session;
 
 import kr.ac.jbnu.se.tetris.battle.BattleSnapshots;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.network.RoomState;
 
 /** 대전 모드와 참가자 표시 상태의 불변 사본 */
 public final class SessionSnapshot {
@@ -12,13 +13,22 @@ public final class SessionSnapshot {
     private final String matchId;
     private final BattleState battleState;
     private final SessionCapabilities capabilities;
+    private final RoomState roomState;
 
     public SessionSnapshot(String sessionId, SessionMode mode, SessionPhase phase,
                            String localParticipantId, String matchId, BattleState battleState,
                            SessionCapabilities capabilities) {
+        this(sessionId, mode, phase, localParticipantId, matchId, battleState, capabilities, null);
+    }
+
+    public SessionSnapshot(String sessionId, SessionMode mode, SessionPhase phase,
+                           String localParticipantId, String matchId, BattleState battleState,
+                           SessionCapabilities capabilities, RoomState roomState) {
         if (blank(sessionId) || mode == null || phase == null || capabilities == null
                 || (matchId != null && blank(matchId))
-                || (localParticipantId != null && blank(localParticipantId))) {
+                || (localParticipantId != null && blank(localParticipantId))
+                || (roomState != null && (mode != SessionMode.ONLINE_PVP
+                        || !roomState.getLocalParticipantId().equals(localParticipantId)))) {
             throw new IllegalArgumentException("Invalid session snapshot");
         }
         BattleState.Status expected = expectedBattleStatus(phase);
@@ -40,6 +50,7 @@ public final class SessionSnapshot {
         this.matchId = matchId;
         this.battleState = battleState == null ? null : BattleSnapshots.copyOf(battleState);
         this.capabilities = capabilities;
+        this.roomState = roomState;
     }
 
     /** 전투를 가진 단계의 기대 전투 상태. 대기·연결 단계처럼 전투가 없는 단계는 null이다. */
@@ -60,4 +71,5 @@ public final class SessionSnapshot {
     public String getMatchId() { return matchId; }
     public BattleState getBattleState() { return battleState; }
     public SessionCapabilities getCapabilities() { return capabilities; }
+    public RoomState getRoomState() { return roomState; }
 }
