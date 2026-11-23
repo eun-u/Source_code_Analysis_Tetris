@@ -125,56 +125,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static JButton createPveItemButton(String text) {
         JButton button = new JButton() {
             @Override protected void paintComponent(Graphics graphics) {
-                Graphics2D g = (Graphics2D) graphics.create();
-                try {
-                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                    int w = getWidth(), h = getHeight();
-                    if (w < 15 || h < 15) return;
-                    boolean active = isEnabled();
-                    boolean pressed = getModel().isPressed();
-                    boolean hover = getModel().isRollover();
-
-                    drawPveButtonFrame(g, w, h, active, pressed, hover);
-
-                    // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
-                    Icon icon = getIcon();
-                    if (icon != null) {
-                        int iconX = (w - icon.getIconWidth()) / 2;
-                        int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
-                        icon.paintIcon(this, g, iconX, iconY);
-                    }
-
-                    // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
-                    Object countValue = getClientProperty("hudCharges");
-                    int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
-                    if (icon != null && count > 0) {
-                        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
-                        g.setColor(new Color(0x1B100B));
-                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
-                        g.setColor(new Color(0xC69362));
-                        g.fillRoundRect(bx, by, bw, bh, 10, 10);
-                        g.setColor(new Color(0x765036));
-                        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
-                        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
-                    }
-
-                    // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
-                    Object hotkeyValue = getClientProperty("hudHotkey");
-                    if (hotkeyValue instanceof Number) {
-                        String hotkey = String.valueOf(((Number) hotkeyValue).intValue());
-                        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
-                        g.setColor(new Color(0x102923));
-                        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
-                        g.setColor(new Color(0x78DCC0));
-                        g.fillRoundRect(bx, by, bw, bh, 8, 8);
-                        g.setColor(new Color(0x43B99A));
-                        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
-                        drawBadgeNumber(g, hotkey, bx, by, bw, bh, 16);
-                    }
-                } finally {
-                    g.dispose();
-                }
+                paintPveItemButton(this, graphics);
             }
         };
         button.setOpaque(false);
@@ -184,6 +135,37 @@ public class BattlePanel extends JPanel implements Scrollable {
         button.setFocusPainted(false);
         button.setFocusable(false);
         return button;
+    }
+
+    private static void paintPveItemButton(JButton button, Graphics graphics) {
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int w = button.getWidth(), h = button.getHeight();
+            if (w < 15 || h < 15) return;
+            drawPveButtonFrame(g, w, h, button.isEnabled(),
+                    button.getModel().isPressed(), button.getModel().isRollover());
+
+            // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
+            Icon icon = button.getIcon();
+            if (icon != null) {
+                int iconX = (w - icon.getIconWidth()) / 2;
+                int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
+                icon.paintIcon(button, g, iconX, iconY);
+            }
+
+            // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
+            Object countValue = button.getClientProperty("hudCharges");
+            int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
+            if (icon != null && count > 0) drawChargeBadge(g, count, w);
+
+            // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
+            Object hotkeyValue = button.getClientProperty("hudHotkey");
+            if (hotkeyValue instanceof Number) drawHotkeyBadge(g, ((Number) hotkeyValue).intValue(), w, h);
+        } finally {
+            g.dispose();
+        }
     }
 
     /** 두꺼운 둥근 어두운 프레임 + 안쪽 패널 */
@@ -203,6 +185,28 @@ public class BattlePanel extends JPanel implements Scrollable {
             g.setColor(new Color(0, 0, 0, 48));
             g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
         }
+    }
+
+    private static void drawChargeBadge(Graphics2D g, int count, int w) {
+        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
+        g.setColor(new Color(0x1B100B));
+        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
+        g.setColor(new Color(0xC69362));
+        g.fillRoundRect(bx, by, bw, bh, 10, 10);
+        g.setColor(new Color(0x765036));
+        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
+        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
+    }
+
+    private static void drawHotkeyBadge(Graphics2D g, int key, int w, int h) {
+        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
+        g.setColor(new Color(0x102923));
+        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+        g.setColor(new Color(0x78DCC0));
+        g.fillRoundRect(bx, by, bw, bh, 8, 8);
+        g.setColor(new Color(0x43B99A));
+        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
+        drawBadgeNumber(g, String.valueOf(key), bx, by, bw, bh, 16);
     }
 
     private static void drawBadgeNumber(Graphics2D g, String text,
