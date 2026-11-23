@@ -135,21 +135,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                     boolean pressed = getModel().isPressed();
                     boolean hover = getModel().isRollover();
 
-                    // 두꺼운 둥근 어두운 프레임 + 안쪽 패널
-                    g.setColor(new Color(0x101714));
-                    g.fillRoundRect(0, 0, w, h - 2, 18, 18);
-                    g.setColor(new Color(0x929E8B));
-                    g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
-                    g.setColor(pressed ? new Color(0x253529)
-                            : hover ? new Color(0x425B4C) : new Color(0x34443C));
-                    g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
-                    g.setColor(new Color(0x233128));
-                    g.setStroke(new BasicStroke(2f));
-                    g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
-                    if (!active) {
-                        g.setColor(new Color(0, 0, 0, 48));
-                        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
-                    }
+                    drawPveButtonFrame(g, w, h, active, pressed, hover);
 
                     // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
                     Icon icon = getIcon();
@@ -198,6 +184,25 @@ public class BattlePanel extends JPanel implements Scrollable {
         button.setFocusPainted(false);
         button.setFocusable(false);
         return button;
+    }
+
+    /** 두꺼운 둥근 어두운 프레임 + 안쪽 패널 */
+    private static void drawPveButtonFrame(Graphics2D g, int w, int h,
+                                           boolean active, boolean pressed, boolean hover) {
+        g.setColor(new Color(0x101714));
+        g.fillRoundRect(0, 0, w, h - 2, 18, 18);
+        g.setColor(new Color(0x929E8B));
+        g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
+        g.setColor(pressed ? new Color(0x253529)
+                : hover ? new Color(0x425B4C) : new Color(0x34443C));
+        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        g.setColor(new Color(0x233128));
+        g.setStroke(new BasicStroke(2f));
+        g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
+        if (!active) {
+            g.setColor(new Color(0, 0, 0, 48));
+            g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        }
     }
 
     private static void drawBadgeNumber(Graphics2D g, String text,
