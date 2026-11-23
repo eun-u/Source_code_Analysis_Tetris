@@ -39,6 +39,19 @@ public final class StoryBattleSpeechBubbleTest {
             assert differences(empty, reset, 4, 120, 1055, 395) == 0
                     : "Old dialogue remained after resetting encounter";
 
+            // Simulate the narrow lane next to a live opponent board. Its text
+            // and shadow must be painted entirely in the free right-hand space.
+            arena.setStorySafeLanes(140, 900);
+            BufferedImage safeEmpty = render(arena);
+            arena.showDialogue(PixelArena.DialogueSpeaker.MONSTER,
+                    "지난 학기의 원한을 아직도 기억하느냐! 이번만큼은 반드시 승리하겠다!");
+            BufferedImage safeBubble = render(arena);
+            assert differences(safeEmpty, safeBubble, 0, 0, 899, 629) == 0
+                    : "Monster speech leaked into the opposing board region";
+            assert differences(safeEmpty, safeBubble, 908, 0, 1059, 629) > 500
+                    : "Monster speech was clipped outside the safe lane";
+            arena.clearDialogue();
+
             arena.showDialogue(PixelArena.DialogueSpeaker.PLAYER, "이 문장은 온라인 대전 화면에 나타나지 않아야 합니다.");
             arena.setOnline(true);
             BufferedImage online = render(arena);

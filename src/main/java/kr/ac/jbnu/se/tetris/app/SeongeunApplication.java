@@ -768,7 +768,7 @@ public final class SeongeunApplication implements AutoCloseable {
         EncounterRun won = progress.getActiveRun();
         boolean firstClear = !saveData.getCleared().contains(won.getEncounterId());
         int fullReward = storyReward(won.getMonster().getTier());
-        int reward = firstClear ? fullReward : repeatReward(fullReward);
+        int reward = firstClear ? fullReward : fullReward / 5;
         PlayerSaveStore.Data next = firstClear
                 ? saveData.withFirstClear(won.getEncounterId(), reward)
                 : saveData.withReplayReward(won.getEncounterId(), reward);

@@ -177,7 +177,7 @@ public final class CartoonBattleTopHud extends JPanel {
                 }
 
                 // 버튼 텍스트
-                g.setFont(UniversityPixelTheme.font(13, Font.BOLD));
+                g.setFont(UniversityPixelTheme.font(Math.min(20, Math.max(13, h / 4)), Font.BOLD));
 
                 FontMetrics fm = g.getFontMetrics();
 
@@ -207,13 +207,18 @@ public final class CartoonBattleTopHud extends JPanel {
         barY = 1;
         barHeight = Math.max(24, h - 4);
         int gap = w < 690 ? 6 : 10;
-        quitWidth = w < 640 ? 125 : 146;
-        timerWidth = w < 640 ? 91 : 107;
+        quitWidth = w < 640 ? 125 : Math.min(200, Math.max(146, Math.round(w * .16f)));
+        timerWidth = w < 640 ? 91 : Math.min(150, Math.max(107, Math.round(w * .12f)));
         quitX = Math.max(0, w - quitWidth);
         timerX = Math.max(0, quitX - gap - timerWidth);
         int maxHeading = Math.max(125, timerX - gap);
-        headingWidth = Math.min(395, maxHeading);
+        headingWidth = Math.min(430, maxHeading);
         if (w < 490) headingWidth = Math.max(95, maxHeading);
+
+        int headingFont = Math.min(21, Math.max(14, Math.round(h * .26f)));
+        level.setFont(UniversityPixelTheme.font(headingFont, Font.BOLD));
+        chapter.setFont(UniversityPixelTheme.font(headingFont, Font.BOLD));
+        clock.setFont(UniversityPixelTheme.font(Math.min(23, headingFont + 2), Font.BOLD));
 
         int badgeWidth = Math.min(71, Math.max(48, headingWidth / 4));
         int badgeHeight = Math.max(18, barHeight - 13);
