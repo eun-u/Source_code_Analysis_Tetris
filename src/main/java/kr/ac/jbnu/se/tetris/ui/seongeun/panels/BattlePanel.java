@@ -64,6 +64,7 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
+import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /**
  * PvE에서는 왼쪽 전투 무대, 가운데 플레이 보드, 오른쪽 조작 정보를 강의동 외벽으로 묶는다.
@@ -87,14 +88,14 @@ public class BattlePanel extends JPanel implements Scrollable {
 
     private static Map<String, ImageIcon> loadItemIcons() {
         Map<String, ImageIcon> icons = new HashMap<>();
-        icons.put("damage_boost", loadItemIcon("item_damage.png"));
-        icons.put("garbage_bomb", loadItemIcon("item_bomb.png"));
-        icons.put("heal", loadItemIcon("item_heal.png"));
-        icons.put("shield", loadItemIcon("item_shield.png"));
-        icons.put("line_cleaner", loadItemIcon("item_line_cleaner.png"));
-        icons.put("fever_charge", loadItemIcon("item_fever.png"));
-        icons.put("time_warp", loadItemIcon("item_time.png"));
-        icons.put("nullify", loadItemIcon("item_nullify.png"));
+        icons.put(ItemIds.DAMAGE_BOOST, loadItemIcon("item_damage.png"));
+        icons.put(ItemIds.GARBAGE_BOMB, loadItemIcon("item_bomb.png"));
+        icons.put(ItemIds.HEAL, loadItemIcon("item_heal.png"));
+        icons.put(ItemIds.SHIELD, loadItemIcon("item_shield.png"));
+        icons.put(ItemIds.LINE_CLEANER, loadItemIcon("item_line_cleaner.png"));
+        icons.put(ItemIds.FEVER_CHARGE, loadItemIcon("item_fever.png"));
+        icons.put(ItemIds.TIME_WARP, loadItemIcon("item_time.png"));
+        icons.put(ItemIds.NULLIFY, loadItemIcon("item_nullify.png"));
         return icons;
     }
 
@@ -1143,7 +1144,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                 }
             } else if (type == BattleEvent.Type.ITEM_USED) {
                 String id = event.getReason();
-                if ("garbage_bomb".equals(id) && attack != null
+                if (ItemIds.GARBAGE_BOMB.equals(id) && attack != null
                         && attack.sameParticipants(event) && attack.damage == null
                         && attack.garbage != null) {
                     // BattleManager submits the bomb's garbage event before ITEM_USED.
@@ -1184,10 +1185,10 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private static String itemAction(String id) {
-        if ("heal".equals(id)) return "회복 사용";
-        if ("shield".equals(id)) return "보호막 발동";
-        if ("garbage_bomb".equals(id)) return "가비지 폭탄";
-        if ("nullify".equals(id)) return "무효화";
+        if (ItemIds.HEAL.equals(id)) return "회복 사용";
+        if (ItemIds.SHIELD.equals(id)) return "보호막 발동";
+        if (ItemIds.GARBAGE_BOMB.equals(id)) return "가비지 폭탄";
+        if (ItemIds.NULLIFY.equals(id)) return "무효화";
         return itemName(id) + " 사용";
     }
 
@@ -1308,7 +1309,7 @@ public class BattlePanel extends JPanel implements Scrollable {
             boolean available = !locked && i < items.size() && items.get(i) != null;
             String item = available ? items.get(i) : null;
             int count = available && i < charges.size() ? charges.get(i) : 1;
-            boolean automatic = "damage_boost".equals(item) || "shield".equals(item);
+            boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
             boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
             slots[i].setText((i + 1) + " " + (locked ? "잠김" : item == null ? "빈 슬롯"
                     : ItemSpec.categoryOf(item) + " " + itemShortName(item)
@@ -1389,27 +1390,27 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
     private static String itemName(String id) {
         switch (id) {
-            case "damage_boost": return "공격 증폭";
-            case "garbage_bomb": return "가비지 폭탄";
-            case "heal": return "회복";
-            case "shield": return "보호막";
-            case "line_cleaner": return "줄 정리";
-            case "fever_charge": return "피버 충전";
-            case "time_warp": return "시간 왜곡";
-            case "nullify": return "무효화";
+            case ItemIds.DAMAGE_BOOST: return "공격 증폭";
+            case ItemIds.GARBAGE_BOMB: return "가비지 폭탄";
+            case ItemIds.HEAL: return "회복";
+            case ItemIds.SHIELD: return "보호막";
+            case ItemIds.LINE_CLEANER: return "줄 정리";
+            case ItemIds.FEVER_CHARGE: return "피버 충전";
+            case ItemIds.TIME_WARP: return "시간 왜곡";
+            case ItemIds.NULLIFY: return "무효화";
             default: return id;
         }
     }
     private static String itemShortName(String id) {
         switch (id) {
-            case "damage_boost": return "증폭";
-            case "garbage_bomb": return "폭탄";
-            case "heal": return "회복";
-            case "shield": return "방어";
-            case "line_cleaner": return "정리";
-            case "fever_charge": return "피버";
-            case "time_warp": return "왜곡";
-            case "nullify": return "무효화";
+            case ItemIds.DAMAGE_BOOST: return "증폭";
+            case ItemIds.GARBAGE_BOMB: return "폭탄";
+            case ItemIds.HEAL: return "회복";
+            case ItemIds.SHIELD: return "방어";
+            case ItemIds.LINE_CLEANER: return "정리";
+            case ItemIds.FEVER_CHARGE: return "피버";
+            case ItemIds.TIME_WARP: return "왜곡";
+            case ItemIds.NULLIFY: return "무효화";
             default: return id;
         }
     }
