@@ -679,31 +679,30 @@ public class BattlePanel extends JPanel implements Scrollable {
             g.setColor(new Color(231, 225, 213, 66));
             g.fillRect(0, 0, getWidth(), getHeight());
         }
-        int shellX = margin, shellY = margin;
         int shellW = Math.max(0, getWidth() - margin * 2);
         int shellH = Math.max(0, getHeight() - margin * 2);
         if (shellW < 40 || shellH < 40) return;
         int bodyBottom = getHeight() - bottom;
         // 외벽, 상인방, 하단 콘크리트 턱은 세 칸을 하나의 건물처럼 연결한다.
         g.setColor(FACADE_EDGE);
-        g.fillRect(shellX, shellY, shellW, shellH);
+        g.fillRect(margin, margin, shellW, shellH);
         g.setColor(FACADE);
-        g.fillRect(shellX + 2, shellY + 2, shellW - 4, shellH - 4);
+        g.fillRect(margin + 2, margin + 2, shellW - 4, shellH - 4);
         g.setColor(FACADE_LIGHT);
-        g.fillRect(shellX + 3, shellY + 3, shellW - 6, top - shellY - 7);
+        g.fillRect(margin + 3, margin + 3, shellW - 6, top - margin - 7);
         g.setColor(UniversityPixelTheme.PANEL_LIGHT);
         g.fillRect(side, top, Math.max(0, getWidth() - side * 2),
                 Math.max(0, bodyBottom - top));
         g.setColor(FACADE_LIGHT);
-        g.fillRect(shellX + 3, bodyBottom, shellW - 6, Math.max(0, getHeight() - margin - bodyBottom - 3));
-        paintConcreteTexture(g, shellX + 3, shellY + 3, shellW - 6, top - shellY - 6);
-        paintConcreteTexture(g, shellX + 3, bodyBottom, shellW - 6,
+        g.fillRect(margin + 3, bodyBottom, shellW - 6, Math.max(0, getHeight() - margin - bodyBottom - 3));
+        paintConcreteTexture(g, margin + 3, margin + 3, shellW - 6, top - margin - 6);
+        paintConcreteTexture(g, margin + 3, bodyBottom, shellW - 6,
                 Math.max(0, getHeight() - margin - bodyBottom - 3));
         g.setColor(FACADE_EDGE);
-        g.drawLine(shellX + 2, top - 3, shellX + shellW - 3, top - 3);
-        g.drawLine(shellX + 2, bodyBottom, shellX + shellW - 3, bodyBottom);
+        g.drawLine(margin + 2, top - 3, margin + shellW - 3, top - 3);
+        g.drawLine(margin + 2, bodyBottom, margin + shellW - 3, bodyBottom);
         g.setColor(new Color(0xF6F2E8));
-        g.drawLine(shellX + 3, shellY + 3, shellX + shellW - 4, shellY + 3);
+        g.drawLine(margin + 3, margin + 3, margin + shellW - 4, margin + 3);
     }
 
     private static void paintPillar(Graphics2D g, int x, int width, int top, int bottom) {
@@ -849,8 +848,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         int arenaWidth = Math.max(minimumArena, areaWidth - (leftWidth + rightWidth
                 + METER + 2 + GAP * 4 + boardWidth * 2));
 
-        int enemyX = side;
-        int arenaX = enemyX + boardWidth + GAP;
+        int arenaX = side + boardWidth + GAP;
         int meterX = arenaX + arenaWidth + GAP;
         int playerX = meterX + METER + 2;
         int leftX = playerX + boardWidth + GAP;
@@ -863,7 +861,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         arena.setBounds(arenaX, areaTop, arenaWidth, areaHeight);
         battleLog.setBounds(arenaX + 8, areaTop + 8,
                 Math.max(1, arenaWidth - 16), BattleLog.preferredHeight());
-        enemyColumn.setBounds(enemyX, boardY - 20, boardWidth, boardHeight + 57);
+        enemyColumn.setBounds(side, boardY - 20, boardWidth, boardHeight + 57);
         enemyName.setBounds(0, 0, boardWidth, 17);
         enemyBoard.setBounds(0, 20, boardWidth, boardHeight);
         enemyStatus.setBounds(0, boardHeight + 23, boardWidth, 34);
