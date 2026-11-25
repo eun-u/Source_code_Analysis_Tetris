@@ -314,7 +314,7 @@ public final class GameEngine implements GameActionSink {
         for (GameAction.Garbage garbage : battleManaged
                 ? new ArrayList<GameAction.Garbage>() : pendingGarbage) {
             for (int i = 0; i < garbage.getLines() && !overflow; i++) {
-                overflow |= detached.addGarbageLine(garbage.getHoleColumn());
+                overflow = detached.addGarbageLine(garbage.getHoleColumn());
             }
         }
         return new LockPreview(detached, cleared, tSpin, perfectClear, overflow, collected);
