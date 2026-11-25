@@ -188,7 +188,7 @@ public class BattlePanel extends JPanel implements Scrollable {
     private static void drawChargeBadge(Graphics2D g, int count, int w) {
         int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
         g.setColor(new Color(0x1B100B));
-        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 12, 12);
+        g.fillRoundRect(bx - 2, 0, bw + 4, bh + 4, 12, 12);
         g.setColor(new Color(0xC69362));
         g.fillRoundRect(bx, by, bw, bh, 10, 10);
         g.setColor(new Color(0x765036));
