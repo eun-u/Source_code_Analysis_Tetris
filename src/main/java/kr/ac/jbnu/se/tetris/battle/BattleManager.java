@@ -2,6 +2,7 @@ package kr.ac.jbnu.se.tetris.battle;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -543,7 +544,7 @@ public final class BattleManager {
     static List<String> monsterItems(int level) {
         switch (level) {
             case 0: return java.util.Collections.emptyList();
-            case 1: return Arrays.asList(ItemIds.HEAL);
+            case 1: return Collections.singletonList(ItemIds.HEAL);
             case 2: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD);
             case 3: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER);
             case 4: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER,
