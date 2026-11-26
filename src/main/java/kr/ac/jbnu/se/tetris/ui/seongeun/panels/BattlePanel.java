@@ -7,20 +7,29 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.LayoutManager;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.IntConsumer;
 
+import javax.imageio.ImageIO;
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -62,13 +71,153 @@ import kr.ac.jbnu.se.tetris.item.ItemIds;
  */
 public class BattlePanel extends JPanel implements Scrollable {
     private static final Color BG = UniversityPixelTheme.BG, TEXT = UniversityPixelTheme.TEXT;
+    private static final Color FACADE = new Color(0xB9B7AB);
+    private static final Color FACADE_EDGE = new Color(0x888D87);
+    private static final Color FACADE_LIGHT = new Color(0xE5E2D7);
     private static final int GAP = 8, METER = 12;
+    private static final int PVE_LEFT_PILLAR = 24, PVE_RIGHT_PILLAR = 12;
     private static final String SPEAKER_PLAYER = "PLAYER";
     private static final String SPEAKER_MONSTER = "MONSTER";
     private static final String FEVER_TEXT = "FEVER";
     private static final String QUIT_BATTLE_TEXT = "전투 포기 [ESC]";
     private static final String QUIT_BATTLE_TOOLTIP = "현재 전투를 포기하고 로비로 돌아갑니다.";
+    private static final BufferedImage UNIVERSITY_BATTLE_BG = readBackdrop(
+            "/ui/campus-rpg/university-battle-bg.png");
+    private static final BufferedImage UNIVERSITY_BG = readBackdrop("/ui/campus-rpg/university-bg.png");
+    private static final BufferedImage GRADUATION_BG = readBackdrop("/ui/campus-rpg/graduation-bg.png");
+    private static final BufferedImage EMPLOYMENT_BG = readBackdrop("/ui/campus-rpg/employment-bg.png");
 
+    // UI 리소스는 최초 한 번만 로드하고 전투 갱신 시 재사용한다.
+    private static final Map<String, ImageIcon> ITEM_ICONS = loadItemIcons();
+
+    private static Map<String, ImageIcon> loadItemIcons() {
+        Map<String, ImageIcon> icons = new HashMap<>();
+        icons.put(ItemIds.DAMAGE_BOOST, loadItemIcon("item_damage.png"));
+        icons.put(ItemIds.GARBAGE_BOMB, loadItemIcon("item_bomb.png"));
+        icons.put(ItemIds.HEAL, loadItemIcon("item_heal.png"));
+        icons.put(ItemIds.SHIELD, loadItemIcon("item_shield.png"));
+        icons.put(ItemIds.LINE_CLEANER, loadItemIcon("item_line_cleaner.png"));
+        icons.put(ItemIds.FEVER_CHARGE, loadItemIcon("item_fever.png"));
+        icons.put(ItemIds.TIME_WARP, loadItemIcon("item_time.png"));
+        icons.put(ItemIds.NULLIFY, loadItemIcon("item_nullify.png"));
+        return icons;
+    }
+
+    private static ImageIcon loadItemIcon(String filename) {
+        String path = "/ui/campus-rpg/icons/" + filename;
+        try (InputStream stream = BattlePanel.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                System.err.println("아이템 아이콘 파일을 찾지 못했습니다: " + path);
+                return null;
+            }
+            BufferedImage image = ImageIO.read(stream);
+            if (image == null) return null;
+            return new ImageIcon(image.getScaledInstance(48, 48, Image.SCALE_SMOOTH));
+        } catch (IOException e) {
+            System.err.println("아이템 아이콘 로딩 실패: " + path + " / " + e.getMessage());
+            return null;
+        }
+    }
+
+    // PvE 아이템 버튼: 중앙 아이콘, 우상단 실제 남은 횟수, 하단 1~4번 단축키
+    private static JButton createPveItemButton(String text) {
+        JButton button = new JButton() {
+            @Override protected void paintComponent(Graphics graphics) {
+                paintPveItemButton(this, graphics);
+            }
+        };
+        button.setOpaque(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setBorder(BorderFactory.createEmptyBorder());
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        return button;
+    }
+
+    private static void paintPveItemButton(JButton button, Graphics graphics) {
+        Graphics2D g = (Graphics2D) graphics.create();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int w = button.getWidth(), h = button.getHeight();
+            if (w < 15 || h < 15) return;
+            drawPveButtonFrame(g, w, h, button.isEnabled(),
+                    button.getModel().isPressed(), button.getModel().isRollover());
+
+            // 아이콘은 실제 아이템 ID로 갱신된 기존 ImageIcon을 그대로 사용
+            Icon icon = button.getIcon();
+            if (icon != null) {
+                int iconX = (w - icon.getIconWidth()) / 2;
+                int iconY = Math.max(4, (h - icon.getIconHeight()) / 2 - 5);
+                icon.paintIcon(button, g, iconX, iconY);
+            }
+
+            // 우상단: 실제 아이템 남은 사용 횟수. 0개/빈 슬롯에는 숨김
+            Object countValue = button.getClientProperty("hudCharges");
+            int count = countValue instanceof Number ? ((Number) countValue).intValue() : 0;
+            if (icon != null && count > 0) drawChargeBadge(g, count, w);
+
+            // 하단 중앙: 1~4번 단축키 배지(보유 횟수와 무관)
+            Object hotkeyValue = button.getClientProperty("hudHotkey");
+            if (hotkeyValue instanceof Number) drawHotkeyBadge(g, ((Number) hotkeyValue).intValue(), w, h);
+        } finally {
+            g.dispose();
+        }
+    }
+
+    /** 두꺼운 둥근 어두운 프레임 + 안쪽 패널 */
+    private static void drawPveButtonFrame(Graphics2D g, int w, int h,
+                                           boolean active, boolean pressed, boolean hover) {
+        g.setColor(new Color(0x101714));
+        g.fillRoundRect(0, 0, w, h - 2, 18, 18);
+        g.setColor(new Color(0x929E8B));
+        g.fillRoundRect(3, 3, w - 6, h - 8, 16, 16);
+        g.setColor(pressed ? new Color(0x253529)
+                : hover ? new Color(0x425B4C) : new Color(0x34443C));
+        g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        g.setColor(new Color(0x233128));
+        g.setStroke(new BasicStroke(2f));
+        g.drawRoundRect(6, 6, w - 13, h - 15, 13, 13);
+        if (!active) {
+            g.setColor(new Color(0, 0, 0, 48));
+            g.fillRoundRect(6, 6, w - 12, h - 14, 13, 13);
+        }
+    }
+
+    private static void drawChargeBadge(Graphics2D g, int count, int w) {
+        int bw = 27, bh = 26, bx = w - bw - 2, by = 2;
+        g.setColor(new Color(0x1B100B));
+        g.fillRoundRect(bx - 2, 0, bw + 4, bh + 4, 12, 12);
+        g.setColor(new Color(0xC69362));
+        g.fillRoundRect(bx, by, bw, bh, 10, 10);
+        g.setColor(new Color(0x765036));
+        g.fillRoundRect(bx + 3, by + 4, bw - 6, bh - 7, 8, 8);
+        drawBadgeNumber(g, String.valueOf(count), bx, by, bw, bh, 17);
+    }
+
+    private static void drawHotkeyBadge(Graphics2D g, int key, int w, int h) {
+        int bw = 26, bh = 24, bx = (w - bw) / 2, by = h - bh - 1;
+        g.setColor(new Color(0x102923));
+        g.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+        g.setColor(new Color(0x78DCC0));
+        g.fillRoundRect(bx, by, bw, bh, 8, 8);
+        g.setColor(new Color(0x43B99A));
+        g.fillRoundRect(bx + 3, by + 3, bw - 6, bh - 6, 6, 6);
+        drawBadgeNumber(g, String.valueOf(key), bx, by, bw, bh, 16);
+    }
+
+    private static void drawBadgeNumber(Graphics2D g, String text,
+                                        int x, int y, int w, int h, int size) {
+        g.setFont(UniversityPixelTheme.font(size, Font.BOLD));
+        FontMetrics fm = g.getFontMetrics();
+        int tx = x + (w - fm.stringWidth(text)) / 2;
+        int ty = y + (h - fm.getHeight()) / 2 + fm.getAscent();
+        g.setColor(new Color(0x18231E));
+        g.drawString(text, tx + 1, ty + 2);
+        g.setColor(new Color(0xFFF8E9));
+        g.drawString(text, tx, ty);
+    }
     // Compact, readable rounded message banner below the FEVER HUD.
     private static JLabel createBattleStatusBanner() {
         JLabel banner = new JLabel("") {
@@ -351,7 +500,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         pveFooter.add(pveFeverPanel);
         for (int i = 0; i < pveSlots.length; i++) {
             final int index = i;
-            JButton slot = PveItemButtons.create();
+            JButton slot = createPveItemButton("빈 슬롯");
             slot.putClientProperty("hudHotkey", i + 1);
             slot.setFont(UniversityPixelTheme.font(12, Font.BOLD));
             slot.setFocusable(false);
@@ -478,9 +627,13 @@ public class BattlePanel extends JPanel implements Scrollable {
     }
 
     private void paintPveShell(Graphics2D g) {
-        BufferedImage backdrop = BattleFacade.pveBackdrop(
-                kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets.image(backgroundSkin, chapter), chapter);
-        if (backdrop != null) BattleFacade.paintBackdropCover(g, backdrop, getWidth(), getHeight());
+        BufferedImage winterBackdrop = kr.ac.jbnu.se.tetris.ui.seongeun.components.BackgroundSkinAssets
+                .image(backgroundSkin, chapter);
+        BufferedImage backdrop = winterBackdrop != null ? winterBackdrop
+                : "graduation".equals(chapter) ? GRADUATION_BG
+                : "employment".equals(chapter) ? EMPLOYMENT_BG
+                : UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG;
+        if (backdrop != null) paintBackdropCover(g, backdrop, getWidth(), getHeight());
         else {
             g.setColor(new Color(0xA2D785));
             g.fillRect(0, 0, getWidth(), getHeight());
@@ -499,23 +652,114 @@ public class BattlePanel extends JPanel implements Scrollable {
     private void paintOnlineShell(Graphics2D g) {
         int margin = pveMargin(getWidth(), getHeight());
         int side = margin + 12, top = margin + 54, bottom = margin + 23;
-        BattleFacade.paintCommonShell(g, getWidth(), getHeight(), margin, side, top, bottom,
-                BattleFacade.onlineBackdrop());
+        paintCommonShell(g, margin, side, top, bottom,
+                UNIVERSITY_BATTLE_BG != null ? UNIVERSITY_BATTLE_BG : UNIVERSITY_BG);
         if (arena.getWidth() <= 0 || playerBoard.getWidth() <= 0 || enemyBoard.getWidth() <= 0) return;
         int bodyBottom = getHeight() - bottom;
         // PvP에서는 두 보드가 같은 크기로 무대를 사이에 두고 대칭을 이룬다.
         Rectangle opponent = SwingUtilities.convertRectangle(enemyBoard.getParent(),
                 enemyBoard.getBounds(), this);
-        BattleFacade.paintPillar(g, opponent.x + opponent.width, GAP, top, bodyBottom);
-        BattleFacade.paintPillar(g, arena.getX() + arena.getWidth(), GAP, top, bodyBottom);
-        BattleFacade.paintPillar(g, playerBoard.getX() + playerBoard.getWidth(), GAP, top, bodyBottom);
-        g.setColor(BattleFacade.EDGE);
+        paintPillar(g, opponent.x + opponent.width, GAP, top, bodyBottom);
+        paintPillar(g, arena.getX() + arena.getWidth(), GAP, top, bodyBottom);
+        paintPillar(g, playerBoard.getX() + playerBoard.getWidth(), GAP, top, bodyBottom);
+        g.setColor(FACADE_EDGE);
         g.drawRect(arena.getX() - 1, arena.getY() - 1, arena.getWidth() + 1, arena.getHeight() + 1);
-        BattleFacade.paintBoardFacade(g, opponent);
-        BattleFacade.paintBoardFacade(g, playerBoard.getBounds());
+        paintBoardFacade(g, opponent);
+        paintBoardFacade(g, playerBoard.getBounds());
         g.setColor(UniversityPixelTheme.LINE);
         g.drawLine(rightColumn.getX() - 5, top + 14,
                 rightColumn.getX() - 5, bodyBottom - 14);
+    }
+
+    private void paintCommonShell(Graphics2D g, int margin, int side, int top, int bottom,
+                                  BufferedImage backdrop) {
+        if (backdrop != null) {
+            paintBackdropCover(g, backdrop, getWidth(), getHeight());
+            // 프레임 바깥 풍경은 남기되 화면의 주인공인 보드와 전투원보다 조용하게 둔다.
+            g.setColor(new Color(231, 225, 213, 66));
+            g.fillRect(0, 0, getWidth(), getHeight());
+        }
+        int shellW = Math.max(0, getWidth() - margin * 2);
+        int shellH = Math.max(0, getHeight() - margin * 2);
+        if (shellW < 40 || shellH < 40) return;
+        int bodyBottom = getHeight() - bottom;
+        // 외벽, 상인방, 하단 콘크리트 턱은 세 칸을 하나의 건물처럼 연결한다.
+        g.setColor(FACADE_EDGE);
+        g.fillRect(margin, margin, shellW, shellH);
+        g.setColor(FACADE);
+        g.fillRect(margin + 2, margin + 2, shellW - 4, shellH - 4);
+        g.setColor(FACADE_LIGHT);
+        g.fillRect(margin + 3, margin + 3, shellW - 6, top - margin - 7);
+        g.setColor(UniversityPixelTheme.PANEL_LIGHT);
+        g.fillRect(side, top, Math.max(0, getWidth() - side * 2),
+                Math.max(0, bodyBottom - top));
+        g.setColor(FACADE_LIGHT);
+        g.fillRect(margin + 3, bodyBottom, shellW - 6, Math.max(0, getHeight() - margin - bodyBottom - 3));
+        paintConcreteTexture(g, margin + 3, margin + 3, shellW - 6, top - margin - 6);
+        paintConcreteTexture(g, margin + 3, bodyBottom, shellW - 6,
+                Math.max(0, getHeight() - margin - bodyBottom - 3));
+        g.setColor(FACADE_EDGE);
+        g.drawLine(margin + 2, top - 3, margin + shellW - 3, top - 3);
+        g.drawLine(margin + 2, bodyBottom, margin + shellW - 3, bodyBottom);
+        g.setColor(new Color(0xF6F2E8));
+        g.drawLine(margin + 3, margin + 3, margin + shellW - 4, margin + 3);
+    }
+
+    private static void paintPillar(Graphics2D g, int x, int width, int top, int bottom) {
+        g.setColor(FACADE_EDGE);
+        g.fillRect(x, top, width, bottom - top);
+        g.setColor(FACADE);
+        g.fillRect(x + 2, top, Math.max(0, width - 4), bottom - top);
+        g.setColor(FACADE_LIGHT);
+        g.drawLine(x + 2, top + 2, x + 2, bottom - 3);
+        g.setColor(new Color(0xA1A49D));
+        g.drawLine(x + width - 3, top + 2, x + width - 3, bottom - 3);
+    }
+
+    private static void paintConcreteTexture(Graphics2D g, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        g.setColor(new Color(77, 79, 72, 20));
+        for (int row = 5; row < height - 3; row += 11)
+            for (int col = 7 + ((row * 7) % 13); col < width - 3; col += 19)
+                g.fillRect(x + col, y + row, 2, 1);
+        g.setColor(new Color(255, 255, 255, 52));
+        for (int col = 47; col < width - 10; col += 113)
+            g.drawLine(x + col, y + 2, x + col, y + Math.min(height - 3, 7));
+    }
+
+    private static void paintBackdropCover(Graphics2D g, BufferedImage image, int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        double cropScale = Math.min((double) image.getWidth() / width,
+                (double) image.getHeight() / height);
+        int sourceW = Math.max(1, (int) Math.round(width * cropScale));
+        int sourceH = Math.max(1, (int) Math.round(height * cropScale));
+        int sourceX = (image.getWidth() - sourceW) / 2;
+        int sourceY = (image.getHeight() - sourceH) / 2;
+        g.drawImage(image, 0, 0, width, height,
+                sourceX, sourceY, sourceX + sourceW, sourceY + sourceH, null);
+    }
+
+    private static BufferedImage readBackdrop(String resource) {
+        try (InputStream stream = BattlePanel.class.getResourceAsStream(resource)) {
+            return stream == null ? null : ImageIO.read(stream);
+        } catch (IOException exception) { return null; }
+    }
+
+    /** 칸은 그대로 두고 바깥 여백 5px만 강의동 외벽처럼 감싼다. */
+    private static void paintBoardFacade(Graphics2D g, Rectangle board) {
+        int x = board.x - 5, y = board.y - 7;
+        int width = board.width + 10, height = board.height + 14;
+        g.setColor(FACADE);
+        g.fillRect(x, y, width, height);
+        g.setColor(FACADE_EDGE);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(FACADE_LIGHT);
+        g.drawLine(x + 1, y + 1, x + width - 2, y + 1);
+        g.drawLine(x + 1, y + height - 3, x + width - 2, y + height - 3);
+        // 윗쪽 콘크리트 줄눈만 남겨 화면 전체에 창문 무늬가 반복되지 않게 한다.
+        g.setColor(FACADE_EDGE);
+        for (int joint = x + 28; joint < x + width - 10; joint += 32)
+            g.drawLine(joint, y + 3, joint, y + 6);
     }
 
     /** PvE는 중앙 보드와 양옆 캐릭터, 하단 아이템 HUD를 사용한다. PvP는 기존 방식 유지. */
@@ -973,7 +1217,7 @@ public class BattlePanel extends JPanel implements Scrollable {
                 && !waitingForEarlierSlot
                 && state.getStatus() == BattleState.Status.RUNNING);
         // 실제 보유 아이템 ID를 기준으로 PNG를 연결한다. 빈 슬롯/잠금에는 아이콘 없음.
-        ImageIcon icon = item == null ? null : PveItemButtons.icon(item);
+        ImageIcon icon = item == null ? null : ITEM_ICONS.get(item);
         pveSlots[i].setIcon(icon);
         pveSlots[i].setDisabledIcon(icon);
         pveSlots[i].putClientProperty("hudCharges", item == null ? 0 : Math.max(0, count));
