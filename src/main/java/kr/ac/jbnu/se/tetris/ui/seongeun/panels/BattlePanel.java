@@ -1260,8 +1260,8 @@ public class BattlePanel extends JPanel implements Scrollable {
         BoardState before = previous.getGameState().getBoard();
         BoardState after = current.getGameState().getBoard();
         // 구 서버는 출처 ID를 보내지 않는다. 4칸 정착 또는 줄 삭제도 착지로 인정한다.
-        if (latestPlacedOrigin(after) > latestPlacedOrigin(before) || lines > 0
-                || oldWirePlacement(before, after))
+        if (BoardChanges.latestPlacedOrigin(after) > BoardChanges.latestPlacedOrigin(before) || lines > 0
+                || BoardChanges.oldWirePlacement(before, after))
             arena.showPlacement(monster);
         if (lines > 0) {
             board.showLineClear(lines, current.getGameState().getCombo(), false);
@@ -1277,36 +1277,5 @@ public class BattlePanel extends JPanel implements Scrollable {
             setFeedback((monster ? "공격 적중  " : "피격  ")
                     + (previous.getHp() - current.getHp()) + " DAMAGE");
         }
-    }
-    private static long latestPlacedOrigin(BoardState board) {
-        long latest = 0;
-        for (int y = 0; y < board.getHeight(); y++)
-            for (int x = 0; x < board.getWidth(); x++)
-                if (board.getCell(x, y) != PieceType.EMPTY)
-                    latest = Math.max(latest, board.getOriginId(x, y));
-        return latest;
-    }
-    private static boolean oldWirePlacement(BoardState before, BoardState after) {
-        if (latestPlacedOrigin(before) != 0 || latestPlacedOrigin(after) != 0) return false;
-        return countNewlyFilled(before, after) == 4
-                && countCells(after, PieceType.GARBAGE) <= countCells(before, PieceType.GARBAGE);
-    }
-    private static int countCells(BoardState board, PieceType type) {
-        int count = 0;
-        for (int y = 0; y < board.getHeight(); y++)
-            for (int x = 0; x < board.getWidth(); x++)
-                if (board.getCell(x, y) == type) count++;
-        return count;
-    }
-    /** 이전에 비어 있다가 가비지가 아닌 블록으로 채워진 칸의 수. */
-    private static int countNewlyFilled(BoardState before, BoardState after) {
-        int filled = 0;
-        for (int y = 0; y < before.getHeight(); y++)
-            for (int x = 0; x < before.getWidth(); x++) {
-                PieceType newCell = after.getCell(x, y);
-                if (before.getCell(x, y) == PieceType.EMPTY && newCell != PieceType.EMPTY
-                        && newCell != PieceType.GARBAGE) filled++;
-            }
-        return filled;
     }
 }
