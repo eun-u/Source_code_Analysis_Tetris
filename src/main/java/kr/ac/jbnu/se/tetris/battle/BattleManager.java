@@ -1,8 +1,6 @@
 package kr.ac.jbnu.se.tetris.battle;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +20,6 @@ import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /** 가상 시간, 참가자 상태, 공격과 가비지를 처리하는 전투 규칙 소유자. */
 public final class BattleManager {
-    private static final List<String> ITEM_IDS = ItemIds.ALL;
-    private static final String INVALID_TARGET_REASON = "INVALID_TARGET";
     private final Map<String, Participant> participants = new LinkedHashMap<String, Participant>();
     private final DamageManager damageManager = new DamageManager();
     private final HPManager hpManager = new HPManager();
@@ -234,28 +230,15 @@ public final class BattleManager {
         if (source.eliminated) return "ACTOR_ELIMINATED";
         if (use == null) return "INVALID_PAYLOAD";
         Participant target = participants.get(use.getTargetActorId());
-        if (target == null || target.eliminated) return INVALID_TARGET_REASON;
+        if (target == null || target.eliminated) return ItemRules.INVALID_TARGET;
         GameAction.TargetCell cell = use.getTargetCell();
         if (cell != null && (cell.getX() >= 10 || cell.getY() >= 22)) return "INVALID_TARGET_CELL";
         return itemRuleRejection(source, target, use.getItemId());
     }
 
     private String itemRuleRejection(Participant source, Participant target, String id) {
-        if (source.itemLevel >= 0 && !monsterItems(source.itemLevel).contains(id)) return "ITEM_RESTRICTED";
-        if (!ITEM_IDS.contains(id) || !source.items.contains(id)) return "ITEM_NOT_OWNED";
-        if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id)) return "AUTO_ITEM";
-        if (isOffensive(id) == (source == target)) return INVALID_TARGET_REASON;
-        return noEffectRejection(source, id);
-    }
-
-    private static boolean isOffensive(String id) {
-        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id);
-    }
-
-    private String noEffectRejection(Participant source, String id) {
-        boolean healAtFull = ItemIds.HEAL.equals(id) && source.hp == source.spec.getMaxHp();
-        boolean warpActive = ItemIds.TIME_WARP.equals(id) && source.warpUntil > elapsedMillis;
-        return healAtFull || warpActive ? "NO_EFFECT" : null;
+        return ItemRules.rejection(source.itemLevel, source.items, source == target,
+                source.hp == source.spec.getMaxHp(), source.warpUntil > elapsedMillis, id);
     }
 
     private void useHeal(Participant source, String actorId, List<BattleEvent> events) {
@@ -509,7 +492,7 @@ public final class BattleManager {
     }
     private void acquire(Participant p, GameEvent.ItemExtraction ore, List<BattleEvent> events) {
         String id = ore.getItemId();
-        if (ITEM_IDS.contains(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) {
+        if (ItemRules.isKnown(id) && p.items.size() < p.spec.getCharacter().getItemSlots()) {
             int slot = p.items.size();
             p.items.add(id);
             p.itemCharges.add(ItemSpec.initialChargesOf(id));
@@ -542,16 +525,7 @@ public final class BattleManager {
         }
     }
     static List<String> monsterItems(int level) {
-        switch (level) {
-            case 0: return java.util.Collections.emptyList();
-            case 1: return Collections.singletonList(ItemIds.HEAL);
-            case 2: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD);
-            case 3: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER);
-            case 4: return Arrays.asList(ItemIds.HEAL, ItemIds.SHIELD, ItemIds.FEVER_CHARGE, ItemIds.LINE_CLEANER,
-                    ItemIds.DAMAGE_BOOST, ItemIds.TIME_WARP);
-            case 5: return ITEM_IDS;
-            default: throw new IllegalArgumentException("Invalid monster item level");
-        }
+        return ItemRules.monsterItems(level);
     }
     private void chargeFever(Participant p, int amount) {
         if (p.feverUntil > elapsedMillis) return;
