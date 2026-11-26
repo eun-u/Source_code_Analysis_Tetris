@@ -54,7 +54,6 @@ import kr.ac.jbnu.se.tetris.ui.seongeun.components.PixelMeter;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.UniversityPixelTheme;
 import kr.ac.jbnu.se.tetris.ui.seongeun.components.CampusArt;
 import kr.ac.jbnu.se.tetris.ui.seongeun.model.PlayerData;
-import kr.ac.jbnu.se.tetris.item.ItemIds;
 
 /**
  * PvE에서는 왼쪽 전투 무대, 가운데 플레이 보드, 오른쪽 조작 정보를 강의동 외벽으로 묶는다.
@@ -962,7 +961,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         boolean available = !locked && i < items.size() && items.get(i) != null;
         String item = available ? items.get(i) : null;
         int count = available && i < charges.size() ? charges.get(i) : 1;
-        boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
+        boolean automatic = ItemSpec.isAutomatic(item);
         boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
         slots[i].setText(slotText(i, locked, item, count));
         automaticSlots[i] = automatic;
