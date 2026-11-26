@@ -104,14 +104,15 @@ public final class BattleManager {
         if (generator == null) throw new IllegalArgumentException("Missing generator: " + spec.getId());
         GameEngine engine = new GameEngine(spec.getId(), generator);
         engine.setBattleManaged(true);
-        boolean monster = !settings.pvp && index > 0;
+        Role role = roleOf(settings, index);
+        boolean monster = role == Role.MONSTER;
         int itemLevel = monster ? settings.monsterItemLevel : -1;
         configureItemSpawns(engine, spec, seed, settings.pvp, itemLevel);
         double attackBuff = monster ? settings.monsterAttackBuff : 0;
         int extraGarbage = monster ? settings.monsterExtraGarbage : 0;
         participants.put(spec.getId(), new Participant(spec, engine,
                 new PlayerController(engine, spec.getId()), seed ^ (index * 0x5DEECE66DL),
-                baseGravityMillis(settings, index), attackBuff, extraGarbage, itemLevel));
+                baseGravityMillis(settings, role), attackBuff, extraGarbage, itemLevel));
     }
 
     private static void configureItemSpawns(GameEngine engine, ParticipantSpec spec, long seed,
@@ -122,9 +123,20 @@ public final class BattleManager {
         else engine.configureItemSpawns(itemLevel == 0 ? 0 : 10 - itemLevel, itemSeed, monsterItems(itemLevel));
     }
 
-    private static int baseGravityMillis(BattleSettings settings, int index) {
+    /** 참가자의 전투 역할. 역할에 따라 중력 속도, 공격 보정, 아이템 제한이 달라진다. */
+    private enum Role { PLAYER, MONSTER }
+
+    /**
+     * 역할을 정하는 유일한 규칙: PvP는 모두 플레이어이고, PvE는 목록의 첫 참가자가
+     * 플레이어, 나머지가 몬스터다. 호출하는 쪽은 이 순서를 지켜 참가자 목록을 만들어야 한다.
+     */
+    private static Role roleOf(BattleSettings settings, int index) {
+        return !settings.pvp && index > 0 ? Role.MONSTER : Role.PLAYER;
+    }
+
+    private static int baseGravityMillis(BattleSettings settings, Role role) {
         if (settings.pvp) return 500;
-        return index == 0 ? settings.playerGravityMillis : settings.monsterGravityMillis;
+        return role == Role.PLAYER ? settings.playerGravityMillis : settings.monsterGravityMillis;
     }
 
     public synchronized BattleState getState() {
