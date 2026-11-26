@@ -19,6 +19,7 @@ import kr.ac.jbnu.se.tetris.battle.BattleEvent;
 import kr.ac.jbnu.se.tetris.battle.BattleManager;
 import kr.ac.jbnu.se.tetris.battle.BattleResult;
 import kr.ac.jbnu.se.tetris.battle.BattleState;
+import kr.ac.jbnu.se.tetris.battle.ItemRules;
 import kr.ac.jbnu.se.tetris.battle.ParticipantSpec;
 import kr.ac.jbnu.se.tetris.battle.ParticipantState;
 import kr.ac.jbnu.se.tetris.controller.AIController;
@@ -26,6 +27,7 @@ import kr.ac.jbnu.se.tetris.core.GameAction;
 import kr.ac.jbnu.se.tetris.core.GameState;
 import kr.ac.jbnu.se.tetris.core.GameEvent;
 import kr.ac.jbnu.se.tetris.item.ItemIds;
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 
 /** AI 계산은 worker에서, 완성된 계획은 호출자(앱 EDT)의 같은 전투 큐에서 실행 */
 public final class MonsterSession implements PlaySession {
@@ -220,7 +222,7 @@ public final class MonsterSession implements PlaySession {
         ParticipantState player = state.getParticipant(localParticipantId);
         for (String item : self.getItems()) {
             if (shouldSkipItem(item, self, player)) continue;
-            boolean againstPlayer = ItemIds.GARBAGE_BOMB.equals(item) || ItemIds.NULLIFY.equals(item);
+            boolean againstPlayer = ItemSpec.targetOf(item) == ItemSpec.Target.OPPONENT;
             String target = againstPlayer ? localParticipantId : opponentParticipantId;
             BattleResult used = battle.submitItem(opponentParticipantId, new GameAction.ItemUse(item, target));
             if (used.isAccepted()) {
@@ -232,18 +234,14 @@ public final class MonsterSession implements PlaySession {
 
     /** 지금 쓸 효과가 없거나 수동 사용 대상이 아닌 아이템은 건너뛴다. */
     private static boolean shouldSkipItem(String item, ParticipantState self, ParticipantState player) {
+        if (ItemSpec.isAutomatic(item)) return true;
+        if (ItemRules.hasNoEffect(item, self.getHp() == self.getMaxHp(),
+                self.getTimeWarpRemainingMillis() > 0)) return true;
         switch (item) {
-            case ItemIds.HEAL:
-                return self.getHp() == self.getMaxHp();
             case ItemIds.FEVER_CHARGE:
                 return self.isFeverActive();
-            case ItemIds.TIME_WARP:
-                return self.getTimeWarpRemainingMillis() > 0;
             case ItemIds.NULLIFY:
                 return player.getItems().isEmpty();
-            case ItemIds.DAMAGE_BOOST:
-            case ItemIds.SHIELD:
-                return true;
             default:
                 return false;
         }
