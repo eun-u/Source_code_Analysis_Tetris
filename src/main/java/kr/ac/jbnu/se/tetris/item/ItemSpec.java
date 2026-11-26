@@ -19,17 +19,30 @@ public final class ItemSpec {
 
     /** 기획 9.3: H=HP, L=라인, G=기타. */
     public static Category categoryOf(String id) {
-        if ("damage_boost".equals(id) || "heal".equals(id) || "shield".equals(id)) return Category.H;
-        if ("garbage_bomb".equals(id) || "line_cleaner".equals(id)) return Category.L;
-        if ("fever_charge".equals(id) || "time_warp".equals(id)
-                || "nullify".equals(id)) return Category.G;
+        if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.HEAL.equals(id) || ItemIds.SHIELD.equals(id)) return Category.H;
+        if (ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.LINE_CLEANER.equals(id)) return Category.L;
+        if (ItemIds.FEVER_CHARGE.equals(id) || ItemIds.TIME_WARP.equals(id)
+                || ItemIds.NULLIFY.equals(id)) return Category.G;
         throw new IllegalArgumentException("Unknown item: " + id);
     }
 
     /** 획득 시 한 슬롯에 들어가는 사용 횟수. */
     public static int initialChargesOf(String id) {
         categoryOf(id);
-        return "garbage_bomb".equals(id) || "heal".equals(id)
-                || "line_cleaner".equals(id) ? 2 : 1;
+        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.HEAL.equals(id)
+                || ItemIds.LINE_CLEANER.equals(id) ? 2 : 1;
+    }
+
+    /**
+     * 조건이 맞으면 저절로 발동해서 직접 사용할 수 없는 아이템인지.
+     * 전투 규칙, 몬스터 AI, 아이템 슬롯 표시가 모두 이 판정을 함께 쓴다.
+     */
+    public static boolean isAutomatic(String id) {
+        return ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id);
+    }
+
+    /** 아이템을 쓸 대상: 공격형(가비지 폭탄, 무효화)은 상대, 나머지는 자신. */
+    public static Target targetOf(String id) {
+        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id) ? Target.OPPONENT : Target.SELF;
     }
 }
