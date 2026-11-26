@@ -5,9 +5,10 @@ import java.util.Collections;
 import java.util.List;
 
 import kr.ac.jbnu.se.tetris.item.ItemIds;
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 
 /** 아이템 사용 규칙: 몬스터 레벨별 허용 아이템과, 사용 요청이 규칙상 거절되는 사유를 판정한다. */
-final class ItemRules {
+public final class ItemRules {
     static final String INVALID_TARGET = "INVALID_TARGET";
 
     private ItemRules() { }
@@ -38,22 +39,13 @@ final class ItemRules {
                             boolean fullHp, boolean warpActive, String id) {
         if (itemLevel >= 0 && !monsterItems(itemLevel).contains(id)) return "ITEM_RESTRICTED";
         if (!isKnown(id) || !ownedItems.contains(id)) return "ITEM_NOT_OWNED";
-        if (isAutomatic(id)) return "AUTO_ITEM";
-        if (isOffensive(id) == selfTarget) return INVALID_TARGET;
+        if (ItemSpec.isAutomatic(id)) return "AUTO_ITEM";
+        if ((ItemSpec.targetOf(id) == ItemSpec.Target.OPPONENT) == selfTarget) return INVALID_TARGET;
         return hasNoEffect(id, fullHp, warpActive) ? "NO_EFFECT" : null;
     }
 
-    /** 조건이 맞으면 자동으로 쓰여 직접 사용할 수 없는 아이템 */
-    private static boolean isAutomatic(String id) {
-        return ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id);
-    }
-
-    /** 상대에게만 쓸 수 있는 공격형 아이템. 나머지는 자신에게만 쓴다. */
-    private static boolean isOffensive(String id) {
-        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id);
-    }
-
-    private static boolean hasNoEffect(String id, boolean fullHp, boolean warpActive) {
+    /** 지금 쓰면 아무 효과가 없는 아이템인지: 체력이 가득 찬 회복, 이미 진행 중인 시간 왜곡. */
+    public static boolean hasNoEffect(String id, boolean fullHp, boolean warpActive) {
         return (ItemIds.HEAL.equals(id) && fullHp) || (ItemIds.TIME_WARP.equals(id) && warpActive);
     }
 }
