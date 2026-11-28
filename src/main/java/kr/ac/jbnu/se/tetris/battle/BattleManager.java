@@ -242,13 +242,15 @@ public final class BattleManager {
     private String itemRuleRejection(Participant source, Participant target, String id) {
         if (source.itemLevel >= 0 && !monsterItems(source.itemLevel).contains(id)) return "ITEM_RESTRICTED";
         if (!ITEM_IDS.contains(id) || !source.items.contains(id)) return "ITEM_NOT_OWNED";
-        if (ItemIds.DAMAGE_BOOST.equals(id) || ItemIds.SHIELD.equals(id)) return "AUTO_ITEM";
-        if (isOffensive(id) == (source == target)) return INVALID_TARGET_REASON;
-        return noEffectRejection(source, id);
-    }
+        if (ItemSpec.isAutomatic(id)) return "AUTO_ITEM";
+        // 공통 아이템 규칙에서 사용 대상을 확인한다.
+        boolean targetsSelf = ItemSpec.targetOf(id) == ItemSpec.Target.SELF;
 
-    private static boolean isOffensive(String id) {
-        return ItemIds.GARBAGE_BOMB.equals(id) || ItemIds.NULLIFY.equals(id);
+        // 아이템의 지정 대상과 실제 대상이 일치하지 않으면 거부한다.
+        if (targetsSelf != (source == target)) {
+            return INVALID_TARGET_REASON;
+        }
+        return noEffectRejection(source, id);
     }
 
     private String noEffectRejection(Participant source, String id) {

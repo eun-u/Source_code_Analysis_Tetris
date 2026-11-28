@@ -1,5 +1,6 @@
 package kr.ac.jbnu.se.tetris.app;
 
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import java.awt.CardLayout;
 import java.awt.Component;
 import java.awt.Container;
@@ -946,23 +947,22 @@ public final class SeongeunApplication implements AutoCloseable {
             battle.setFeedback("같은 아이템은 앞 슬롯부터 사용합니다.");
             return;
         }
-        if ("damage_boost".equals(item) || "shield".equals(item)) {
+        // 자동 사용 아이템 여부는 공통 아이템 규칙에서 판단한다.
+        if (ItemSpec.isAutomatic(item)) {
             battle.setFeedback("이 아이템은 조건이 맞으면 자동으로 사용됩니다.");
             return;
         }
-        String target = participant.getId();
-        // 방해 아이템만 상대에게 쓰고 나머지는 자신에게 쓴다.
-        if (targetsOpponent(item)) {
+       String target = participant.getId();
+        // 아이템의 사용 대상은 공통 아이템 규칙에서 결정한다.
+        if (ItemSpec.targetOf(item) == ItemSpec.Target.OPPONENT) {
             String opponent = opponentOf(state, target);
-            if (opponent != null) target = opponent;
+            if (opponent != null) {
+                target = opponent;
+            }
         }
         long requestId = match.submit(new PlayerIntent(GameAction.Type.USE_ITEM,
                 new GameAction.ItemUse(item, target)));
         itemRequests.add(requestId);
-    }
-
-    private static boolean targetsOpponent(String item) {
-        return "garbage_bomb".equals(item) || "nullify".equals(item);
     }
 
     private void forfeit() {

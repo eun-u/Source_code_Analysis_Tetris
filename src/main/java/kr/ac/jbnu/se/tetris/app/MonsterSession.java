@@ -1,5 +1,6 @@
 package kr.ac.jbnu.se.tetris.app;
 
+import kr.ac.jbnu.se.tetris.item.ItemSpec;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
@@ -230,24 +231,32 @@ public final class MonsterSession implements PlaySession {
         }
     }
 
-    /** 지금 쓸 효과가 없거나 수동 사용 대상이 아닌 아이템은 건너뛴다. */
+    // 몬스터가 현재 사용할 필요가 없거나 수동 사용 대상이 아닌 아이템인지 판단한다.
     private static boolean shouldSkipItem(String item, ParticipantState self, ParticipantState player) {
+
+        // 자동 사용 아이템은 수동 사용 판단에서 제외한다.
+        if (ItemSpec.isAutomatic(item)) {
+            return true;
+        }
+
         switch (item) {
             case ItemIds.HEAL:
                 return self.getHp() == self.getMaxHp();
+
             case ItemIds.FEVER_CHARGE:
                 return self.isFeverActive();
+
             case ItemIds.TIME_WARP:
                 return self.getTimeWarpRemainingMillis() > 0;
+
             case ItemIds.NULLIFY:
                 return player.getItems().isEmpty();
-            case ItemIds.DAMAGE_BOOST:
-            case ItemIds.SHIELD:
-                return true;
+
             default:
                 return false;
         }
     }
+
     public BattleResult submitItem(GameAction.ItemUse item) {
         if (closed) throw new IllegalStateException("CLOSED");
         lastBattleResult = battle.submitItem(localParticipantId, item);

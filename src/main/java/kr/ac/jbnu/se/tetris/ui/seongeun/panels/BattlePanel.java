@@ -1196,7 +1196,7 @@ public class BattlePanel extends JPanel implements Scrollable {
         boolean available = !locked && i < items.size() && items.get(i) != null;
         String item = available ? items.get(i) : null;
         int count = available && i < charges.size() ? charges.get(i) : 1;
-        boolean automatic = ItemIds.DAMAGE_BOOST.equals(item) || ItemIds.SHIELD.equals(item);
+        boolean automatic = ItemSpec.isAutomatic(item); // 자동 사용 여부는 공통 아이템 규칙을 참조한다.
         boolean waitingForEarlierSlot = item != null && items.indexOf(item) != i;
         slots[i].setText(slotText(i, locked, item, count));
         automaticSlots[i] = automatic;
